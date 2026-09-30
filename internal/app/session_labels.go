@@ -3,9 +3,21 @@ package app
 import (
 	"maps"
 	"strconv"
+	"strings"
 
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 )
+
+// withWorkspaceIndex appends the workspace number to a workspace's name, as
+// "name [n]". The number is what an unnamed workspace already shows, so a
+// named one keeps it in reach; the switcher prints the number itself and is
+// not given the suffix. Display only.
+func withWorkspaceIndex(name string, ws int) string {
+	if name == "" || name == strconv.Itoa(ws) || strings.HasSuffix(name, " ["+strconv.Itoa(ws)+"]") {
+		return name
+	}
+	return name + " [" + strconv.Itoa(ws) + "]"
+}
 
 // adoptSessionLabels copies the daemon-owned labels off a state push. They are
 // daemon-exclusive: the client never sends them back (BuildSessionState omits
@@ -144,7 +156,7 @@ func (m *OS) sessionPlace(name string) (dir, branch string) {
 // the label it has always shown.
 func (m *OS) WorkspaceLabel(ws int) string {
 	if name := m.WorkspaceNames[ws]; name != "" {
-		return name
+		return withWorkspaceIndex(name, ws)
 	}
 	return strconv.Itoa(ws)
 }

@@ -998,6 +998,17 @@ func (m *OS) FileBackDir() string {
 	return m.fileBack[len(m.fileBack)-1]
 }
 
+func (m *OS) FileViewReturn() tea.Cmd {
+	if !m.filesOn() || m.filesView.Origin == "" || !m.filesView.Pinned {
+		return nil
+	}
+	m.filesView.Pinned = false
+	if cmd := m.FilesSyncCmd(); cmd != nil {
+		return cmd
+	}
+	return m.RefreshFileView()
+}
+
 // FileViewBack walks the listing back to the directory it was showing before
 // the last step. The cursor lands on the folder just left, the same courtesy
 // Go up pays. With no step behind it, back is a row that does nothing.
