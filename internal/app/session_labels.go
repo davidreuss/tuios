@@ -9,29 +9,15 @@ import (
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 )
 
-// sessionIndexSuffix is the " [n]" tail of a session whose identity name ends
-// in digits. Sessions are named session-N, so renaming hides the number a
-// person needs to tell sessions apart; the suffix puts it back. Display only.
-func sessionIndexSuffix(name string) string {
-	i := len(name)
-	for i > 0 && name[i-1] >= '0' && name[i-1] <= '9' {
-		i--
+// withWorkspaceIndex appends the workspace number to a workspace's name, as
+// "name [n]". The number is what an unnamed workspace already shows, so a
+// named one keeps it in reach; the switcher prints the number itself and is
+// not given the suffix. Display only.
+func withWorkspaceIndex(name string, ws int) string {
+	if name == "" || name == strconv.Itoa(ws) || strings.HasSuffix(name, " ["+strconv.Itoa(ws)+"]") {
+		return name
 	}
-	if i == len(name) || i == 0 {
-		return ""
-	}
-	return " [" + name[i:] + "]"
-}
-
-// withSessionIndex appends the identity index to a display title. A title
-// already carrying the suffix, and a title that is the identity name itself,
-// stay untouched: the latter would read "session-1 [1]".
-func withSessionIndex(name, title string) string {
-	suffix := sessionIndexSuffix(name)
-	if suffix == "" || title == "" || title == name || strings.HasSuffix(title, suffix) {
-		return title
-	}
-	return title + suffix
+	return name + " [" + strconv.Itoa(ws) + "]"
 }
 
 // adoptSessionLabels copies the daemon-owned labels off a state push. They are
@@ -68,11 +54,11 @@ func (m *OS) adoptSessionLabels(state *session.SessionState) {
 // otherwise the identity name. Never use it as a key.
 func (m *OS) SessionLabel(name string) string {
 	if name == m.SessionName && m.SessionDisplayName != "" {
-		return withSessionIndex(name, m.SessionDisplayName)
+		return m.SessionDisplayName
 	}
 	if m.DaemonClient != nil {
 		if display, _ := m.DaemonClient.SessionLabel(name); display != "" {
-			return withSessionIndex(name, display)
+			return display
 		}
 	}
 	return name
@@ -117,7 +103,7 @@ func (m *OS) sessionPlace(name string) (dir, branch string) {
 // the label it has always shown.
 func (m *OS) WorkspaceLabel(ws int) string {
 	if name := m.WorkspaceNames[ws]; name != "" {
-		return name
+		return withWorkspaceIndex(name, ws)
 	}
 	return strconv.Itoa(ws)
 }
