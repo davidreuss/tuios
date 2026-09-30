@@ -323,7 +323,7 @@ func (m *OS) dockItemMenu(windowIndex int) (string, []ContextMenuItem) {
 func (m *OS) workspacePillMenu(ws int) (string, []ContextMenuItem) {
 	closeItem := m.item(glyphClose, "Close", "close_workspace", len(m.workspacePanes(ws)) == 0)
 	closeItem.Warn = true
-	return printableTitle(m.WorkspaceLabel(ws)), []ContextMenuItem{
+	return printableTitle(withWorkspaceIndex(m.WorkspaceLabel(ws), ws)), []ContextMenuItem{
 		m.item(glyphSwitch, "Switch to", "workspace_pill_switch", ws == m.CurrentWorkspace),
 		m.item(glyphRename, "Rename", "workspace_prefix_rename", false),
 		separator(),
