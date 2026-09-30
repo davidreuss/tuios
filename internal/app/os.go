@@ -1744,6 +1744,12 @@ type OS struct {
 	filesTree fileTreeState
 	// filesRows is the files section's rows, kept until the listing moves.
 	filesRows fileRowsCache
+	// fileBack is the listing's back stack: the directories shown before the
+	// one on screen, most recent last, and the origin pane the stack belongs
+	// to. A listing from another pane empties it, since back through someone
+	// else's walk is not anywhere. See FileViewBack.
+	fileBack       []string
+	fileBackOrigin string
 
 	// gitView is the rail's git section: the repository the focused pane is in
 	// and how far its branch has drifted. Derived state, never persisted and
