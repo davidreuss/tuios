@@ -25,7 +25,10 @@ func TestSessionNameReachesThePanels(t *testing.T) {
 		t.Fatalf("the named session never reached the panel:\n%s", panel)
 	}
 	for _, row := range strings.Split(panel, "\n") {
-		if strings.Contains(row, "proof/") && strings.Contains(row, "\x1b[1;3") {
+		if strings.Contains(row, "agents") {
+			continue
+		}
+		if strings.Contains(row, "proof") && strings.Contains(row, "\x1b[1;3") {
 			return
 		}
 	}
