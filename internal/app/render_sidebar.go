@@ -572,6 +572,12 @@ type sidebarAgentEntry struct {
 	Open     bool
 	// Last marks the last line under a pane's row, where a tree line ends.
 	Last bool
+	// Workspace is the pane's workspace number, 0 when the wire did not say.
+	// The workspace token draws it as the quiet right-hand mark.
+	Workspace int
+	// Workspace is the pane's workspace number, 0 when the wire did not say.
+	// The workspace token draws it as the quiet right-hand mark.
+	Workspace int
 }
 
 // sidebarSubRow reports whether an entry is a row under a pane's row rather
@@ -2492,7 +2498,7 @@ func (m *OS) sidebarTerminals(sessions []sessiontree.Node, sessionID string) []s
 		// older daemon sends neither field) tags nothing at all rather than
 		// tagging everything.
 		e.workspace = win.Workspace
-		if node.Workspace > 0 && win.Workspace > 0 && win.Workspace != node.Workspace {
+		if node.Workspace > 0 && win.Workspace > 0 {
 			if node.IsCurrent {
 				e.Tag = m.workspaceTag(win.Workspace)
 			} else {
@@ -2598,6 +2604,7 @@ func (m *OS) agentEntries(sessions []sessiontree.Node) []sidebarAgentEntry {
 				Foreign:      !s.IsCurrent,
 				Host:         s.Host,
 				Focused:      s.IsCurrent && win.IsCurrent,
+				Workspace:    win.Workspace,
 			})
 		}
 	}
