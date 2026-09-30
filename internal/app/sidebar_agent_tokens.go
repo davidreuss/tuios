@@ -44,7 +44,10 @@ func (m *OS) sidebarAgentTokenValue(name string, e sidebarAgentEntry, variant in
 	tk := sidebarAgentToken{Name: name}
 	switch name {
 	case "session":
-		if e.Foreign {
+		// Foreign rows always say which session they came from. The attached
+		// session's rows say it only when the session is named: an unnamed one
+		// is just "session-0" and every row already belongs to it.
+		if e.Foreign || m.SessionLabel(e.SessionID) != e.SessionID {
 			tk.Text = printableTitle(e.SessionLabel)
 		}
 	case "harness":
