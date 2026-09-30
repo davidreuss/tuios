@@ -227,6 +227,7 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	// new reply goes. See detach_client.go.
 	cs.repliedSession = ""
 	cs.sessionName = session.Name()
+	d.recordPresence(session.ID)
 	cs.width = payload.Width
 	cs.height = payload.Height
 	cs.reserve = payload.Reserve
@@ -463,6 +464,14 @@ func (d *Daemon) handleDetach(cs *connState, msg *Message) error {
 	return d.sendMessage(cs, MsgDetached, nil)
 }
 
+// recordPresence notes that a client was last seen on a session now, the
+// signal bare attach uses to find the session to reopen.
+func (d *Daemon) recordPresence(sessionID string) {
+	d.clientsMu.Lock()
+	d.lastPresence[sessionID] = time.Now()
+	d.clientsMu.Unlock()
+}
+
 // detachClient takes the client on cs off its session: its subscriptions, its
 // size and its place in the session's broadcasts. It reports false when the
 // client was not attached.
@@ -505,6 +514,7 @@ func (d *Daemon) detachClientFrom(cs *connState, want string) bool {
 		Session:  sessionName,
 		Attached: ptr(false),
 	})
+	d.recordPresence(sessionID)
 
 	// Unsubscribe from all PTYs and forget where each stream got to. A resume
 	// position is a claim that the client still holds the pane it drew, and a

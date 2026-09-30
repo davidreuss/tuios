@@ -575,9 +575,6 @@ type sidebarAgentEntry struct {
 	// Workspace is the pane's workspace number, 0 when the wire did not say.
 	// The workspace token draws it as the quiet right-hand mark.
 	Workspace int
-	// Workspace is the pane's workspace number, 0 when the wire did not say.
-	// The workspace token draws it as the quiet right-hand mark.
-	Workspace int
 }
 
 // sidebarSubRow reports whether an entry is a row under a pane's row rather
