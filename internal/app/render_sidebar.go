@@ -2920,6 +2920,9 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	}
 	right := sidebarJoinFigures(figures[:], keep[1:], sidebarStyle(rowBg, pal.FgMute))
 	shown := m.sidebarMarquee("s:"+node.ID, title, max(avail, 1), st.Cursor)
+	// The attached session's name is bold. The gutter mark is too quiet a
+	// signal to find "which one am I on" in, and weight on the name is the
+	// one emphasis every row already speaks.
 	name := mark + sidebarStyle(rowBg, fg).Bold(node.IsCurrent || sidebarAttention(node.AgentState)).Render(shown) + branch
 	if nameMarked {
 		name = mark + railCurrentName(shown, tint, rowBg, pal, &m.Settings) + branch
