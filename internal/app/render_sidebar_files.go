@@ -31,12 +31,10 @@ import (
 // survives a terminal with no nerd font, and the rail is wide enough to say it.
 const fileTokenCd = "cd"
 
-// fileTokenBack prefixes the header's back control. What follows it is the
-// name of the directory back lands on, so the control says where it goes
-// instead of asking to be trusted.
-const fileTokenBack = "‹"
-
-const fileTokenBackASCII = "<"
+// fileTokenReturn is the header control that gives a steered listing back to
+// the pane: unpin it and ask for the pane's directory again. A word like its
+// neighbour cd, for the same reason.
+const fileTokenReturn = "return"
 
 // fileSpoofRow is the listing's own mark for a folder the pane named and /proc
 // contradicted: the names are still there, and nothing on them can be changed.
@@ -182,21 +180,15 @@ func (m *OS) sidebarFilesHeaderCd(cw int, pal overlay.Palette, hoverX int, curso
 	return sidebarStyle(nil, ink).Render(fileTokenCd), span, true
 }
 
-// sidebarFilesHeaderBack places the back control left of the cd control, or at
-// the rail's edge when there is no cd control to sit beside. It is drawn only
-// while there is a step to go back to.
-func (m *OS) sidebarFilesHeaderBack(hasCd bool, cdX0 int, cw int, pal overlay.Palette, hoverX int, cursor bool) (string, sidebarTokenSpan, bool) {
-	dir := m.FileBackDir()
-	if dir == "" {
+// sidebarFilesHeaderReturn places the return control left of the cd control,
+// or at the rail's edge when there is no cd control to sit beside. It is drawn
+// whenever the listing belongs to a pane, the same gate cd has: the pair reads
+// as one unit, take the pane there and come back.
+func (m *OS) sidebarFilesHeaderReturn(hasCd bool, cdX0 int, cw int, pal overlay.Palette, hoverX int, cursor bool) (string, sidebarTokenSpan, bool) {
+	if m.fileViewOriginWindow() == nil {
 		return "", sidebarTokenSpan{}, false
 	}
-	glyph := fileTokenBack
-	if overlay.UseASCII() {
-		glyph = fileTokenBackASCII
-	}
-	tok := glyph + " " + filepath.Base(dir)
-	tok = overlay.Truncate(tok, 16)
-	tw := lipgloss.Width(tok)
+	tw := lipgloss.Width(fileTokenReturn)
 	end := cw - 1
 	if hasCd {
 		end = cdX0 - 1
@@ -205,12 +197,12 @@ func (m *OS) sidebarFilesHeaderBack(hasCd bool, cdX0 int, cw int, pal overlay.Pa
 	if x0 < sidebarHeaderLabelW(sidebarFilesLabel)+1 {
 		return "", sidebarTokenSpan{}, false
 	}
-	span := sidebarTokenSpan{Kind: sidebarRowFileBack, X0: x0, X1: x0 + tw}
+	span := sidebarTokenSpan{Kind: sidebarRowFileReturn, X0: x0, X1: x0 + tw}
 	ink := pal.FgMute
 	if cursor || (hoverX >= span.X0 && hoverX < span.X1) {
 		ink = pal.Fg
 	}
-	return sidebarStyle(nil, ink).Render(tok), span, true
+	return sidebarStyle(nil, ink).Render(fileTokenReturn), span, true
 }
 
 // sidebarFilesHeaderRow is the section's one line of chrome: the label, the
