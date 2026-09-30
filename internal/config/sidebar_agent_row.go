@@ -61,7 +61,7 @@ import (
 // gh, and nothing when there is none. $now, $prompt and $context draw the raw
 // value on any row. progress draws "40%", the progress of the pane's OSC 7501
 // report, while the program works or waits, on the identity line.
-var SidebarAgentRowTokens = []string{"harness", "name", "state", "progress", "elapsed", "need", "now", "prompt", "context", "subagents", "pr", "meta", "message", "session", "host"}
+var SidebarAgentRowTokens = []string{"harness", "name", "state", "progress", "elapsed", "need", "now", "prompt", "context", "subagents", "pr", "meta", "message", "session", "host", "workspace"}
 
 // SidebarAgentRowDefaultTokens is the row as it ships. state and host are left
 // out because both have a value on every row and the glyph already says the
