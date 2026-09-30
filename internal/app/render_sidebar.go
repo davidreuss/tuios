@@ -3621,7 +3621,9 @@ func sidebarNoteSentence(name string) bool {
 func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.Palette, st sidebarRowState, tall, focusMark bool) (string, int) {
 	var rowBg color.Color
 	fg := pal.FgDim
-	if e.State == "done" && !e.DoneSeen {
+	if e.State == "done" && !e.DoneSeen || e.Focused {
+		// The session's focused pane is the active agent and reads at full
+		// strength; everything else is dimmed by one step.
 		fg = pal.Fg
 	}
 	if st.lit() {
