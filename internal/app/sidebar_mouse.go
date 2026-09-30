@@ -248,6 +248,8 @@ func (m *OS) SidebarClick(x, y int, right bool) bool {
 		m.queueSidebarCmd(m.ToggleFileView())
 	case sidebarRowFileCd:
 		m.FileViewCd()
+	case sidebarRowFileBack:
+		m.queueSidebarCmd(m.FileViewBack())
 	case sidebarRowFileUp:
 		m.queueSidebarCmd(m.FileViewUp())
 	case sidebarRowFileEntry:

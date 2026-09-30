@@ -1733,7 +1733,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 		if hasCd {
 			recordToken(cdSpan, "")
 		}
-		backTok, backSpan, hasBack := m.sidebarFilesHeaderBack(cdSpan.X0, cw, pal, headerHoverX[sidebarSectionFiles],
+		backTok, backSpan, hasBack := m.sidebarFilesHeaderBack(hasCd, cdSpan.X0, cw, pal, headerHoverX[sidebarSectionFiles],
 			isCursor(sidebarRowFileBack, "", ""))
 		if hasBack {
 			recordToken(backSpan, "")

@@ -182,9 +182,10 @@ func (m *OS) sidebarFilesHeaderCd(cw int, pal overlay.Palette, hoverX int, curso
 	return sidebarStyle(nil, ink).Render(fileTokenCd), span, true
 }
 
-// sidebarFilesHeaderBack places the back control left of the cd control. It is
-// drawn only while there is a step to go back to.
-func (m *OS) sidebarFilesHeaderBack(cdX0 int, cw int, pal overlay.Palette, hoverX int, cursor bool) (string, sidebarTokenSpan, bool) {
+// sidebarFilesHeaderBack places the back control left of the cd control, or at
+// the rail's edge when there is no cd control to sit beside. It is drawn only
+// while there is a step to go back to.
+func (m *OS) sidebarFilesHeaderBack(hasCd bool, cdX0 int, cw int, pal overlay.Palette, hoverX int, cursor bool) (string, sidebarTokenSpan, bool) {
 	dir := m.FileBackDir()
 	if dir == "" {
 		return "", sidebarTokenSpan{}, false
@@ -196,7 +197,11 @@ func (m *OS) sidebarFilesHeaderBack(cdX0 int, cw int, pal overlay.Palette, hover
 	tok := glyph + " " + filepath.Base(dir)
 	tok = overlay.Truncate(tok, 16)
 	tw := lipgloss.Width(tok)
-	x0 := cdX0 - 1 - tw
+	end := cw - 1
+	if hasCd {
+		end = cdX0 - 1
+	}
+	x0 := end - tw
 	if x0 < sidebarHeaderLabelW(sidebarFilesLabel)+1 {
 		return "", sidebarTokenSpan{}, false
 	}
