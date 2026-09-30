@@ -58,7 +58,7 @@ import (
 // and subagents says how many subagents the agent is running ("2 subagents")
 // on any row, and nothing while there are none. $now, $prompt and $context
 // draw the raw value on any row.
-var SidebarAgentRowTokens = []string{"harness", "name", "state", "elapsed", "need", "now", "prompt", "context", "subagents", "meta", "message", "session", "host"}
+var SidebarAgentRowTokens = []string{"harness", "name", "state", "elapsed", "need", "now", "prompt", "context", "subagents", "meta", "message", "session", "host", "workspace"}
 
 // SidebarAgentRowDefaultTokens is the row as it ships. state and host are left
 // out because both have a value on every row and the glyph already says the

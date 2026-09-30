@@ -457,6 +457,9 @@ type sidebarAgentEntry struct {
 	// section folded away: how many, and FoldNames names them. It is no pane.
 	Fold      int
 	FoldNames string
+	// Workspace is the pane's workspace number, 0 when the wire did not say.
+	// The workspace token draws it as the quiet right-hand mark.
+	Workspace int
 }
 
 // sidebarTerminalEntry is one pane of the session the terminals section is
@@ -2006,7 +2009,7 @@ func (m *OS) sidebarTerminals(sessions []sessiontree.Node, sessionID string) []s
 		// older daemon sends neither field) tags nothing at all rather than
 		// tagging everything.
 		e.workspace = win.Workspace
-		if node.Workspace > 0 && win.Workspace > 0 && win.Workspace != node.Workspace {
+		if node.Workspace > 0 && win.Workspace > 0 {
 			if node.IsCurrent {
 				e.Tag = m.workspaceTag(win.Workspace)
 			} else {
@@ -2095,6 +2098,7 @@ func (m *OS) sidebarAgents(sessions []sessiontree.Node) []sidebarAgentEntry {
 				Foreign:      !s.IsCurrent,
 				Host:         s.Host,
 				Focused:      s.IsCurrent && win.IsCurrent,
+				Workspace:    win.Workspace,
 			})
 		}
 	}
