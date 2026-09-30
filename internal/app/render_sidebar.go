@@ -1952,6 +1952,13 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			sidebarHeaderLabelW("terminals"), pal, headerHoverX[sidebarSectionTerminals],
 			isCursor(sidebarRowNewWindow, shown, ""), &m.Settings, nil)
 		right := termAdd
+		if label := m.SessionLabel(shown); !peeking && label != shown {
+			// The attached session's own panes: the header names the session it
+			// lists when that session has a name, and says nothing about an
+			// unnamed one because "session-0" is not information here.
+			name := sidebarStyle(nil, pal.FgMute).Render(overlay.Truncate(printableTitle(label), max(cw/2, 1)))
+			right = name + sidebarStyle(nil, nil).Render(" ") + termAdd
+		}
 		if peeking {
 			// Whose panes these are, since they are not the attached session's,
 			// in that session's own colour: the row the pointer is on is marked
@@ -1977,7 +1984,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			// Below three cells a cut name is an ellipsis and a letter or two,
 			// which names nothing, so the header shows the control alone.
 			if room >= 3 {
-				name := sidebarStyle(nil, ink).Render(overlay.Truncate(printableTitle(shown), room))
+				name := sidebarStyle(nil, ink).Render(overlay.Truncate(printableTitle(m.SessionLabel(shown)), room))
 				right = name
 				if hasTermAdd {
 					right += sidebarStyle(nil, nil).Render(" ") + termAdd
@@ -2924,7 +2931,7 @@ const sidebarHostTagFloor = 8
 // digit would read as a session row's window count on the line above.
 func (m *OS) workspaceTag(ws int) string {
 	if label := printableTitle(m.WorkspaceLabel(ws)); label != strconv.Itoa(ws) && label != "" {
-		return overlay.Truncate(label, sidebarWorkspaceTagMax)
+		return overlay.Truncate(withWorkspaceIndex(label, ws), sidebarWorkspaceTagMax)
 	}
 	return "w" + strconv.Itoa(ws)
 }
