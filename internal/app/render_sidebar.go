@@ -2802,7 +2802,9 @@ func sidebarNoteSentence(name string) bool {
 func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.Palette, st sidebarRowState, tall bool) (string, int) {
 	var rowBg color.Color
 	fg := pal.FgDim
-	if e.State == "done" && !e.DoneSeen {
+	if e.State == "done" && !e.DoneSeen || e.Focused {
+		// The session's focused pane is the active agent and reads at full
+		// strength; everything else is dimmed by one step.
 		fg = pal.Fg
 	}
 	if st.lit() {
@@ -2912,9 +2914,10 @@ func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.P
 			gutter = sidebarStyle(rowBg, tint).Render(accentMark())
 		}
 	}
-	// On a compact rail this is the pane's only row, so it carries the focus
-	// mark the terminals row would have.
-	if e.Focused && m.GetSidebarWidth() <= sidebarCompactWidth && sidebarLayoutHas(sidebarSectionTerminals, &m.Settings) {
+	// The focused pane's row wears the same tinted gutter mark the terminals
+	// row wears, on every rail width: the two sections then agree on what the
+	// active agent looks like instead of the compact rail alone saying it.
+	if e.Focused && sidebarLayoutHas(sidebarSectionTerminals, &m.Settings) {
 		gutter = sidebarGutterTinted(true, e.State, m.sessionTint(e.SessionID, m.rowGround(rowBg)), rowBg, pal, &m.Settings)
 	}
 	body := shown +
