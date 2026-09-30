@@ -31,6 +31,13 @@ import (
 // survives a terminal with no nerd font, and the rail is wide enough to say it.
 const fileTokenCd = "cd"
 
+// fileTokenBack prefixes the header's back control. What follows it is the
+// name of the directory back lands on, so the control says where it goes
+// instead of asking to be trusted.
+const fileTokenBack = "‹"
+
+const fileTokenBackASCII = "<"
+
 // fileSpoofRow is the listing's own mark for a folder the pane named and /proc
 // contradicted: the names are still there, and nothing on them can be changed.
 const fileSpoofRow = "read only: wrong folder"
@@ -175,6 +182,32 @@ func (m *OS) sidebarFilesHeaderCd(cw int, pal overlay.Palette, hoverX int, curso
 	return sidebarStyle(nil, ink).Render(fileTokenCd), span, true
 }
 
+// sidebarFilesHeaderBack places the back control left of the cd control. It is
+// drawn only while there is a step to go back to.
+func (m *OS) sidebarFilesHeaderBack(cdX0 int, cw int, pal overlay.Palette, hoverX int, cursor bool) (string, sidebarTokenSpan, bool) {
+	dir := m.FileBackDir()
+	if dir == "" {
+		return "", sidebarTokenSpan{}, false
+	}
+	glyph := fileTokenBack
+	if overlay.UseASCII() {
+		glyph = fileTokenBackASCII
+	}
+	tok := glyph + " " + filepath.Base(dir)
+	tok = overlay.Truncate(tok, 16)
+	tw := lipgloss.Width(tok)
+	x0 := cdX0 - 1 - tw
+	if x0 < sidebarHeaderLabelW(sidebarFilesLabel)+1 {
+		return "", sidebarTokenSpan{}, false
+	}
+	span := sidebarTokenSpan{Kind: sidebarRowFileBack, X0: x0, X1: x0 + tw}
+	ink := pal.FgMute
+	if cursor || (hoverX >= span.X0 && hoverX < span.X1) {
+		ink = pal.Fg
+	}
+	return sidebarStyle(nil, ink).Render(tok), span, true
+}
+
 // sidebarFilesHeaderRow is the section's one line of chrome: the label, the
 // directory being listed, and the cd control.
 //
@@ -191,16 +224,25 @@ func (m *OS) sidebarFilesHeaderCd(cw int, pal overlay.Palette, hoverX int, curso
 // filesystem. That is the right answer to "what is in the pane's directory" and
 // there is nothing to correct, but a remote viewer is not looking at their own
 // disk.
-func (m *OS) sidebarFilesHeaderRow(cdTok string, hasCd bool, cw int, pal overlay.Palette) string {
+func (m *OS) sidebarFilesHeaderRow(backTok string, hasBack bool, cdTok string, hasCd bool, cw int, pal overlay.Palette) string {
 	room := cw - sidebarHeaderLabelW(sidebarFilesLabel) - 2
 	if hasCd {
 		room -= lipgloss.Width(fileTokenCd) + 1
+	}
+	if hasBack {
+		room -= lipgloss.Width(backTok) + 1
 	}
 	right := ""
 	if room > 0 {
 		if path := truncPathLeft(shortenHome(m.filesView.Dir), room); path != "" {
 			right = sidebarStyle(nil, pal.FgDim).Render(path)
 		}
+	}
+	if hasBack {
+		if right != "" {
+			right += sidebarStyle(nil, nil).Render(" ")
+		}
+		right += backTok
 	}
 	if hasCd {
 		if right != "" {
