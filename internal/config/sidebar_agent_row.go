@@ -56,7 +56,7 @@ import (
 // "ctx 84%" only once the context is SidebarContextWarnAt percent full or
 // more, in the warning ink unless its table says otherwise. $now, $prompt and
 // $context draw the raw value on any row.
-var SidebarAgentRowTokens = []string{"harness", "name", "state", "elapsed", "need", "now", "prompt", "context", "meta", "message", "session", "host"}
+var SidebarAgentRowTokens = []string{"harness", "name", "state", "elapsed", "need", "now", "prompt", "context", "meta", "message", "session", "host", "workspace"}
 
 // SidebarAgentRowDefaultTokens is the row as it ships. state and host are left
 // out because both have a value on every row and the glyph already says the

@@ -71,6 +71,12 @@ func (m *OS) sidebarAgentTokenValue(name string, e sidebarAgentEntry, variant in
 		tk.Text = m.sidebarAgentNeedText(e, variant, now)
 	case "host":
 		tk.Text = printableTitle(e.Host)
+	case "workspace":
+		// The workspace tag is empty for a pane whose workspace the wire did
+		// not name, so an older daemon's rows stay untagged.
+		if e.Workspace > 0 {
+			tk.Text = m.workspaceTag(e.Workspace)
+		}
 	case "now":
 		// What a working agent is doing. The daemon clears it at rest, and a
 		// pane blocked on a prompt says what it asks in its need and message,
