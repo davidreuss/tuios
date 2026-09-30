@@ -2849,9 +2849,13 @@ func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.P
 
 	nameStyle := sidebarStyle(rowBg, fg)
 	timeFg := pal.FgMute
+	// The pane this session is showing is the active agent, and its name is
+	// bold for the same reason the session row's name is: weight is how the
+	// rail says "you are here". Attention keeps its own bold and its colour.
+	if e.Focused {
+		nameStyle = nameStyle.Bold(true)
+	}
 	if sidebarAttention(e.State) {
-		// The only bold text in the section, so the rows that want a human still
-		// win on a monochrome capture where the tint and glyph colour are gone.
 		nameStyle = nameStyle.Bold(true)
 		timeFg = sidebarStateColor(e.State, e.DoneSeen, pal)
 	}
