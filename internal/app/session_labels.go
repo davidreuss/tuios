@@ -4,9 +4,35 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
 
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 )
+
+// sessionIndexSuffix is the " [n]" tail of a session whose identity name ends
+// in digits. Sessions are named session-N, so renaming hides the number a
+// person needs to tell sessions apart; the suffix puts it back. Display only.
+func sessionIndexSuffix(name string) string {
+	i := len(name)
+	for i > 0 && name[i-1] >= '0' && name[i-1] <= '9' {
+		i--
+	}
+	if i == len(name) || i == 0 {
+		return ""
+	}
+	return " [" + name[i:] + "]"
+}
+
+// withSessionIndex appends the identity index to a display title. A title
+// already carrying the suffix, and a title that is the identity name itself,
+// stay untouched: the latter would read "session-1 [1]".
+func withSessionIndex(name, title string) string {
+	suffix := sessionIndexSuffix(name)
+	if suffix == "" || title == "" || title == name || strings.HasSuffix(title, suffix) {
+		return title
+	}
+	return title + suffix
+}
 
 // adoptSessionLabels copies the daemon-owned labels off a state push. They are
 // daemon-exclusive: the client never sends them back (BuildSessionState omits
@@ -42,11 +68,11 @@ func (m *OS) adoptSessionLabels(state *session.SessionState) {
 // otherwise the identity name. Never use it as a key.
 func (m *OS) SessionLabel(name string) string {
 	if name == m.SessionName && m.SessionDisplayName != "" {
-		return m.SessionDisplayName
+		return withSessionIndex(name, m.SessionDisplayName)
 	}
 	if m.DaemonClient != nil {
 		if display, _ := m.DaemonClient.SessionLabel(name); display != "" {
-			return display
+			return withSessionIndex(name, display)
 		}
 	}
 	return name
