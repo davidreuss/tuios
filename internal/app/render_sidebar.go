@@ -711,11 +711,17 @@ func sidebarHeaderRow(label, right string, cw int, pal overlay.Palette) string {
 }
 
 // sidebarHeaderRowRuled is sidebarHeaderRow with the rule that marks a heading.
-// Passing nil settings keeps the old blank gap, which is what the callers that
-// put their own controls in that gap still want.
+// Passing settings draws the section header in full: the label goes uppercase,
+// bold and at full strength, and a rule runs from it to the right edge. Nil
+// settings keep the old quiet look, which is what the callers outside the rail
+// still want.
 func sidebarHeaderRowRuled(label, right string, cw int, pal overlay.Palette, s *config.Settings) string {
+	labelStyle := sidebarStyle(nil, pal.FgMute)
+	if s != nil {
+		labelStyle = sidebarStyle(nil, pal.Fg).Bold(true)
+	}
 	row := sidebarStyle(nil, nil).Render(" ") +
-		sidebarStyle(nil, pal.FgMute).Render(overlay.Truncate(label, max(cw-2, 1)))
+		labelStyle.Render(strings.ToUpper(overlay.Truncate(label, max(cw-2, 1))))
 	rw := lipgloss.Width(right)
 	if s != nil {
 		pad := 1
@@ -1631,7 +1637,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 				recordToken(span, "")
 			}
 		}
-		lines = append(lines, compose(sidebarHeaderRow(label, add, cw, pal)))
+		lines = append(lines, compose(sidebarHeaderRowRuled(label, add, cw, pal, &m.Settings)))
 		// lazygit's excludeBlankColumns, on the rail's right spine. A one-window
 		// session is the common case, so a column that prints "1" against every
 		// row is a column of identical digits carrying nothing. It is dropped
@@ -1713,7 +1719,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 		if hasTermAdd {
 			recordToken(termSpan, shown)
 		}
-		lines = append(lines, compose(sidebarHeaderRow("terminals", right, cw, pal)))
+		lines = append(lines, compose(sidebarHeaderRowRuled("terminals", right, cw, pal, &m.Settings)))
 		if emptyPeek {
 			hint := "no terminals"
 			lines = append(lines, compose(sidebarFit(
@@ -1768,7 +1774,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 	}
 
 	drawGit := func() {
-		lines = append(lines, compose(sidebarHeaderRow("git", "", cw, pal)))
+		lines = append(lines, compose(sidebarHeaderRowRuled("git", "", cw, pal, &m.Settings)))
 		for i := range count[sidebarSectionGit] {
 			idx := start[sidebarSectionGit] + i
 			if idx >= len(gitRows) {
@@ -1792,7 +1798,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 		for _, tk := range tokens {
 			recordToken(tk, "")
 		}
-		lines = append(lines, compose(sidebarHeaderRow("agents", controls, cw, pal)))
+		lines = append(lines, compose(sidebarHeaderRowRuled("agents", controls, cw, pal, &m.Settings)))
 		if emptyFilter {
 			// The hint is about the attached session ("here"), so it carries that
 			// identity: it is a second filter control, and without something to tell
