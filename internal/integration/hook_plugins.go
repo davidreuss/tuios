@@ -165,11 +165,13 @@ func piTurnStart(id, event string, p fields) (Decision, bool) {
 //	agent_start             working
 //	agent_settled           done
 //	tool_call               working, activity: the tool and what it acts on.
-//	                        Nested calls (a codemode script running a tool)
-//	                        are skipped by the extension: the outer tool is
-//	                        what the row should name.
+//	                        Sent by version 3 installs only; version 4
+//	                        reports the task instead of tool churn.
 //	tool_result             working, activity: tool_done or, when isError,
-//	                        tool_failed with the first error text
+//	                        tool_failed with the first error text (version
+//	                        3 installs only)
+//	prompt                  working, activity: the task the turn is on, from
+//	                        before_agent_start's prompt
 //	ui_prompt_start         needs_input: kind approval for a confirm, kind
 //	                        question for a select, input, editor or custom
 //	                        prompt, with the prompt's title
@@ -203,6 +205,11 @@ func translatePi(in Input, p fields) Decision {
 		} else if a := toolActivity(ActivityToolDone, p); a != nil {
 			a.OK = boolPtr(true)
 			r.Activity = a
+		}
+	case "prompt":
+		r.State = "working"
+		if text := activityText(p.str("prompt")); text != "" {
+			r.Activity = &Activity{Event: ActivityPrompt, Text: text}
 		}
 	case "ui_prompt_start":
 		r.State, r.Kind = "needs_input", "question"
