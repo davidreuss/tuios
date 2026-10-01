@@ -10,14 +10,15 @@ import (
 )
 
 // withWorkspaceIndex puts the workspace's number in front of its name, as
-// "n name" — the index convention the rail's session rows share: a quiet
-// number, the one the workspace answers to, drawn ahead of the name it
-// belongs to. Display only.
+// "n: name" — a quiet number, the one the workspace answers to, closed by a
+// colon. The colon is what keeps a workspace index from reading as a session
+// row's, and it is the same colon the location token's [s:w] speaks. Display
+// only.
 func withWorkspaceIndex(name string, ws int) string {
-	if name == "" || name == strconv.Itoa(ws) || strings.HasPrefix(name, strconv.Itoa(ws)+" ") {
+	if name == "" || name == strconv.Itoa(ws) || strings.HasPrefix(name, strconv.Itoa(ws)+": ") {
 		return name
 	}
-	return strconv.Itoa(ws) + " " + name
+	return strconv.Itoa(ws) + ": " + name
 }
 
 // adoptSessionLabels copies the daemon-owned labels off a state push. They are
