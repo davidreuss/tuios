@@ -226,7 +226,6 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	// new reply goes. See detach_client.go.
 	cs.repliedSession = ""
 	cs.sessionName = session.Name()
-	d.recordPresence(session.ID)
 	cs.width = payload.Width
 	cs.height = payload.Height
 	cs.reserve = payload.Reserve
@@ -259,6 +258,9 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	// A client can now see a pull request's state, so an open one is polled
 	// again. With none recorded this is a scan of the sessions and no more.
 	d.kickPRPoll()
+	// Outside cs.mu: calculateEffectiveSize holds clientsMu and takes cs.mu
+	// per client, so a presence write under cs.mu is a lock inversion.
+	d.recordPresence(session.ID)
 
 	// Before the reply, so a pane that probes the moment this client can see
 	// it is already answered for this client's machine.
