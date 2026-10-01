@@ -2443,10 +2443,7 @@ func (m *OS) sidebarAgents(sessions []sessiontree.Node) []sidebarAgentEntry {
 	var agents []sidebarAgentEntry
 	// The same walk SwitchToSessionByIndex does, so the number the token draws
 	// is the number that opens the session.
-	localIndex := make(map[string]int)
-	for i, s := range localSessionNodes(sessions) {
-		localIndex[s.ID] = i + 1
-	}
+	localIndex := localSessionIndexes(sessions)
 	for _, s := range sessions {
 		pr := ""
 		if s.Worktree != nil {
@@ -2950,7 +2947,7 @@ func (m *OS) workspaceTag(ws int) string {
 		}
 		return "[" + strconv.Itoa(ws) + "]"
 	}
-	return "w" + strconv.Itoa(ws)
+	return "[" + strconv.Itoa(ws) + "]"
 }
 
 // sidebarWorkspaceTagMax caps a named workspace's tag so the name it fronts can
