@@ -83,12 +83,10 @@ func (m *OS) OpenLink(rawURL string) tea.Cmd {
 	// Our own scheme resolves in-process, so a link tuios itself renders —
 	// in a pane, a dock cell, a pi widget — focuses the pane it names. It
 	// never reaches the desktop's URL handler, so nothing has to be
-	// registered for this to work.
+	// registered for this to work. A dead target is already reported by the
+	// jump itself, so this branch adds no message of its own.
 	if target, ok := tuiosLinkTarget(rawURL); ok {
-		if m.jumpToNotifTarget(target) {
-			return nil
-		}
-		m.ShowNotification("That pane is gone.", "info", m.Settings.NotificationDuration)
+		m.jumpToNotifTarget(target)
 		return nil
 	}
 
