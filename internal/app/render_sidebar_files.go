@@ -160,11 +160,13 @@ func (m *OS) sidebarFileRows() []fileRowSpec {
 
 // sidebarFilesHeaderCd places the header's cd control on the same spine every
 // other trailing figure lands on, one cell in from the rail's edge, and says
-// which columns it took. It is drawn only when there is a pane the cd could
-// mean, and refused when the header has no room for it beside its own label,
-// since half a control is half a click target.
+// which columns it took. It is drawn only when the listing is steered away
+// from a pane that could take the cd: a listing that follows the pane's
+// directory already is there, and both words would be no-ops. It is refused
+// when the header has no room for it beside its own label, since half a
+// control is half a click target.
 func (m *OS) sidebarFilesHeaderCd(cw int, pal overlay.Palette, hoverX int, cursor bool) (string, sidebarTokenSpan, bool) {
-	if m.fileViewOriginWindow() == nil || m.filesView.Elsewhere != "" {
+	if !m.filesView.Pinned || m.fileViewOriginWindow() == nil || m.filesView.Elsewhere != "" {
 		return "", sidebarTokenSpan{}, false
 	}
 	tw := lipgloss.Width(fileTokenCd)
@@ -182,10 +184,11 @@ func (m *OS) sidebarFilesHeaderCd(cw int, pal overlay.Palette, hoverX int, curso
 
 // sidebarFilesHeaderReturn places the return control left of the cd control,
 // or at the rail's edge when there is no cd control to sit beside. It is drawn
-// whenever the listing belongs to a pane, the same gate cd has: the pair reads
-// as one unit, take the pane there and come back.
+// under the same gate cd has, the listing steered away from its pane: back
+// gives a steered listing back, and a following one is not steered. The pair
+// reads as one unit, take the pane there and come back.
 func (m *OS) sidebarFilesHeaderReturn(hasCd bool, cdX0 int, cw int, pal overlay.Palette, hoverX int, cursor bool) (string, sidebarTokenSpan, bool) {
-	if m.fileViewOriginWindow() == nil {
+	if !m.filesView.Pinned || m.fileViewOriginWindow() == nil || m.filesView.Elsewhere != "" {
 		return "", sidebarTokenSpan{}, false
 	}
 	tw := lipgloss.Width(fileTokenReturn)
