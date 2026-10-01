@@ -2435,13 +2435,19 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 		s.tokens = append(s.tokens, railToken{Cost: sidebarFigureCost(f), Right: true})
 	}
 	titleW := lipgloss.Width(title)
-	// The session index leads the name, in the rail's index convention: a dim
-	// bracketed number, the one switch_session_N opens. Remote sessions have
-	// no number on this machine and wear none.
+	// The session index leads the name, in the rail's index convention: a
+	// quiet number in the session's own colour, the one switch_session_N
+	// opens. The tint is the gutter mark's, so the row is found by its colour
+	// twice, and an untinted session falls back to the chrome ink. Remote
+	// sessions have no number on this machine and wear none.
 	mark, markW := "", 0
 	if sessionIdx > 0 {
-		mark = sidebarStyle(rowBg, pal.FgMute).Render("["+strconv.Itoa(sessionIdx)+"] ")
-		markW = 3 + len(strconv.Itoa(sessionIdx))
+		markInk := pal.FgMute
+		if tint != nil {
+			markInk = tint
+		}
+		mark = sidebarStyle(rowBg, markInk).Render(strconv.Itoa(sessionIdx) + " ")
+		markW = len(strconv.Itoa(sessionIdx)) + 1
 	}
 	keep, avail := railRowFitInto(s.keep, titleW, railNameKeep(titleW), s.tokens, sidebarNameAvailIn(cw, 0, indent)-markW)
 	s.keep = keep

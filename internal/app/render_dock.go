@@ -71,6 +71,10 @@ func workspacePill(label string, active, dragged bool, pal overlay.Palette, s *c
 	// sequences around it.
 	lc, rc := s.GetDockWorkspaceCapLeft(), s.GetDockWorkspaceCapRight()
 	pill := body.Render(" " + label + " ")
+	if mark, rest, ok := indexSplit(label); ok {
+		quiet := sidebarStyle(ground, theme.Readable(pal.FgMute, ground))
+		pill = body.Render(" ") + quiet.Render(mark) + body.Render(" " + rest + " ")
+	}
 	if lc == "" && rc == "" {
 		return pill
 	}
@@ -83,6 +87,29 @@ func workspacePill(label string, active, dragged bool, pal overlay.Palette, s *c
 	}
 	caps := lipgloss.NewStyle().Foreground(ground)
 	return caps.Render(lc) + pill + caps.Render(rc)
+}
+
+// indexSplit cuts a pill label into a leading index and the name it belongs
+// to. The label is the workspace's "n name" form, or whatever a custom tab
+// format made of it, so only a label that opens with bare digits splits; a
+// workspace named "2 fast" through a {name}-only format is misread once, and
+// the misreading costs it a dimmer first word and nothing else.
+func indexSplit(label string) (mark, rest string, ok bool) {
+	mark, rest, found := strings.Cut(label, " ")
+	if !found || rest == "" || !isIndexDigits(mark) {
+		return "", "", false
+	}
+	return mark, rest, true
+}
+
+// isIndexDigits reports whether s is one or more ASCII digits.
+func isIndexDigits(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 // renderDockWorkspaceStrip draws the strip starting at column startX and records
