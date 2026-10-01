@@ -256,6 +256,9 @@ func (m *OS) sidebarSignature() uint64 {
 	// depend on it, so a focus change or a cursor move must rebuild.
 	mixB(m.sidebarRailFocused())
 	mixI(m.SidebarCursor)
+	// A pending prefix chord swaps the session rows' gutter marks for their
+	// switch numbers, and the chord resolving puts the marks back.
+	mixB(m.PrefixActive)
 
 	// The switch numbers are drawn state, on while show_numbers is set.
 	mixB(m.Settings.SidebarShowNumbers)
