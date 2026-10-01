@@ -2440,7 +2440,8 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	// Remote sessions have no number on this machine and wear none.
 	mark, markW := "", 0
 	if sessionIdx > 0 {
-		mark = sidebarStyle(rowBg, pal.FgMute).Render(strconv.Itoa(sessionIdx) + " ")
+		mark = sidebarStyle(rowBg, pal.FgMute).Bold(node.IsCurrent).
+			Render(strconv.Itoa(sessionIdx) + " ")
 		markW = len(strconv.Itoa(sessionIdx)) + 1
 	}
 	keep, avail := railRowFitInto(s.keep, titleW, railNameKeep(titleW), s.tokens, sidebarNameAvailIn(cw, 0, indent)-markW)
