@@ -998,16 +998,6 @@ func (m *OS) FileBackDir() string {
 	return m.fileBack[len(m.fileBack)-1]
 }
 
-func (m *OS) FileViewReturn() tea.Cmd {
-	if !m.filesOn() || m.filesView.Origin == "" || !m.filesView.Pinned {
-		return nil
-	}
-	m.filesView.Pinned = false
-	if cmd := m.FilesSyncCmd(); cmd != nil {
-		return cmd
-	}
-	return m.RefreshFileView()
-}
 
 // FileViewBack walks the listing back to the directory it was showing before
 // the last step. The cursor lands on the folder just left, the same courtesy
@@ -1022,6 +1012,22 @@ func (m *OS) FileViewBack() tea.Cmd {
 	cmd := m.requestFileList(dir, m.filesView.Origin, true)
 	m.followFileRow(filepath.Base(left))
 	return cmd
+}
+
+// FileViewReturn gives the listing back to the pane. A pinned listing stops
+// following the pane's cwd; returning unpins it and asks for the pane's
+// directory again, after which the sync keeps it following. The fresh read
+// runs even when the two already agree, so the control always shows the pane's
+// current answer.
+func (m *OS) FileViewReturn() tea.Cmd {
+	if !m.filesOn() || m.filesView.Origin == "" || !m.filesView.Pinned {
+		return nil
+	}
+	m.filesView.Pinned = false
+	if cmd := m.FilesSyncCmd(); cmd != nil {
+		return cmd
+	}
+	return m.RefreshFileView()
 }
 
 // FileViewCd sends a cd to the pane the section was opened from, for the

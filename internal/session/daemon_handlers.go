@@ -149,7 +149,12 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	}
 
 	if payload.SessionName == "" {
-		session, created, err = d.manager.GetDefaultSession(cfg, payload.Width, payload.Height)
+		// The last session a client was on, falling back to activity. Only nil
+		// when the daemon has no sessions, so the default still gets created.
+		session = d.findTargetSession(cs, "")
+		if session == nil {
+			session, err = d.manager.GetDefaultSession(cfg, payload.Width, payload.Height)
+		}
 	} else if payload.CreateNew {
 		session, created, err = d.manager.GetOrCreateSession(payload.SessionName, cfg, payload.Width, payload.Height)
 	} else {
