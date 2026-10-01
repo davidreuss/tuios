@@ -55,6 +55,15 @@
     }
   },
   {
+    "name": "prompt names the task",
+    "payload": {"hook_event_name": "prompt", "session_id": "pi-1", "prompt": "fix the login bug\nand add a regression test"},
+    "want": {
+      "state": "working",
+      "agent_session_id": "pi-1",
+      "activity": {"event": "prompt", "text": "fix the login bug"}
+    }
+  },
+  {
     "name": "tool_result with no tool name",
     "payload": {"hook_event_name": "tool_result", "session_id": "pi-1", "tool_input": {}, "is_error": false},
     "want": {
