@@ -61,7 +61,7 @@ import (
 // gh, and nothing when there is none. $now, $prompt and $context draw the raw
 // value on any row. progress draws "40%", the progress of the pane's OSC 7501
 // report, while the program works or waits, on the identity line.
-var SidebarAgentRowTokens = []string{"harness", "name", "state", "progress", "elapsed", "need", "now", "prompt", "context", "subagents", "pr", "meta", "message", "session", "host", "workspace"}
+var SidebarAgentRowTokens = []string{"harness", "name", "state", "progress", "elapsed", "need", "now", "prompt", "context", "subagents", "pr", "meta", "message", "session", "host", "workspace", "location"}
 
 // SidebarAgentRowDefaultTokens is the row as it ships. state and host are left
 // out because both have a value on every row and the glyph already says the
@@ -74,10 +74,12 @@ var SidebarAgentRowTokens = []string{"harness", "name", "state", "progress", "el
 // reported through set-agent-meta, which is nothing unless a hook or
 // statusline feed writes it, and now what a working agent is doing ("Bash: go
 // test ./..."). workspace rides after elapsed: it draws a named workspace's
-// name, and nothing when the workspace has no name. now comes last because the
+// name, and nothing when the workspace has no name. location rides after that:
+// it draws the pane's address as [session:workspace], the numbers the switch
+// keys use, and nothing when either half is unknown. now comes last because the
 // line cuts its last token first, and a long command is what can best lose its
 // tail.
-var SidebarAgentRowDefaultTokens = []string{"session", "need", "harness", "name", "progress", "elapsed", "workspace", "context", "subagents", "pr", "meta", "now", "message"}
+var SidebarAgentRowDefaultTokens = []string{"session", "need", "harness", "name", "progress", "elapsed", "workspace", "location", "context", "subagents", "pr", "meta", "now", "message"}
 
 // SidebarContextWarnAt is the percent of its context window an agent must be
 // using before the context token draws. Below it the figure is noise on a
