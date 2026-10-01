@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Gaurav-Gosain/tuios/internal/terminal"
@@ -84,3 +85,55 @@ func TestLastPaneDeadTarget(t *testing.T) {
 }
 
 // TestTuiosLinkTarget checks the two URI shapes the wait bar links with, and
+// that foreign schemes and malformed paths pass through unclaimed.
+func TestTuiosLinkTarget(t *testing.T) {
+	cases := []struct {
+		url  string
+		want NotifTarget
+		ok   bool
+	}{
+		{"tuios://window/abc", NotifTarget{WindowID: "abc"}, true},
+		{"tuios://session/main/window/abc", NotifTarget{SessionID: "main", WindowID: "abc"}, true},
+		{"tuios://session/main/window/abc?label=x", NotifTarget{SessionID: "main", WindowID: "abc"}, true},
+		{"https://example.com", NotifTarget{}, false},
+		{"tuios://window/", NotifTarget{}, false},
+		{"tuios://session/main", NotifTarget{}, false},
+		{"tuios://pane/abc", NotifTarget{}, false},
+		{"file:///tmp/x", NotifTarget{}, false},
+	}
+	for _, tc := range cases {
+		got, ok := tuiosLinkTarget(tc.url)
+		if ok != tc.ok || got != tc.want {
+			t.Errorf("tuiosLinkTarget(%q) = %+v, %v; want %+v, %v", tc.url, got, ok, tc.want, tc.ok)
+		}
+	}
+}
+
+// TestOpenLinkTuiosURIFocuses checks the runtime half of the wait bar's click
+// path: OpenLink on our own scheme focuses the named pane in-process, and a
+// dead target reports the miss instead of moving.
+func TestOpenLinkTuiosURIFocuses(t *testing.T) {
+	m := lastPaneTestOS(t)
+
+	m.OpenLink("tuios://window/two")
+	if m.FocusedWindow != 1 {
+		t.Fatalf("focus = %d, want the pane the link named", m.FocusedWindow)
+	}
+
+	m.OpenLink("tuios://window/ghost")
+	if m.FocusedWindow != 1 {
+		t.Fatalf("a dead link moved focus to %d", m.FocusedWindow)
+	}
+	found := false
+	for _, n := range m.Notifications {
+		if strings.Contains(n.Message, "closed") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("no notification about the dead pane, got %v", m.Notifications)
+	}
+	if len(m.Notifications) != 1 {
+		t.Fatalf("dead pane produced %d notifications, want one (the jump's own)", len(m.Notifications))
+	}
+}

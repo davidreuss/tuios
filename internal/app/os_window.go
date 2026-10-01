@@ -403,6 +403,7 @@ func (m *OS) FocusWindow(i int) *OS {
 	// Leaving an agent pane is when the person looked away from it.
 	if oldFocused >= 0 && oldFocused < len(m.Windows) {
 		m.markAgentSeenAt(m.Windows[oldFocused])
+		m.PrevFocusedID = m.Windows[oldFocused].ID
 	}
 
 	// ATOMIC: Set focus and Z-index in one operation
