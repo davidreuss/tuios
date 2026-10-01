@@ -464,6 +464,10 @@ type sidebarAgentEntry struct {
 	// Workspace is the pane's workspace number, 0 when the wire did not say.
 	// The workspace token draws it as the quiet right-hand mark.
 	Workspace int
+	// SessionIndex is the session's 1-based position in the local rail, the
+	// number switch_session_N opens. 0 when the session is not local, so no
+	// number on this machine reaches it.
+	SessionIndex int
 }
 
 // sidebarTerminalEntry is one pane of the session the terminals section is
@@ -2093,6 +2097,12 @@ func (m *OS) sidebarAgents(sessions []sessiontree.Node) []sidebarAgentEntry {
 		return nil
 	}
 	var agents []sidebarAgentEntry
+	// The same walk SwitchToSessionByIndex does, so the number the token draws
+	// is the number that opens the session.
+	localIndex := make(map[string]int)
+	for i, s := range localSessionNodes(sessions) {
+		localIndex[s.ID] = i + 1
+	}
 	for _, s := range sessions {
 		for _, win := range s.Children {
 			if win.AgentState == "" {
@@ -2117,6 +2127,7 @@ func (m *OS) sidebarAgents(sessions []sessiontree.Node) []sidebarAgentEntry {
 				Queued:       win.Queued,
 				Subagents:    win.Subagents,
 				WindowIndex:  idx,
+				SessionIndex: localIndex[s.ID],
 				Foreign:      !s.IsCurrent,
 				Host:         s.Host,
 				Focused:      s.IsCurrent && win.IsCurrent,
