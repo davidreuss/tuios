@@ -422,7 +422,7 @@ func (m *OS) takeZoomRelayout() bool {
 // is not in a layout to be zoomed inside of.
 func (m *OS) zoomUsesLayout(w *terminal.Window) bool {
 	return m.zoomSize() < 100 &&
-		m.AutoTiling && w != nil && !w.IsFloating
+		m.AutoTiling && !m.UseStackedLayout && w != nil && !w.IsFloating
 }
 
 // ZoomFollowsFocus moves the workspace's zoom onto the pane the focus has just

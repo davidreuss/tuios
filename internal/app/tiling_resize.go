@@ -12,7 +12,7 @@ import (
 // ResizeFocusedWindowHeight resizes the focused window's height by moving the BOTTOM edge
 // delta is in pixels (positive = grow, negative = shrink)
 func (m *OS) ResizeFocusedWindowHeight(deltaPixels int) {
-	if !m.AutoTiling || m.FocusedWindow < 0 || m.FocusedWindow >= len(m.Windows) {
+	if !m.AutoTiling || m.UseStackedLayout || m.FocusedWindow < 0 || m.FocusedWindow >= len(m.Windows) {
 		return
 	}
 
@@ -50,7 +50,7 @@ func (m *OS) ResizeFocusedWindowHeight(deltaPixels int) {
 // ResizeFocusedWindowWidth resizes the focused window's width by moving the RIGHT edge
 // delta is in pixels (positive = grow right, negative = shrink left)
 func (m *OS) ResizeFocusedWindowWidth(deltaPixels int) {
-	if !m.AutoTiling || m.FocusedWindow < 0 || m.FocusedWindow >= len(m.Windows) {
+	if !m.AutoTiling || m.UseStackedLayout || m.FocusedWindow < 0 || m.FocusedWindow >= len(m.Windows) {
 		return
 	}
 
@@ -93,7 +93,7 @@ func (m *OS) ResizeFocusedWindowWidth(deltaPixels int) {
 // ResizeFocusedWindowWidthLeft resizes the focused window's width by moving the LEFT edge
 // delta is in pixels (positive = shrink from left, negative = grow from left)
 func (m *OS) ResizeFocusedWindowWidthLeft(deltaPixels int) {
-	if !m.AutoTiling || m.FocusedWindow < 0 || m.FocusedWindow >= len(m.Windows) {
+	if !m.AutoTiling || m.UseStackedLayout || m.FocusedWindow < 0 || m.FocusedWindow >= len(m.Windows) {
 		return
 	}
 
@@ -128,7 +128,7 @@ func (m *OS) ResizeFocusedWindowWidthLeft(deltaPixels int) {
 // ResizeFocusedWindowHeightTop resizes the focused window's height by moving the TOP edge
 // delta is in pixels (positive = shrink from top, negative = grow from top)
 func (m *OS) ResizeFocusedWindowHeightTop(deltaPixels int) {
-	if !m.AutoTiling || m.FocusedWindow < 0 || m.FocusedWindow >= len(m.Windows) {
+	if !m.AutoTiling || m.UseStackedLayout || m.FocusedWindow < 0 || m.FocusedWindow >= len(m.Windows) {
 		return
 	}
 
