@@ -2435,11 +2435,15 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 		s.tokens = append(s.tokens, railToken{Cost: sidebarFigureCost(f), Right: true})
 	}
 	titleW := lipgloss.Width(title)
-	// While a prefix chord is pending the gutter mark gives its cell to the
-	// session's switch number, and hands it back when the chord resolves.
-	// Remote sessions have no number on this machine and keep their marks.
-	chord := m.PrefixActive && sessionIdx > 0
-	keep, avail := railRowFitInto(s.keep, titleW, railNameKeep(titleW), s.tokens, sidebarNameAvailIn(cw, 0, indent))
+	// The session index leads the name: a muted number, the one
+	// switch_session_N opens, styled like the other chrome the row carries.
+	// Remote sessions have no number on this machine and wear none.
+	mark, markW := "", 0
+	if sessionIdx > 0 {
+		mark = sidebarStyle(rowBg, pal.FgMute).Render(strconv.Itoa(sessionIdx) + " ")
+		markW = len(strconv.Itoa(sessionIdx)) + 1
+	}
+	keep, avail := railRowFitInto(s.keep, titleW, railNameKeep(titleW), s.tokens, sidebarNameAvailIn(cw, 0, indent)-markW)
 	s.keep = keep
 	branch := ""
 	if keep[0] {
@@ -2449,19 +2453,12 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	// The attached session's name is bold. The gutter mark is too quiet a
 	// signal to find "which one am I on" in, and weight on the name is the
 	// one emphasis every row already speaks.
-	name := sidebarStyle(rowBg, fg).Bold(node.IsCurrent || sidebarAttention(node.AgentState)).
+	name := mark + sidebarStyle(rowBg, fg).Bold(node.IsCurrent || sidebarAttention(node.AgentState)).
 		Render(m.sidebarMarquee("s:"+node.ID, title, max(avail, 1), st.Cursor)) + branch
 
 	gutter := sidebarGutterTinted(node.IsCurrent, node.AgentState, tint, rowBg, pal, &m.Settings)
 	if tint != nil && stated && !node.IsCurrent && !sidebarAttention(node.AgentState) {
 		gutter = sidebarStyle(rowBg, tint).Render(accentMark())
-	}
-	if chord {
-		gutterInk := pal.FgMute
-		if node.IsCurrent && tint != nil {
-			gutterInk = tint
-		}
-		gutter = sidebarStyle(rowBg, gutterInk).Render(strconv.Itoa(sessionIdx))
 	}
 	return sidebarComposeGroupRow(indent, gutter, glyph, name, right, cw, rowBg)
 }
