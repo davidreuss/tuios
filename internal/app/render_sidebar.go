@@ -2951,9 +2951,9 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	// The attached session's name is bold. The gutter mark is too quiet a
 	// signal to find "which one am I on" in, and weight on the name is the
 	// one emphasis every row already speaks.
-	name := sidebarStyle(rowBg, fg).Bold(node.IsCurrent || sidebarAttention(node.AgentState)).Render(shown) + branch
+	name := mark + sidebarStyle(rowBg, fg).Bold(node.IsCurrent || sidebarAttention(node.AgentState)).Render(shown) + branch
 	if nameMarked {
-		name = railCurrentName(shown, tint, rowBg, pal, &m.Settings) + branch
+		name = mark + railCurrentName(shown, tint, rowBg, pal, &m.Settings) + branch
 	}
 
 	gutter := sidebarGutterTinted(node.IsCurrent, node.AgentState, tint, rowBg, pal, &m.Settings)
@@ -2962,13 +2962,6 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	}
 	if tint != nil && stated && !node.IsCurrent && !sidebarAttention(node.AgentState) {
 		gutter = sidebarStyle(rowBg, tint).Render(accentMark())
-	}
-	if m.PrefixActive {
-		gutterInk := pal.FgMute
-		if node.IsCurrent && tint != nil {
-			gutterInk = tint
-		}
-		gutter = sidebarStyle(rowBg, gutterInk).Render(strconv.Itoa(sessionIdx))
 	}
 	row := sidebarComposeGroupRow(indent, gutter, glyph, name, right, cw, rowBg)
 	return pal.Mark(row, overlay.RowState{Cursor: node.IsCurrent && !st.Cursor})
