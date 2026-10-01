@@ -2814,19 +2814,12 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	// The attached session's name is bold. The gutter mark is too quiet a
 	// signal to find "which one am I on" in, and weight on the name is the
 	// one emphasis every row already speaks.
-	name := sidebarStyle(rowBg, fg).Bold(node.IsCurrent || sidebarAttention(node.AgentState)).
+	name := mark + sidebarStyle(rowBg, fg).Bold(node.IsCurrent || sidebarAttention(node.AgentState)).
 		Render(m.sidebarMarquee("s:"+node.ID, title, max(avail, 1), st.Cursor)) + branch
 
 	gutter := sidebarGutterTinted(node.IsCurrent, node.AgentState, tint, rowBg, pal, &m.Settings)
 	if tint != nil && stated && !node.IsCurrent && !sidebarAttention(node.AgentState) {
 		gutter = sidebarStyle(rowBg, tint).Render(accentMark())
-	}
-	if chord {
-		gutterInk := pal.FgMute
-		if node.IsCurrent && tint != nil {
-			gutterInk = tint
-		}
-		gutter = sidebarStyle(rowBg, gutterInk).Render(strconv.Itoa(sessionIdx))
 	}
 	return sidebarComposeGroupRow(indent, gutter, glyph, name, right, cw, rowBg)
 }
