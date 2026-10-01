@@ -184,7 +184,6 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	cs.mu.Lock()
 	previousSession := cs.sessionID
 	cs.sessionID = session.ID
-	d.recordPresence(session.ID)
 	cs.width = payload.Width
 	cs.height = payload.Height
 	cs.reserve = payload.Reserve
@@ -195,6 +194,9 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	cs.humanNonce = humanNonce
 	cs.missedStateSync = false
 	cs.mu.Unlock()
+	// Outside cs.mu: calculateEffectiveSize holds clientsMu and takes cs.mu
+	// per client, so a presence write under cs.mu is a lock inversion.
+	d.recordPresence(session.ID)
 
 	// Before the reply, so a pane that probes the moment this client can see
 	// it is already answered for this client's machine.
