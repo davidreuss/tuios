@@ -9,15 +9,14 @@ import (
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 )
 
-// withWorkspaceIndex appends the workspace number to a workspace's name, as
-// "name [n]". The number is what an unnamed workspace already shows, so a
-// named one keeps it in reach; the switcher prints the number itself and is
-// not given the suffix. Display only.
+// withWorkspaceIndex puts the workspace's number in front of its name, as
+// "[n] name" — the index convention the rail's session rows share: a dim
+// bracketed number, the one the workspace answers to. Display only.
 func withWorkspaceIndex(name string, ws int) string {
-	if name == "" || name == strconv.Itoa(ws) || strings.HasSuffix(name, " ["+strconv.Itoa(ws)+"]") {
+	if name == "" || name == strconv.Itoa(ws) || strings.HasPrefix(name, "["+strconv.Itoa(ws)+"] ") {
 		return name
 	}
-	return name + " [" + strconv.Itoa(ws) + "]"
+	return "[" + strconv.Itoa(ws) + "] " + name
 }
 
 // adoptSessionLabels copies the daemon-owned labels off a state push. They are
