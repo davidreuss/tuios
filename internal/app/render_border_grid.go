@@ -12,6 +12,7 @@ import (
 
 	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/layout"
+	"github.com/Gaurav-Gosain/tuios/internal/overlay"
 	"github.com/Gaurav-Gosain/tuios/internal/terminal"
 	"github.com/Gaurav-Gosain/tuios/internal/theme"
 )
@@ -377,13 +378,54 @@ func (m *OS) renderSeparatorOverlay() []*lipgloss.Layer {
 		bounds: bounds, viewW: viewW, viewH: viewH,
 		rules: rules, border: border, focus: focus,
 		unfocused: unfocusedStr, focused: focusedStr,
+		stackedTitles: m.stackedBarTitles(),
 	}
 	if memo := &m.separatorMemo; memo.valid && memo.key == key &&
 		slices.Equal(memo.splits, splits) && slices.Equal(memo.stack, stack) {
 		return memo.layers
 	}
 	layers := m.buildSeparatorLayers(splits, stack, key)
+	layers = append(layers, m.stackedBarTitleLayers()...)
 	m.separatorMemo = separatorMemo{valid: true, key: key, splits: splits, stack: stack, layers: layers}
+	return layers
+}
+
+// stackedBarTitles joins the collapsed bars' titles for the overlay memo key,
+// so a rename redraws the bar layers like any other overlay input.
+func (m *OS) stackedBarTitles() string {
+	if !m.UseStackedLayout || !m.AutoTiling {
+		return ""
+	}
+	var titles []string
+	for _, w := range m.visibleTiledWindows() {
+		if w.Height == 1 {
+			titles = append(titles, w.Title())
+		}
+	}
+	return strings.Join(titles, "\x00")
+}
+
+// stackedBarTitleLayers paints each collapsed bar's title onto its own row.
+//
+// A collapsed stacked pane is a one-row borderless rect; the dividers above and
+// below it come from the ordinary split pass, but nothing else names it. The
+// title is all the bar is for. The memo key already carries the pane titles
+// (stackedTitles), so a rename redraws these like any other input.
+func (m *OS) stackedBarTitleLayers() []*lipgloss.Layer {
+	if !m.UseStackedLayout || !m.AutoTiling {
+		return nil
+	}
+	color := theme.BorderUnfocusedOn(m.host.bg)
+	var layers []*lipgloss.Layer
+	for _, w := range m.visibleTiledWindows() {
+		if w.Height != 1 {
+			continue
+		}
+		text := " " + overlay.Truncate(w.Title(), max(w.Width-3, 1)) + " "
+		layers = append(layers, lipgloss.NewLayer(sgrForeground(color)+text+"\x1b[0m").
+			X(w.X).Y(w.Y).Z(config.ZIndexSeparators).
+			ID(fmt.Sprintf("stacked-bar-%s", w.ID)))
+	}
 	return layers
 }
 
@@ -398,6 +440,7 @@ type separatorKey struct {
 	border             lipgloss.Border
 	focus              borderPerimeter
 	unfocused, focused string
+	stackedTitles      string
 }
 
 // separatorMemo is the last divider overlay drawn and what it was drawn from.
