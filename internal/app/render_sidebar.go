@@ -2575,7 +2575,7 @@ const sidebarHostTagFloor = 8
 
 // workspaceTag is the quiet right-hand mark saying which workspace a pane sits
 // on. A named workspace says its name, because that is the thing the user gave
-// it to be recognised by; an unnamed one keeps the "w4" form, where the bare
+// it to be recognised by; an unnamed one keeps the bracketed number, where the bare
 // digit would read as a session row's window count on the line above. A name
 // too long for the tag says only its index: a cut-off name ("WORKWOR…") is
 // noise where the bare index still points at the pill it belongs to.
