@@ -34,7 +34,7 @@ const fileTokenCd = "cd"
 // fileTokenReturn is the header control that gives a steered listing back to
 // the pane: unpin it and ask for the pane's directory again. A word like its
 // neighbour cd, for the same reason.
-const fileTokenReturn = "return"
+const fileTokenReturn = "back"
 
 // fileSpoofRow is the listing's own mark for a folder the pane named and /proc
 // contradicted: the names are still there, and nothing on them can be changed.
@@ -177,7 +177,7 @@ func (m *OS) sidebarFilesHeaderCd(cw int, pal overlay.Palette, hoverX int, curso
 	if cursor || (hoverX >= span.X0 && hoverX < span.X1) {
 		ink = pal.Fg
 	}
-	return sidebarStyle(nil, ink).Render(fileTokenCd), span, true
+	return sidebarStyle(nil, ink).Underline(true).Render(fileTokenCd), span, true
 }
 
 // sidebarFilesHeaderReturn places the return control left of the cd control,
@@ -202,7 +202,7 @@ func (m *OS) sidebarFilesHeaderReturn(hasCd bool, cdX0 int, cw int, pal overlay.
 	if cursor || (hoverX >= span.X0 && hoverX < span.X1) {
 		ink = pal.Fg
 	}
-	return sidebarStyle(nil, ink).Render(fileTokenReturn), span, true
+	return sidebarStyle(nil, ink).Underline(true).Render(fileTokenReturn), span, true
 }
 
 // sidebarFilesHeaderRow is the section's one line of chrome: the label, the
