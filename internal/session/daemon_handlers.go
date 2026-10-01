@@ -153,7 +153,7 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 		// when the daemon has no sessions, so the default still gets created.
 		session = d.findTargetSession(cs, "")
 		if session == nil {
-			session, err = d.manager.GetDefaultSession(cfg, payload.Width, payload.Height)
+			session, created, err = d.manager.GetDefaultSession(cfg, payload.Width, payload.Height)
 		}
 	} else if payload.CreateNew {
 		session, created, err = d.manager.GetOrCreateSession(payload.SessionName, cfg, payload.Width, payload.Height)
