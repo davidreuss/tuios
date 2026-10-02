@@ -293,6 +293,7 @@ type AppearanceConfig struct {
 	ZenMode                  string                  `toml:"zen_mode"`                     // Zen mode: disabled, always, mouse (default: disabled)
 	Links                    string                  `toml:"links"`                        // Links tuios acts on: off, marked, all (default: all)
 	LinkClick                string                  `toml:"link_click"`                   // The click that opens a link: both, ctrl, shift, off (default: both)
+	LinkLabel                bool                    `toml:"link_label"`                   // Pop up a label naming the address of the link under the pointer (default: true)
 	LinkOpener               string                  `toml:"link_opener"`                  // Command that opens a web link; empty uses $BROWSER, then the system opener
 	HideWindowButtons        bool                    `toml:"hide_window_buttons"`          // Hide window control buttons (minimize, maximize, close)
 	WindowButtonStyle        string                  `toml:"window_button_style"`          // Window control style: pill, dots (default: dots)
@@ -866,6 +867,7 @@ func DefaultConfig() *UserConfig {
 			ZenMode:                  ZenModeDisabled,
 			Links:                    LinksAll,
 			LinkClick:                LinkClickBoth,
+			LinkLabel:                true,
 			HideWindowButtons:        false,
 			WindowButtonStyle:        WindowButtonStyleDots,
 			WindowButtonPosition:     WindowButtonPositionLeft,
