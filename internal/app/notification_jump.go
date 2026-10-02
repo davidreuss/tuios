@@ -81,12 +81,12 @@ func (m *OS) jumpToNotifTarget(t NotifTarget) bool {
 	// The version notice is answered with the restart dialog.
 	if t.DaemonRestart {
 		m.OpenDaemonRestart()
-		return
+		return true
 	}
 	// An integration notice is answered with the question that installs.
 	if t.AgentInstall != "" {
 		m.installFromNotice(t.AgentInstall)
-		return
+		return true
 	}
 	// A message about mail lands on the thread, where the reply is, rather than
 	// on the pane that wrote. The marking read it may need is queued, since
