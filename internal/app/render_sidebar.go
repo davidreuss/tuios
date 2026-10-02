@@ -1887,7 +1887,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			if idx >= len(customRows) {
 				break
 			}
-			st := m.railRowState(idx == hoverRow[sidebarSectionCustom], false)
+			st := m.railRowState(idx == hoverRow[sidebarSectionCustom], false, false)
 			lines = append(lines, compose(st.mark(pal, m.sidebarCustomRow(customRows[idx], cw, pal, st))))
 		}
 		if h := hidden[sidebarSectionCustom]; h > 0 {
