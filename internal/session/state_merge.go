@@ -171,6 +171,13 @@ func retainDaemonExclusive(incoming, canonical *SessionState) {
 		}
 	}
 
+	// The per-workspace layout modes are unioned on the same terms and for the
+	// same reason. A client only holds an entry for a workspace it has been told
+	// about or chose a layout on, so replacing the set would drop the choice for
+	// every workspace the pushing client never heard of: an older client attached
+	// to the same session would wipe every choice out of the daemon with one
+	// push, and the next client to attach would find none of them.
+
 	cwds := make(map[string]string, len(canonical.Windows))
 	// The foreground command is read daemon-side on the detector's poll and no
 	// client ever sends it, so canonical is always the truth: carrying it over by
