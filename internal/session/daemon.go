@@ -65,6 +65,12 @@ type Daemon struct {
 	// Connection tracking
 	clients   map[string]*connState
 	clientsMu sync.RWMutex
+	// lastPresence records when a client last attached to or detached from a
+	// session, by session ID. Bare attach prefers it: the session someone was
+	// last looking at is the one they mean to come back to, and keystrokes
+	// agents and scripts type into other sessions' panes must not outrank
+	// it. See lastWatchedSession.
+	lastPresence map[string]time.Time
 
 	// layoutMu serialises the recalculation of what a session measures (its
 	// effective size and its chrome reserve) so that a read over every client
@@ -759,6 +765,7 @@ func NewDaemon(cfg *DaemonConfig) *Daemon {
 
 	d := &Daemon{
 		manager:            NewManager(),
+		lastPresence:       make(map[string]time.Time),
 		instance:           uuid.NewString(),
 		ctx:                ctx,
 		cancel:             cancel,
@@ -1084,6 +1091,7 @@ func (d *Daemon) onSessionRenamed(s *Session, old string) {
 // client sits in a dead session with no way to learn what happened.
 func (d *Daemon) onSessionDeleted(s *Session) {
 	d.forgetLatest(s.ID)
+	d.forgetPresence(s.ID)
 	d.herdrWorkspaceMeta.forget(s.ID)
 	d.events.publish(streamEvent{Type: EventSessionClosed, Session: s.Name()})
 	// A session with no windows has no inboxes, so its ring is dropped with it.

@@ -289,7 +289,33 @@ func (d *Daemon) routeToTUISync(tui *connState, requestID string, cmd *RemoteCom
 	}
 }
 
-// findTargetSession finds a session by name, or returns the most recently active session.
+// lastWatchedSession returns the session a client was last attached to: the
+// one the person was looking at when they left. Activity cannot decide this,
+// because keystrokes from agents and scripts land in sessions nobody is
+// watching. Sessions the daemon resurrected after a restart have no recorded
+// presence until a client attaches.
+func (d *Daemon) lastWatchedSession() *Session {
+	d.clientsMu.RLock()
+	var lastSeen time.Time
+	var byPresence string
+	for id, at := range d.lastPresence {
+		if at.After(lastSeen) && d.manager.GetSessionByID(id) != nil {
+			lastSeen = at
+			byPresence = id
+		}
+	}
+	d.clientsMu.RUnlock()
+	if byPresence == "" {
+		return nil
+	}
+	return d.manager.GetSessionByID(byPresence)
+}
+
+// findTargetSession finds a session by name, or the most recently active
+// session. Session-less verbs route by activity: they answer "where is
+// something happening", not "where was I looking". Bare attach is the
+// exception, and asks lastWatchedSession first.
+//
 // A name a session was renamed from still finds it: a pane started before the
 // rename keeps the old name in TUIOS_SESSION, and its commands send that.
 func (d *Daemon) findTargetSession(sessionName string) *Session {
@@ -298,15 +324,10 @@ func (d *Daemon) findTargetSession(sessionName string) *Session {
 		return sess
 	}
 
-	// Find the most recently active session
-	sessions := d.manager.ListSessions()
-	if len(sessions) == 0 {
-		return nil
-	}
-
 	var mostRecent *Session
 	var mostRecentTime int64 = 0
 
+	sessions := d.manager.ListSessions()
 	for _, info := range sessions {
 		if info.LastActive > mostRecentTime {
 			mostRecentTime = info.LastActive

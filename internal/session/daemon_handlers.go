@@ -125,7 +125,15 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	}
 
 	if payload.SessionName == "" {
-		session, err = d.manager.GetDefaultSession(cfg, payload.Width, payload.Height)
+		// The last session a client was on, falling back to activity. Only nil
+		// when the daemon has no sessions, so the default still gets created.
+		session = d.lastWatchedSession()
+		if session == nil {
+			session = d.findTargetSession("")
+		}
+		if session == nil {
+			session, err = d.manager.GetDefaultSession(cfg, payload.Width, payload.Height)
+		}
 	} else if payload.CreateNew {
 		var created bool
 		session, created, err = d.manager.GetOrCreateSession(payload.SessionName, cfg, payload.Width, payload.Height)
@@ -204,6 +212,12 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	// A client can now see a pull request's state, so an open one is polled
 	// again. With none recorded this is a scan of the sessions and no more.
 	d.kickPRPoll()
+	// Outside cs.mu: calculateEffectiveSize holds clientsMu and takes cs.mu
+	// per client, so a presence write under cs.mu is a lock inversion. A
+	// view-only client watches nothing it could come back to.
+	if !cs.viewOnly {
+		d.recordPresence(session.ID)
+	}
 
 	// Before the reply, so a pane that probes the moment this client can see
 	// it is already answered for this client's machine.
@@ -392,6 +406,22 @@ func (d *Daemon) handleDetach(cs *connState, msg *Message) error {
 	return d.sendMessage(cs, MsgDetached, nil)
 }
 
+// recordPresence notes that a client was last seen on a session now, the
+// signal bare attach uses to find the session to reopen.
+func (d *Daemon) recordPresence(sessionID string) {
+	d.clientsMu.Lock()
+	d.lastPresence[sessionID] = time.Now()
+	d.clientsMu.Unlock()
+}
+
+// forgetPresence drops a session's recorded presence, so bare attach cannot
+// aim at a session that no longer exists.
+func (d *Daemon) forgetPresence(sessionID string) {
+	d.clientsMu.Lock()
+	delete(d.lastPresence, sessionID)
+	d.clientsMu.Unlock()
+}
+
 // detachClient takes the client on cs off its session: its subscriptions, its
 // size and its place in the session's broadcasts. It reports false when the
 // client was not attached.
@@ -426,6 +456,9 @@ func (d *Daemon) detachClient(cs *connState) bool {
 		Session:  sessionName,
 		Attached: ptr(false),
 	})
+	if !cs.viewOnly {
+		d.recordPresence(sessionID)
+	}
 
 	// Unsubscribe from all PTYs and forget where each stream got to. A resume
 	// position is a claim that the client still holds the pane it drew, and a
