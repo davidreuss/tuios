@@ -750,9 +750,15 @@ func sidebarHeaderRightRoom(cw, labelW int) int {
 }
 
 // sidebarHeaderRowRuled is sidebarHeaderRow with the rule that marks a heading.
-// Passing nil settings keeps the old blank gap, which is what the callers that
-// put their own controls in that gap still want.
+// Passing settings draws the section header in full: the label goes uppercase
+// and bold in the secondary ink, so the rule and the weight mark it as a
+// heading without it out-shining the rows under it. Nil settings keep the old
+// quiet look, which is what the callers outside the rail still want.
 func sidebarHeaderRowRuled(label, right string, cw int, pal overlay.Palette, s *config.Settings) string {
+	labelStyle := sidebarStyle(nil, pal.FgMute)
+	if s != nil {
+		labelStyle = sidebarStyle(nil, pal.FgDim).Bold(true)
+	}
 	row := sidebarStyle(nil, nil).Render(" ") +
 		sidebarStyle(nil, pal.FgMute).Render(overlay.Truncate(label, max(cw-2, 1)))
 	lw := lipgloss.Width(row)
@@ -1702,7 +1708,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 				recordToken(span, "")
 			}
 		}
-		lines = append(lines, compose(sidebarHeaderRow(label, add, cw, pal)))
+		lines = append(lines, compose(sidebarHeaderRowRuled(label, add, cw, pal, &m.Settings)))
 		// lazygit's excludeBlankColumns, on the rail's right spine. A one-window
 		// session is the common case, so a column that prints "1" against every
 		// row is a column of identical digits carrying nothing. It is dropped
@@ -1752,6 +1758,13 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			sidebarHeaderLabelW("terminals"), pal, headerHoverX[sidebarSectionTerminals],
 			isCursor(sidebarRowNewWindow, shown, ""), &m.Settings, nil)
 		right := termAdd
+		if label := m.SessionLabel(shown); !peeking && label != shown {
+			// The attached session's own panes: the header names the session it
+			// lists when that session has a name, and says nothing about an
+			// unnamed one because "session-0" is not information here.
+			name := sidebarStyle(nil, pal.FgMute).Render(overlay.Truncate(printableTitle(label), max(cw/2, 1)))
+			right = name + sidebarStyle(nil, nil).Render(" ") + termAdd
+		}
 		if peeking {
 			// Whose panes these are, since they are not the attached session's,
 			// in that session's own colour: the row the pointer is on is marked
@@ -1777,7 +1790,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			// Below three cells a cut name is an ellipsis and a letter or two,
 			// which names nothing, so the header shows the control alone.
 			if room >= 3 {
-				name := sidebarStyle(nil, ink).Render(overlay.Truncate(printableTitle(shown), room))
+				name := sidebarStyle(nil, ink).Render(overlay.Truncate(printableTitle(m.SessionLabel(shown)), room))
 				right = name
 				if hasTermAdd {
 					right += sidebarStyle(nil, nil).Render(" ") + termAdd
@@ -1787,7 +1800,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 		if hasTermAdd {
 			recordToken(termSpan, shown)
 		}
-		lines = append(lines, compose(sidebarHeaderRow("terminals", right, cw, pal)))
+		lines = append(lines, compose(sidebarHeaderRowRuled("terminals", right, cw, pal, &m.Settings)))
 		if emptyPeek {
 			hint := "no terminals"
 			lines = append(lines, compose(sidebarFit(
@@ -1842,7 +1855,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 	}
 
 	drawGit := func() {
-		lines = append(lines, compose(sidebarHeaderRow("git", "", cw, pal)))
+		lines = append(lines, compose(sidebarHeaderRowRuled("git", "", cw, pal, &m.Settings)))
 		for i := range count[sidebarSectionGit] {
 			idx := start[sidebarSectionGit] + i
 			if idx >= len(gitRows) {
@@ -1890,7 +1903,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 		for _, tk := range tokens {
 			recordToken(tk, "")
 		}
-		lines = append(lines, compose(sidebarHeaderRow("agents", controls, cw, pal)))
+		lines = append(lines, compose(sidebarHeaderRowRuled("agents", controls, cw, pal, &m.Settings)))
 		if emptyFilter {
 			// The hint is about the attached session ("here"), so it carries that
 			// identity: it is a second filter control, and without something to tell
@@ -2679,17 +2692,23 @@ const sidebarHostTagFloor = 8
 // workspaceTag is the quiet right-hand mark saying which workspace a pane sits
 // on. A named workspace says its name, because that is the thing the user gave
 // it to be recognised by; an unnamed one keeps the "w4" form, where the bare
-// digit would read as a session row's window count on the line above.
+// digit would read as a session row's window count on the line above. A name
+// too long for the tag says only its index: a cut-off name ("WORKWOR…") is
+// noise where the bare index still points at the pill it belongs to.
 func (m *OS) workspaceTag(ws int) string {
 	if label := printableTitle(m.WorkspaceLabel(ws)); label != strconv.Itoa(ws) && label != "" {
-		return overlay.Truncate(label, sidebarWorkspaceTagMax)
+		tag := withWorkspaceIndex(label, ws)
+		if lipgloss.Width(tag) <= sidebarWorkspaceTagMax {
+			return tag
+		}
+		return "[" + strconv.Itoa(ws) + "]"
 	}
 	return "w" + strconv.Itoa(ws)
 }
 
 // sidebarWorkspaceTagMax caps a named workspace's tag so the name it fronts can
 // never crowd out the pane name the row is actually about.
-const sidebarWorkspaceTagMax = 8
+const sidebarWorkspaceTagMax = 12
 
 // sidebarAgentsEmptyRow is what the agents section shows when its filter hides
 // every pane it has: the state it is in, the count it is hiding, and the way
@@ -2929,7 +2948,9 @@ func sidebarNoteSentence(name string) bool {
 func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.Palette, st sidebarRowState, tall bool) (string, int) {
 	var rowBg color.Color
 	fg := pal.FgDim
-	if e.State == "done" && !e.DoneSeen {
+	if e.State == "done" && !e.DoneSeen || e.Focused {
+		// The session's focused pane is the active agent and reads at full
+		// strength; everything else is dimmed by one step.
 		fg = pal.Fg
 	}
 	if st.lit() {
@@ -2976,9 +2997,13 @@ func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.P
 
 	nameStyle := sidebarStyle(rowBg, fg)
 	timeFg := pal.FgMute
+	// The pane this session is showing is the active agent, and its name is
+	// bold for the same reason the session row's name is: weight is how the
+	// rail says "you are here". Attention keeps its own bold and its colour.
+	if e.Focused {
+		nameStyle = nameStyle.Bold(true)
+	}
 	if sidebarAttention(e.State) {
-		// The only bold text in the section, so the rows that want a human still
-		// win on a monochrome capture where the tint and glyph colour are gone.
 		nameStyle = nameStyle.Bold(true)
 		timeFg = sidebarStateColor(e.State, e.DoneSeen, pal)
 	}
@@ -3035,9 +3060,10 @@ func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.P
 			gutter = sidebarStyle(rowBg, tint).Render(accentMark())
 		}
 	}
-	// On a compact rail this is the pane's only row, so it carries the focus
-	// mark the terminals row would have.
-	if e.Focused && m.GetSidebarWidth() <= sidebarCompactWidth && sidebarLayoutHas(sidebarSectionTerminals, &m.Settings) {
+	// The focused pane's row wears the same tinted gutter mark the terminals
+	// row wears, on every rail width: the two sections then agree on what the
+	// active agent looks like instead of the compact rail alone saying it.
+	if e.Focused && sidebarLayoutHas(sidebarSectionTerminals, &m.Settings) {
 		gutter = sidebarGutterTinted(true, e.State, m.sessionTint(e.SessionID, m.rowGround(rowBg)), rowBg, pal, &m.Settings)
 	}
 	body := shown +
