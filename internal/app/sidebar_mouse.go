@@ -176,6 +176,7 @@ func (m *OS) SidebarClick(x, y int, right bool) bool {
 	// the session row whose hit rectangle spans it.
 	if !right && m.sidebarOnEdge(x) {
 		m.SidebarEdge = sidebarEdgeState{Active: true, PressX: x}
+		m.SetPointerShape(PointerEWResize)
 		if sidebarVariant(m.GetSidebarWidth()) == sidebarVariantGlyph {
 			if hit, ok := m.sidebarRowAt(x, y); ok {
 				m.SidebarEdge.Row, m.SidebarEdge.HaveRow = hit, true
@@ -357,6 +358,7 @@ func (m *OS) SidebarEdgeRelease(x, y int) bool {
 	}
 	edge := m.SidebarEdge
 	m.SidebarEdge = sidebarEdgeState{}
+	m.ResetPointerShape()
 	m.saveSidebarState()
 	if edge.HaveRow && x == edge.PressX {
 		m.sidebarActivateRow(edge.Row)
