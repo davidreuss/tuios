@@ -162,6 +162,10 @@ type Settings struct {
 
 	// SidebarShowCounts draws the window count on each session row.
 	SidebarShowCounts bool
+	// SidebarShowNumbers leads each session row with the number its
+	// switch_session_N key opens. With it off the number waits for the
+	// switch chord.
+	SidebarShowNumbers bool
 
 	// SidebarMarquee scrolls a hovered row's title when it overflows its columns.
 	SidebarMarquee bool
@@ -703,6 +707,7 @@ func DefaultSettings() Settings {
 		RailHeaderCase:              RailHeaderLowercase,
 		SidebarShowGlyphs:           true,
 		SidebarShowCounts:           true,
+		SidebarShowNumbers:          true,
 		SidebarMarquee:              true,
 		SidebarSections:             SidebarDefaultSections,
 		SidebarFileIcons:            true,

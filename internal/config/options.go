@@ -507,6 +507,12 @@ var optionSpecs = []Option{
 		Default:     "true",
 		Deprecated:  "folded into [appearance.sidebar] on load; set appearance.sidebar.show_counts",
 	},
+	{
+		Path: "appearance.sidebar_show_numbers", Type: OptionBool, Section: "appearance",
+		Description: "Lead each session row with its switch number",
+		Default:     "true",
+		Deprecated:  "folded into [appearance.sidebar] on load; set appearance.sidebar.show_numbers",
+	},
 
 	// The dock and the readouts on it.
 	{
@@ -706,6 +712,11 @@ var optionSpecs = []Option{
 	{
 		Path: "appearance.sidebar.show_counts", Type: OptionBool, Section: "sidebar",
 		Description: "Show the window count on each session row",
+		Default:     "true",
+	},
+	{
+		Path: "appearance.sidebar.show_numbers", Type: OptionBool, Section: "sidebar",
+		Description: "Lead each session row with its switch number",
 		Default:     "true",
 	},
 	{

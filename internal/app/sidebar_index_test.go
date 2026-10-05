@@ -22,16 +22,22 @@ func railRowFor(t *testing.T, m *OS, tree sessiontree.Tree, name string) string 
 }
 
 // TestRailRowsWearTheirSwitchNumbers: a session row leads with the muted
-// number switch_session_N opens, but only while the switch chord is armed. The
-// idle rail is the quiet one-machine rail the negative control promises, so the
-// number is the chord's answer, drawn when the chord asks.
+// number switch_session_N opens. show_numbers defaults on, so the number is
+// always drawn; with it off the rail is quiet and the number waits for the
+// switch chord that gives it a question to answer.
 func TestRailRowsWearTheirSwitchNumbers(t *testing.T) {
 	withSessionColors(t, true)
 	m, tree := sessionColorOS(t, 120, 40)
 
 	idle := railRowFor(t, m, tree, "api")
-	if strings.Contains(idle, "2 api") {
-		t.Errorf("the idle rail shows the switch number the chord has not asked for: %q", idle)
+	if !strings.Contains(idle, "2 api") {
+		t.Errorf("the idle rail does not lead the api session with its switch number: %q", idle)
+	}
+
+	m.Settings.SidebarShowNumbers = false
+	quiet := railRowFor(t, m, tree, "api")
+	if strings.Contains(quiet, "2 api") {
+		t.Errorf("the quiet rail shows the switch number the chord has not asked for: %q", quiet)
 	}
 
 	m.PrefixActive = true
@@ -39,4 +45,24 @@ func TestRailRowsWearTheirSwitchNumbers(t *testing.T) {
 	if !strings.Contains(armed, "2 api") {
 		t.Errorf("the armed rail does not lead the api session with its switch number: %q", armed)
 	}
+}
+
+// TestTheRailCacheFollowsTheChord: the render cache's signature folds the
+// chord state, so arming the prefix cannot serve rows drawn without it. The
+// rows come from the cache's own build path, which in a test model knows only
+// the attached session.
+func TestTheRailCacheFollowsTheChord(t *testing.T) {
+	withSessionColors(t, true)
+	m, _ := sessionColorOS(t, 120, 40)
+	m.Settings.SidebarShowNumbers = false
+	_, _ = m.sidebarPanelLines()
+
+	m.PrefixActive = true
+	lines, _ := m.sidebarPanelLines()
+	for _, l := range lines {
+		if plain := ansi.Strip(l); strings.Contains(plain, "1 main") {
+			return
+		}
+	}
+	t.Error("arming the chord did not refresh the cached rail")
 }

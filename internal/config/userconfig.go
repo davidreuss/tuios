@@ -345,6 +345,7 @@ type AppearanceConfig struct {
 	SidebarShowWindows *bool  `toml:"sidebar_show_windows,omitempty"`
 	SidebarShowGlyphs  *bool  `toml:"sidebar_show_glyphs,omitempty"`
 	SidebarShowCounts  *bool  `toml:"sidebar_show_counts,omitempty"`
+	SidebarShowNumbers *bool  `toml:"sidebar_show_numbers,omitempty"`
 
 	// The tables are last so the TOML encoder emits them after every scalar key
 	// of [appearance]; a table written mid-section would swallow the keys that
@@ -629,6 +630,7 @@ type SidebarConfig struct {
 	ShowWindows *bool  `toml:"show_windows"` // The terminals section (default: true)
 	ShowGlyphs  *bool  `toml:"show_glyphs"`  // Agent-state glyph on each row (default: true)
 	ShowCounts  *bool  `toml:"show_counts"`  // Window count on each session row (default: true)
+	ShowNumbers *bool  `toml:"show_numbers"` // Switch number leading each session row (default: true)
 	ShowAgents  *bool  `toml:"show_agents"`  // Agents section at the rail's bottom (default: true)
 	// Workspaces named the workspace chip band, which the rail no longer draws:
 	// panes say which workspace they are on with a tag of their own, and
@@ -1871,6 +1873,9 @@ func ApplyAppearanceConfig(cfg *UserConfig, s *Settings) {
 	if sb.ShowCounts != nil {
 		s.SidebarShowCounts = *sb.ShowCounts
 	}
+	if sb.ShowNumbers != nil {
+		s.SidebarShowNumbers = *sb.ShowNumbers
+	}
 	if sb.Marquee != nil {
 		s.SidebarMarquee = *sb.Marquee
 	}
@@ -2321,8 +2326,11 @@ func migrateLegacySidebar(cfg *UserConfig) {
 	if s.ShowCounts == nil {
 		s.ShowCounts = a.SidebarShowCounts
 	}
+	if s.ShowNumbers == nil {
+		s.ShowNumbers = a.SidebarShowNumbers
+	}
 	a.SidebarEnabled, a.SidebarPosition, a.SidebarWidth = nil, "", 0
-	a.SidebarShowWindows, a.SidebarShowGlyphs, a.SidebarShowCounts = nil, nil, nil
+	a.SidebarShowWindows, a.SidebarShowGlyphs, a.SidebarShowCounts, a.SidebarShowNumbers = nil, nil, nil, nil
 
 	migrateSidebarSectionToggles(s)
 }

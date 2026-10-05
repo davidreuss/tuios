@@ -142,6 +142,9 @@ func (m *OS) sidebarSignature() uint64 {
 	mixB(m.sidebarSplit.Active)
 	mixB(m.Settings.SidebarShowGlyphs)
 	mixB(m.Settings.SidebarShowCounts)
+	// A row leads with its switch number while the chord is armed, so the
+	// chord state is an input the cached rows depend on.
+	mixB(m.PrefixActive)
 	// The mailbox mirror: an unread count beside an agent row, and the count
 	// on the agents header, come from it.
 	mixU(m.AgentMail.Gen)
