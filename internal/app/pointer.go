@@ -43,6 +43,9 @@ func (m *OS) SetPointerShape(shape PointerShape) {
 	m.writeHostSequence(fmt.Appendf(nil, "\x1b]22;%s\x1b\\", string(shape)))
 }
 
+// PointerShape reports the last shape written, for tests and diagnostics.
+func (m *OS) PointerShape() PointerShape { return m.currentPointer }
+
 // ResetPointerShape sets the pointer back to default.
 //
 // It writes unconditionally rather than through SetPointerShape's dedup: the
