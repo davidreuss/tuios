@@ -1,6 +1,7 @@
 package tuie2e
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -13,6 +14,8 @@ import (
 // rail's band, right of its divider, so the dock's own "need you in <name>"
 // cannot satisfy it.
 func railRowMarked(s tuitest.Screen, session string) bool {
+	// The switch number may sit between the mark and the name.
+	marked := regexp.MustCompile(`▲ (\d+ )?` + regexp.QuoteMeta(session))
 	_, rows := s.Size()
 	for y := range rows {
 		line := s.Line(y)
@@ -20,7 +23,7 @@ func railRowMarked(s tuitest.Screen, session string) bool {
 		if at < 0 {
 			continue
 		}
-		if strings.Contains(line[at:], "▲ "+session) {
+		if marked.MatchString(line[at:]) {
 			return true
 		}
 	}

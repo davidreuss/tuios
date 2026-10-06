@@ -226,9 +226,6 @@ func (m *OS) sidebarSignature() uint64 {
 	mixB(m.SidebarFocused)
 	mixI(m.SidebarCursor)
 
-	// The switch numbers wait for the chord, so an armed prefix is drawn state.
-	mixB(m.PrefixActive)
-
 	// Which terminal rows carry a workspace tag turns on which workspace is
 	// current; the per-window workspaces themselves are folded in below. The
 	// names print in the tag, so renaming a workspace has to restyle the rows on

@@ -29,9 +29,10 @@ func numberedSessionRow(screen, name string) bool {
 	return false
 }
 
-// The rail leads each session row with its switch number while the prefix is
-// armed. This walks the rail through a detach and a reattach: the numbers must
-// come back with the rail, not only on the client that created the sessions.
+// The rail leads each session row with its switch number, always, on every
+// client that draws the rail. This walks the rail through a detach and a
+// reattach: the numbers must come back with the rail, not only on the client
+// that created the sessions.
 func TestRailSwitchNumbersSurviveReattach(t *testing.T) {
 	base := t.TempDir()
 	killDaemon(t, base)
@@ -52,26 +53,17 @@ func TestRailSwitchNumbersSurviveReattach(t *testing.T) {
 
 	toggleSidebarViaPalette(t, term)
 
-	// Arm the prefix and wait for the numbers. The prefix stays armed until
-	// the next key lands, so the wait is safe; the second leader press
-	// disarms, which is the double-leader cancel.
-	armPrefixAndExpect := func(term *tuitest.Terminal, name, what string) {
+	expectNumber := func(term *tuitest.Terminal, name, what string) {
 		t.Helper()
-		if err := term.SendKeys(tuitest.Ctrl('b')); err != nil {
-			t.Fatalf("arm the prefix: %v", err)
-		}
 		if err := term.WaitFor(func(s tuitest.Screen) bool {
 			return numberedSessionRow(s.Text(), name)
 		}, uiTimeout); err != nil {
 			t.Fatalf("%s: the rail never led %s with a switch number: %v\n%s", what, name, err, term.Snapshot())
 		}
-		if err := term.SendKeys(tuitest.Ctrl('b')); err != nil {
-			t.Fatalf("disarm the prefix: %v", err)
-		}
-		time.Sleep(insertGuard)
 	}
 
-	armPrefixAndExpect(term, "e2e-beta", "on the first client")
+	expectNumber(term, "e2e-alpha", "on the first client")
+	expectNumber(term, "e2e-beta", "on the first client")
 
 	// Detach and come back: the reattached client rebuilds the session tree
 	// from the daemon's listing.
@@ -90,5 +82,6 @@ func TestRailSwitchNumbersSurviveReattach(t *testing.T) {
 	}
 	time.Sleep(insertGuard + 150*time.Millisecond)
 	toggleSidebarViaPalette(t, second)
-	armPrefixAndExpect(second, "e2e-beta", "after the reattach")
+	expectNumber(second, "e2e-alpha", "after the reattach")
+	expectNumber(second, "e2e-beta", "after the reattach")
 }

@@ -125,6 +125,8 @@ func TestTheRailReadsMachinesAsHeadings(t *testing.T) {
 		t.Errorf("ASSERTION: the machine's name starts at column %d, want the rail's own name column %d\n%s",
 			headCol, railNameCol, term.Snapshot())
 	}
+	// A remote row wears no switch number on this machine: switch_session_N
+	// cannot open it. Its step under its machine is the bare two cells.
 	if rowCol != headCol+2 {
 		t.Errorf("ASSERTION: the session under oci starts at column %d and its machine at %d; "+
 			"a session must step in under its machine\n%s", rowCol, headCol, term.Snapshot())
@@ -239,8 +241,9 @@ func TestTheNarrowRailKeepsTheStep(t *testing.T) {
 }
 
 // TestTheRailOfOneMachineIsUnchanged is the other half of the promise: the
-// default install has no machine groups, so it gets no headings and no step,
-// and its rows sit exactly where they always did.
+// default install has no machine groups, so it gets no headings and no step.
+// The session's own row carries the switch number, so its name sits two cells
+// past the base column, and nothing else about the row moves.
 func TestTheRailOfOneMachineIsUnchanged(t *testing.T) {
 	term, _ := railClient(t, "e2e", railConfig(28), startOpts{cols: 120, rows: 30})
 	railShows(t, term, "sessions")
@@ -249,10 +252,10 @@ func TestTheRailOfOneMachineIsUnchanged(t *testing.T) {
 	if railRowOf(s, hostOpen+" local") >= 0 {
 		t.Fatalf("ASSERTION: a rail with one machine drew a machine heading\n%s", term.Snapshot())
 	}
-	row := railRowOf(s, "e2e")
-	if col := nameColOf(s, row, "e2e"); col != railNameCol {
+	row := railRowOf(s, "1 e2e")
+	if col := nameColOf(s, row, "e2e"); col != railNameCol+2 {
 		t.Errorf("ASSERTION: the session's name starts at column %d on a rail with one machine, want %d\n%s",
-			col, railNameCol, term.Snapshot())
+			col, railNameCol+2, term.Snapshot())
 	}
 	saveFrame(t, term, "hier-after-one-machine")
 	alive(t, term, "after the one-machine rail")
