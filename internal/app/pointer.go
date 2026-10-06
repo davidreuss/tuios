@@ -21,6 +21,12 @@ const (
 	PointerPointer PointerShape = "pointer"
 )
 
+// PointerShapeNow is the shape the last write asked for. Input handlers in
+// another package assert against it.
+func (m *OS) PointerShapeNow() PointerShape {
+	return m.currentPointer
+}
+
 // SetPointerShape writes an OSC 22 sequence to change the mouse pointer.
 //
 // The sequence goes through writeHostSequence rather than os.Stdout: stdout is

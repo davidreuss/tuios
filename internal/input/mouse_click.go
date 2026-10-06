@@ -14,6 +14,12 @@ func handleMouseClick(msg tea.MouseClickMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	X := mouse.X
 	Y := mouse.Y
 
+	// A press is the first event a refocusing click delivers, and motion may
+	// not come until the pointer next moves. Restating the shape from the
+	// press's position keeps a shape left over from before the blur from
+	// outliving it over content.
+	o.UpdatePointerForPosition(X, Y)
+
 	// A click supersedes a copy sweep still running, for the reason a key
 	// press does: it is an acknowledgement of a copy, and clicking elsewhere
 	// says the user has moved on. See CancelCopyFlash.

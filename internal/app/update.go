@@ -1733,6 +1733,11 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		// will never report its release, so the hold ends here rather than
 		// outliving it.
 		m.EndHold()
+		// The pointer shape describes hover geometry inside this window, and
+		// the terminal paints the last shape it was sent until a new one
+		// arrives. A shape left over from before the blur would put a resize
+		// cursor over content when the window comes back.
+		m.ResetPointerShape()
 		return m, m.noteHostFocus(false)
 
 	case tea.ColorProfileMsg:
