@@ -2427,9 +2427,11 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	titleW := lipgloss.Width(title)
 	// The session index always leads the name: a muted number, the one
 	// switch_session_N opens, styled like the other chrome the row carries.
-	// Remote sessions have no number on this machine and wear none.
+	// Remote sessions have no number on this machine and wear none. The
+	// numbers are opt-in: show_numbers in [appearance.sidebar], off so the
+	// quiet rail stays the default.
 	mark, markW := "", 0
-	if sessionIdx > 0 {
+	if sessionIdx > 0 && m.Settings.SidebarShowNumbers {
 		mark = sidebarStyle(rowBg, pal.FgMute).Bold(node.IsCurrent).
 			Render(strconv.Itoa(sessionIdx) + " ")
 		markW = len(strconv.Itoa(sessionIdx)) + 1

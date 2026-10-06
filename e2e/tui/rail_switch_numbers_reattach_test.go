@@ -29,13 +29,14 @@ func numberedSessionRow(screen, name string) bool {
 	return false
 }
 
-// The rail leads each session row with its switch number, always, on every
-// client that draws the rail. This walks the rail through a detach and a
-// reattach: the numbers must come back with the rail, not only on the client
-// that created the sessions.
+// With show_numbers on, the rail leads each session row with its switch
+// number, on every client that draws the rail. This walks the rail through a
+// detach and a reattach: the numbers must come back with the rail, not only
+// on the client that created the sessions.
 func TestRailSwitchNumbersSurviveReattach(t *testing.T) {
 	base := t.TempDir()
 	killDaemon(t, base)
+	writeConfig(t, base, "[appearance.sidebar]\nenabled = true\nshow_numbers = true\nwidth = 30\n")
 
 	if out, err := tuiosCLI(t, base, "new", "e2e-alpha", "--detach"); err != nil {
 		t.Fatalf("create first session: %v: %s", err, out)
@@ -50,8 +51,6 @@ func TestRailSwitchNumbersSurviveReattach(t *testing.T) {
 	if out, err := tuiosCLI(t, base, "new", "e2e-beta", "--detach"); err != nil {
 		t.Fatalf("create second session: %v: %s", err, out)
 	}
-
-	toggleSidebarViaPalette(t, term)
 
 	expectNumber := func(term *tuitest.Terminal, name, what string) {
 		t.Helper()
@@ -81,7 +80,6 @@ func TestRailSwitchNumbersSurviveReattach(t *testing.T) {
 		t.Fatalf("the reattached client never came up: %v\n%s", err, second.Snapshot())
 	}
 	time.Sleep(insertGuard + 150*time.Millisecond)
-	toggleSidebarViaPalette(t, second)
 	expectNumber(second, "e2e-alpha", "after the reattach")
 	expectNumber(second, "e2e-beta", "after the reattach")
 }
