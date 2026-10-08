@@ -131,12 +131,22 @@ func workspacePillWidth(label string, s *config.Settings) int {
 	return lipgloss.Width(lc) + lipgloss.Width(rc) + lipgloss.Width(label) + 2
 }
 
+// withWorkspaceIndex appends the workspace's index to a named label so the
+// number a switch key uses stays in reach. An unnamed one keeps its bare
+// number. Display only.
+func withWorkspaceIndex(name string, ws int) string {
+	if name == "" || name == strconv.Itoa(ws) || strings.HasSuffix(name, " ["+strconv.Itoa(ws)+"]") {
+		return name
+	}
+	return name + " [" + strconv.Itoa(ws) + "]"
+}
+
 // workspacePillName is the whole name a pill stands for: the workspace's name
-// when it has one, else its number, laundered as chrome and uncapped. This is
-// what the hover label says, so the words come from state at draw time and a
-// rename is on the label the same frame it lands.
+// with its index, laundered as chrome and uncapped. This is what the hover
+// label says, so the words come from state at draw time and a rename is on the
+// label the same frame it lands.
 func (m *OS) workspacePillName(n int) string {
-	label := printableTitle(m.WorkspaceLabel(n))
+	label := withWorkspaceIndex(printableTitle(m.WorkspaceLabel(n)), n)
 	if label == "" {
 		label = strconv.Itoa(n)
 	}
@@ -148,7 +158,12 @@ func (m *OS) workspacePillName(n int) string {
 // the whole name; the strip's scroll arithmetic is what handles a bar that no
 // longer fits it.
 func (m *OS) workspacePillLabel(n int) string {
-	label := m.Settings.FormatWorkspaceTab(m.workspacePillName(n), n)
+	var label string
+	if strings.Contains(m.Settings.DockWorkspaceTabFormat, "{index}") {
+		label = m.Settings.FormatWorkspaceTab(printableTitle(m.WorkspaceLabel(n)), n)
+	} else {
+		label = m.workspacePillName(n)
+	}
 	if limit := m.Settings.DockWorkspaceLabelMax; limit > 0 {
 		label = overlay.Truncate(label, limit)
 	}

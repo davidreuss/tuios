@@ -755,10 +755,6 @@ func sidebarHeaderRightRoom(cw, labelW int) int {
 // heading without it out-shining the rows under it. Nil settings keep the old
 // quiet look, which is what the callers outside the rail still want.
 func sidebarHeaderRowRuled(label, right string, cw int, pal overlay.Palette, s *config.Settings) string {
-	labelStyle := sidebarStyle(nil, pal.FgMute)
-	if s != nil {
-		labelStyle = sidebarStyle(nil, pal.FgDim).Bold(true)
-	}
 	row := sidebarStyle(nil, nil).Render(" ") +
 		sidebarStyle(nil, pal.FgMute).Render(overlay.Truncate(label, max(cw-2, 1)))
 	lw := lipgloss.Width(row)
