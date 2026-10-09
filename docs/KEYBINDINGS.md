@@ -364,6 +364,12 @@ pointer does not move. `appearance.link_click` sets which click opens a
 link. See [CONFIGURATION.md](CONFIGURATION.md#opening-links) for the
 settings, the opener and a table of terminals.
 
+A pane can address another pane with a `tuios://window/<id>` link, where
+`<id>` is the pane's short id from the sidebar or `list-windows`. A plain
+`Ctrl+click` there jumps to that pane, and a
+`tuios://window/<id>/close` link asks first: the confirmation names the
+pane and only a second click closes it.
+
 ## Scratch terminal
 
 `Ctrl+B g` shows the scratch terminal, a small layout of panes in a box over
