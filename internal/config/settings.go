@@ -144,6 +144,10 @@ type Settings struct {
 	// constants. Set via appearance.link_click.
 	LinkClick string
 
+	// LinkHover is the hover highlight policy: one of the LinkHover*
+	// constants. Set via appearance.link_hover.
+	LinkHover string
+
 	// LinkLabel pops up a label naming the address of the link under the
 	// pointer. Turn it off to keep the hover to the underline, the pointer and
 	// the click. Set via appearance.link_label.
