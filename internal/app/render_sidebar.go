@@ -1734,6 +1734,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			}
 		}
 		sessionIdx := localSessionIndexes(sessions)
+		numW := len(strconv.Itoa(len(sessionIdx)))
 		for i := range count[sidebarSectionSessions] {
 			idx := start[sidebarSectionSessions] + i
 			s := sessionRows[idx]
@@ -1753,7 +1754,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			dragged := m.SidebarDrag.Dragging && s.ID == m.SidebarDrag.SessionID
 			st := m.railRowState(idx == hoverRow[sidebarSectionSessions], isCursor(sidebarRowSession, s.ID, ""), s.IsCurrent)
 			recordHit(sidebarRowSession, s.ID, "", -1, 1)
-			lines = append(lines, compose(st.mark(pal, m.sidebarSessionRow(s, sessionIdx[s.ID], variant, cw, pal, st, dragged, showCounts))))
+			lines = append(lines, compose(st.mark(pal, m.sidebarSessionRow(s, sessionIdx[s.ID], numW, variant, cw, pal, st, dragged, showCounts))))
 		}
 		if h := hidden[sidebarSectionSessions]; h > 0 {
 			lines = append(lines, overflowRow(h, m.sidebarRowIndent()))
@@ -2476,7 +2477,7 @@ func (m *OS) windowIndexByID(id string) int {
 //
 // A drag in progress keeps the band on the dragged row while it rides the
 // pointer.
-func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw int, pal overlay.Palette, st sidebarRowState, dragged, showCounts bool) string {
+func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, numW, variant, cw int, pal overlay.Palette, st sidebarRowState, dragged, showCounts bool) string {
 	rowBg := sidebarRowBg(st, pal)
 	if dragged {
 		// A drag keeps the strongest band on the row riding the pointer.
@@ -2562,15 +2563,21 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	// the one switch_session_N opens for 1..9, styled like the other chrome
 	// the row carries. Past nine no key answers, but the number keeps its
 	// place in the count, so a tenth session still says "10" as its position.
-	// Remote sessions have no number on this machine either. The armed prefix
-	// does not ask for the numbers: the default keys bind the digits under the
-	// prefix to select_window_N, so a session number there would name a key
-	// that opens something else.
+	// The numbers zero-pad to the count's width, so ten sessions read 01..10
+	// and the column stays one column however the count moves. Remote sessions
+	// have no number on this machine either. The armed prefix does not ask for
+	// the numbers: the default keys bind the digits under the prefix to
+	// select_window_N, so a session number there would name a key that opens
+	// something else.
 	mark, markW := "", 0
 	if m.Settings.SidebarShowNumbers && sessionIdx > 0 {
+		num := strconv.Itoa(sessionIdx)
+		for len(num) < numW {
+			num = "0" + num
+		}
 		mark = sidebarStyle(rowBg, pal.FgMute).Bold(node.IsCurrent).
-			Render(strconv.Itoa(sessionIdx) + " ")
-		markW = len(strconv.Itoa(sessionIdx)) + 1
+			Render(num + " ")
+		markW = numW + 1
 	}
 	keep, avail := railRowFitInto(s.keep, titleW, railNameKeep(titleW), s.tokens, sidebarNameAvailIn(cw, 0, indent)-markW)
 	s.keep = keep
