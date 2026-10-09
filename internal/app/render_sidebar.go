@@ -2559,14 +2559,15 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	}
 	titleW := lipgloss.Width(title)
 	// With show_numbers on, the session index leads the name: a muted number,
-	// the one switch_session_N opens, styled like the other chrome the row
-	// carries. Only switch_session_1..9 exist, so a tenth session wears none,
-	// and remote sessions have no number on this machine either. The armed
-	// prefix does not ask for the numbers: the default keys bind the digits
-	// under the prefix to select_window_N, so a session number there would
-	// name a key that opens something else.
+	// the one switch_session_N opens for 1..9, styled like the other chrome
+	// the row carries. Past nine no key answers, but the number keeps its
+	// place in the count, so a tenth session still says "10" as its position.
+	// Remote sessions have no number on this machine either. The armed prefix
+	// does not ask for the numbers: the default keys bind the digits under the
+	// prefix to select_window_N, so a session number there would name a key
+	// that opens something else.
 	mark, markW := "", 0
-	if m.Settings.SidebarShowNumbers && sessionIdx > 0 && sessionIdx <= 9 {
+	if m.Settings.SidebarShowNumbers && sessionIdx > 0 {
 		mark = sidebarStyle(rowBg, pal.FgMute).Bold(node.IsCurrent).
 			Render(strconv.Itoa(sessionIdx) + " ")
 		markW = len(strconv.Itoa(sessionIdx)) + 1
