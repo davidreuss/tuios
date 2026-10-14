@@ -4,8 +4,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/Gaurav-Gosain/tuitest"
 )
 
 // The host terminal's pointer shape is not part of the grid, so no screen
@@ -113,4 +116,116 @@ func TestBlurRetiresThePointerShape(t *testing.T) {
 		t.Fatalf("sending focus lost: %v", err)
 	}
 	waitPointerShape(t, stream, "default", "after the host lost focus")
+}
+
+// TestAPressRestatesThePointerShape covers the hosts that never report focus:
+// no BlurMsg ever reaches the program, so blur's reset cannot run, and the
+// stale resize shape would outlive the pointer's trip through another
+// application. A press inside a pane is the first event such a host delivers
+// on the way back, and it restates the shape from its own position.
+func TestAPressRestatesThePointerShape(t *testing.T) {
+	base := t.TempDir()
+	cfgDir := filepath.Join(base, "XDG_CONFIG_HOME", "tuios")
+	if err := os.MkdirAll(cfgDir, 0o700); err != nil {
+		t.Fatalf("mkdir config: %v", err)
+	}
+	cfg := "[appearance]\nfocus_follows_mouse = true\n"
+	if err := os.WriteFile(filepath.Join(cfgDir, "config.toml"), []byte(cfg), 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	stream := &hostStream{}
+	term := startIn(t, base, startOpts{cols: 120, rows: 40, out: stream})
+	waitBoot(t, term)
+	time.Sleep(1 * time.Second)
+
+	// A press that lands in the boot churn was observed to vanish, leaving one
+	// window where two were asked for, so press until the dock agrees and let
+	// waitWindowCount have the final word.
+	deadline := time.Now().Add(3 * uiTimeout)
+	for countWindows(term.Screen()) < 2 && time.Now().Before(deadline) {
+		if err := term.Type("n"); err != nil {
+			t.Fatalf("pressing new window: %v", err)
+		}
+		time.Sleep(700 * time.Millisecond)
+	}
+	enableTiling(t, term)
+	waitWindowCount(t, term, 2, "pointer-press setup")
+
+	// Put a resize shape on the wire, the same sweep the blur test uses.
+	shape := ""
+	for _, cell := range [][2]int{
+		{0, 0}, {0, 10}, {119, 10}, {60, 0}, {30, 0}, {90, 0},
+		{0, 1}, {119, 1}, {60, 1}, {30, 1}, {90, 1},
+	} {
+		col, row := cell[0], cell[1]
+		mouseHover(t, term, col, row)
+		deadline := time.Now().Add(500 * time.Millisecond)
+		for time.Now().Before(deadline) {
+			if got := hostPointerShape(stream.bytes()); got != "" && got != "default" {
+				shape = got
+				break
+			}
+			time.Sleep(60 * time.Millisecond)
+		}
+		if shape != "" {
+			break
+		}
+	}
+	if shape == "" {
+		t.Fatalf("no hover produced a resize shape\nOSC 22 the host was sent: %q",
+			osc22RE.FindAllString(string(stream.bytes()), -1))
+	}
+
+	// The host that never reports focus: no focus-out is sent. The refocusing
+	// click lands in plain pane content, and the press alone must retire the
+	// stale shape. Motion cannot do it: over content it is filtered out before
+	// it reaches the pointer-shape code. The press may also begin a window
+	// gesture, which is free to put its own shape on the wire afterwards, so
+	// the assertion is that a default restatement follows the resize shape —
+	// the stale shape did not outlive the press.
+	pressCol, pressRow := pressCellInContent(term)
+	mousePress(t, term, pressCol, pressRow, tuitest.MouseLeft, 0)
+	waitRestatedAfterResize(t, stream, "after the refocusing press")
+	mouseRelease(t, term, pressCol, pressRow, tuitest.MouseLeft, 0)
+	waitPointerShape(t, stream, "default", "after the release")
+}
+
+// waitRestatedAfterResize polls until a default OSC 22 follows the last
+// resize-shaped one on the wire.
+func waitRestatedAfterResize(t *testing.T, stream *hostStream, what string) {
+	t.Helper()
+	deadline := time.Now().Add(uiTimeout)
+	for time.Now().Before(deadline) {
+		lastResize, lastDefault := -1, -1
+		for i, m := range osc22RE.FindAllSubmatch(stream.bytes(), -1) {
+			if strings.HasSuffix(string(m[1]), "-resize") {
+				lastResize = i
+			} else if string(m[1]) == "default" {
+				lastDefault = i
+			}
+		}
+		if lastResize >= 0 && lastDefault > lastResize {
+			return
+		}
+		time.Sleep(80 * time.Millisecond)
+	}
+	t.Fatalf("%s: no default restatement after the resize shape\nOSC 22 the host was sent: %q",
+		what, osc22RE.FindAllString(string(stream.bytes()), -1))
+}
+
+// pressCellInContent finds a cell that is plain pane content: three rows below
+// the lowest title bar (the row with the traffic-light dots), well inside the
+// pane's horizontal span.
+func pressCellInContent(term *tuitest.Terminal) (int, int) {
+	lastTitle := -1
+	for r := 0; r < 38; r++ {
+		if strings.Contains(term.Screen().Line(r), "●") {
+			lastTitle = r
+		}
+	}
+	if lastTitle < 0 || lastTitle+3 >= 38 {
+		return 30, 20
+	}
+	return 30, lastTitle + 3
 }
