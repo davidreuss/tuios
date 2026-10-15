@@ -956,7 +956,9 @@ type OS struct {
 	// KeyboardFlags is the flag set the host answered the enhancement query
 	// with, so tuios knows what it actually got rather than what it asked for.
 	// Zero means the terminal never answered, which is not the same as a refusal.
-	KeyboardFlags int
+	KeyboardFlags            int
+	detaching                bool
+	lastKeyboardEnhancements tea.KeyboardEnhancements
 	// hostGrantedAllKeys is set once the host has answered with report-all-keys
 	// in effect. See AllKeysPending.
 	hostGrantedAllKeys bool
