@@ -86,6 +86,29 @@ func (m *OS) sidebarAgentTokenValue(name string, e sidebarAgentEntry, variant in
 		}
 	case "message":
 		tk.Text = printableTitle(e.Message)
+		if tk.Text != "" {
+			break
+		}
+		sum, ok := programSummary(e.Program)
+		if !ok {
+			break
+		}
+		title, message := printableTitle(sum.Title), printableTitle(sum.Msg)
+		paneName := sidebarAgentName(e)
+		if strings.EqualFold(title, paneName) {
+			title = ""
+		}
+		if strings.EqualFold(message, paneName) || strings.EqualFold(message, title) {
+			message = ""
+		}
+		switch {
+		case title == "":
+			tk.Text = message
+		case message == "":
+			tk.Text = title
+		default:
+			tk.Text = title + ": " + message
+		}
 	case "need":
 		tk.Text = m.sidebarAgentNeedText(e, variant, now)
 	case "host":
@@ -432,6 +455,9 @@ func sidebarTokenColor(name string, pal overlay.Palette) color.Color {
 func (m *OS) sidebarTokenStyle(base lipgloss.Style, tk sidebarAgentToken, pal overlay.Palette) lipgloss.Style {
 	look := sidebarTokenDefaultLook(tk).Overlay(m.Settings.SidebarAgentRow.Style(tk.Name).Resolve(tk.Text, tk.Number, tk.HasNumber))
 	if c := sidebarTokenColor(look.Fg, pal); c != nil {
+		if bg := base.GetBackground(); bg != (lipgloss.NoColor{}) {
+			c = overlay.ReadableAt(c, bg, overlay.MarkFloor)
+		}
 		base = base.Foreground(c)
 	}
 	if look.Bold != nil {
