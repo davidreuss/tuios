@@ -100,6 +100,7 @@ func handleMouseMotion(msg tea.MouseMotionMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		// The sidebar band tracks hover the same way the overlays do, and
 		// consumes motion over it so the pane it sits in front of never sees it.
 		if o.SidebarActive() && o.SidebarMotion(mouse.X, mouse.Y) {
+			o.ResetPointerShape()
 			return o, nil
 		}
 	}

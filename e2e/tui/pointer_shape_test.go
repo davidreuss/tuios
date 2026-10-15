@@ -1,6 +1,7 @@
 package tuie2e
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -189,6 +190,84 @@ func TestAPressRestatesThePointerShape(t *testing.T) {
 	waitRestatedAfterResize(t, stream, "after the refocusing press")
 	mouseRelease(t, term, pressCol, pressRow, tuitest.MouseLeft, 0)
 	waitPointerShape(t, stream, "default", "after the release")
+}
+
+func TestRefocusRestatesThePointerWithoutBlur(t *testing.T) {
+	for _, event := range []string{"focus", "press"} {
+		t.Run(event, func(t *testing.T) {
+			base := t.TempDir()
+			writeConfig(t, base, "[appearance]\nfocus_follows_mouse = true\n"+
+				"[startup]\nopen_default_window = true\ntiled = true\nstart_in_terminal_mode = true\n")
+			stream := &hostStream{}
+			term := startIn(t, base, startOpts{cols: 120, rows: 40, args: []string{"new", "pointer-refocus"}, out: stream})
+			dir := artifactDir(t)
+			t.Cleanup(func() {
+				saveArtifact(t, term, dir, "refocus")
+				shapes := osc22RE.FindAllString(string(stream.bytes()), -1)
+				if err := os.WriteFile(filepath.Join(dir, "pointer-shapes.txt"), []byte(fmt.Sprintf("%q\n", shapes)), 0o644); err != nil {
+					t.Errorf("save pointer shapes: %v", err)
+				}
+			})
+			if err := term.WaitFor(func(s tuitest.Screen) bool {
+				return tilingIsOn(s) && s.Cell(0, 20).Rune == '│'
+			}, bootTimeout); err != nil {
+				t.Fatalf("tiled pane: %v\n%s", err, term.Snapshot())
+			}
+			mouseHover(t, term, 0, 20)
+			waitPointerShape(t, stream, "ew-resize", "before refocus")
+
+			// The host may report refocus without delivering the earlier blur.
+			if event == "focus" {
+				if err := term.Type("\x1b[I"); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				mousePress(t, term, 30, 20, tuitest.MouseLeft, 0)
+			}
+			waitPointerShape(t, stream, "default", "after refocus without blur or release")
+		})
+	}
+}
+
+func TestRailHoverRetiresTheResizePointer(t *testing.T) {
+	for _, tc := range []struct {
+		name, rail          string
+		paneX, railX, nextX int
+	}{
+		{"right", rightRailConfig("24"), 95, 96, 97},
+		{"left", "[appearance.sidebar]\nenabled = true\nposition = \"left\"\nwidth = 24\n", 24, 23, 22},
+		{"secondary-left", rightRailConfig("24") + "[appearance.sidebar.left]\nenabled = true\nwidth = 24\n", 24, 23, 22},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			base := t.TempDir()
+			writeConfig(t, base, "[appearance]\nfocus_follows_mouse = true\nborder_style = \"rounded\"\ndockbar_position = \"top\"\n"+
+				"[startup]\nopen_default_window = true\ntiled = true\n"+tc.rail)
+			stream := &hostStream{}
+			term := startIn(t, base, startOpts{cols: 120, rows: 40, args: []string{"new", "pointer-rail"}, out: stream})
+			dir := artifactDir(t)
+			t.Cleanup(func() {
+				saveArtifact(t, term, dir, "rail-hover")
+				shapes := osc22RE.FindAllString(string(stream.bytes()), -1)
+				if err := os.WriteFile(filepath.Join(dir, "pointer-shapes.txt"), []byte(fmt.Sprintf("%q\n", shapes)), 0o644); err != nil {
+					t.Errorf("save pointer shapes: %v", err)
+				}
+			})
+			if err := term.WaitFor(func(s tuitest.Screen) bool {
+				return tilingIsOn(s) && s.Cell(tc.paneX, 20).Rune == '│' && s.Cell(tc.railX, 20).Rune == '│'
+			}, bootTimeout); err != nil {
+				t.Fatalf("pane edge beside rail: %v\n%s", err, term.Snapshot())
+			}
+
+			// Waiting at the border preserves the intermediate event a fast sweep can skip.
+			mouseHover(t, term, tc.paneX, 20)
+			waitPointerShape(t, stream, "ew-resize", "on the pane edge")
+			mouseHover(t, term, tc.railX, 20)
+			waitPointerShape(t, stream, "default", "one cell into the rail without clicking")
+			mouseHover(t, term, tc.nextX, 20)
+			time.Sleep(150 * time.Millisecond)
+			waitPointerShape(t, stream, "default", "continued rail hover")
+		})
+	}
 }
 
 // waitRestatedAfterResize polls until a default OSC 22 follows the last

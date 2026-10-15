@@ -210,6 +210,9 @@ func handleMouseClick(msg tea.MouseClickMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return o, nil
 	}
 
+	// A refocusing press can arrive without blur or motion.
+	o.UpdatePointerForPosition(X, Y)
+
 	// Ctrl + left press on a window: multi-select on a click, or grab the pane
 	// for moving on a drag. On the content it arms the click-vs-drag decision
 	// (committed past the threshold in handleMouseMotion, then moved through the
