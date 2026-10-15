@@ -72,8 +72,11 @@ func (m *OS) BuildSessionState() *session.SessionState {
 			// Display text is clamped the way the daemon clamps it, so the
 			// two agree and a long title cannot push the session past the
 			// daemon's limit on a state update.
-			Title:        session.ClampDisplayText(w.Title()),
-			CustomName:   session.ClampDisplayText(w.CustomName),
+			Title:      session.ClampDisplayText(w.Title()),
+			CustomName: session.ClampDisplayText(w.CustomName),
+			// Client-owned recency: when this client's user last had the pane
+			// in front of them. See WindowState.LastViewed.
+			LastViewed:   m.WindowViewedAt[w.ID],
 			X:            x,
 			Y:            y,
 			Width:        width,
@@ -352,6 +355,7 @@ func (m *OS) RestoreFromState(state *session.SessionState) error {
 		window.DisableCallbacks()
 
 		m.Windows = append(m.Windows, window)
+		m.seedWindowViewedAt(&ws)
 		m.LogInfo("[RESTORE] Window %d created: DaemonMode=%v, PTYID=%s", i, window.DaemonMode, shortID(window.PTYID))
 	}
 
@@ -1482,6 +1486,7 @@ func (m *OS) createWindowFromSync(ws *session.WindowState) *terminal.Window {
 	}
 
 	window := m.newWindowFromState(ws)
+	m.seedWindowViewedAt(ws)
 
 	// Set up PTY handlers if we have a daemon client
 	if m.DaemonClient != nil {

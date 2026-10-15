@@ -542,6 +542,7 @@ func (m *OS) settingsCategories() []settingsCategory {
 			opt("hints.all_panes"),
 			opt("panes.label_keys"),
 			opt("panes.navigator_layout"),
+			opt("panes.navigator_sort"),
 		}),
 	}
 
