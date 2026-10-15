@@ -2033,7 +2033,8 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return m, nil
 
 	case tea.FocusMsg:
-		// The host terminal gained focus. See host_focus.go.
+		// A host can report focus-in without the preceding focus-out.
+		m.ResetPointerShape()
 		return m, m.noteHostFocus(true)
 
 	case tea.BlurMsg:
