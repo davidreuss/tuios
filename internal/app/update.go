@@ -3039,6 +3039,11 @@ func (m *OS) reportActivity(msg tea.Msg) {
 		// routed send-keys or a tape presses arrive as other messages and
 		// are not reported. See session.MsgSessionUsed.
 		m.DaemonClient.ReportUsed(m.msgClock)
+		// Typing into a pane is having it in front of you, so the same test
+		// that guards the report guards the viewed stamp.
+		if m.FocusedWindow >= 0 && m.FocusedWindow < len(m.Windows) {
+			m.markWindowViewed(m.Windows[m.FocusedWindow])
+		}
 	}
 	// The policy is unknown against a daemon that does not name it in the
 	// attach reply, and during a session switch until the reply lands. Such

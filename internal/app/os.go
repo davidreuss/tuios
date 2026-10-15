@@ -1300,6 +1300,9 @@ type OS struct {
 	// navLayoutPick is the navigator layout the v key last chose, kept for
 	// the next time the navigator opens. Empty is the configured one.
 	navLayoutPick string
+	// navSortPick is the navigator sort the s key last chose, kept for the
+	// next time the navigator opens. Empty is the configured one.
+	navSortPick string
 	// Workspace switcher overlay, scoped to the attached session
 	ShowWorkspaceSwitcher     bool
 	WorkspaceSwitcherQuery    string
@@ -1660,6 +1663,13 @@ type OS struct {
 	// is the moment they looked away: where "while you were away" starts.
 	// Persisted beside SidebarAgentSeenSeq, and per client for the same reason.
 	SidebarAgentSeenAt map[string]int64
+	// WindowViewedAt is, by window ID, when this client's user last had the
+	// pane in front of them (Unix nanoseconds): focused it, or typed into it
+	// from their own terminal. It is written into WindowState.LastViewed on
+	// the session sync, so the navigator can sort by it on every client. The
+	// daemon keeps the later of the two sides, so a restart that restores an
+	// older stamp cannot pull the value backwards.
+	WindowViewedAt map[string]int64
 	// sidebarStateSocket is the daemon socket the persisted window-keyed maps
 	// were written against, and the guard on pruning them: window IDs mean
 	// nothing outside the daemon that issued them.

@@ -407,6 +407,8 @@ func (m *OS) FocusWindow(i int) *OS {
 
 	// ATOMIC: Set focus and Z-index in one operation
 	m.FocusedWindow = i
+	// The person just put this pane in front of them.
+	m.markWindowViewed(m.Windows[i])
 	m.FocusHistory = session.RecordFocus(m.FocusHistory, m.Windows[i].Workspace, m.Windows[i].ID)
 	// A pane that never got a report still assumes it has focus, as a
 	// program does when it turns 1004 on, so leaving it reports the loss.
