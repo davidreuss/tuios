@@ -197,7 +197,7 @@ func (m *OS) sidebarFilesHeaderReturn(hasCd bool, cdX0 int, cw int, pal overlay.
 		end = cdX0 - 1
 	}
 	x0 := end - tw
-	if x0 < sidebarHeaderLabelW(sidebarFilesLabel)+1 {
+	if x0 < sidebarHeaderLabelW(sidebarFilesLabel, &m.Settings)+1 {
 		return "", sidebarTokenSpan{}, false
 	}
 	span := sidebarTokenSpan{Kind: sidebarRowFileReturn, X0: x0, X1: x0 + tw}

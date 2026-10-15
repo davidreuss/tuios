@@ -78,9 +78,6 @@ const linkLabelMax = 72
 // renderLinkLabel composes the label for the run under the pointer, or nil when
 // there is none.
 func (m *OS) renderLinkLabel() *lipgloss.Layer {
-	if !m.Settings.LinkLabel {
-		return nil
-	}
 	link, ok := m.HoveredLink()
 	if !ok || link.URL == "" {
 		return nil
