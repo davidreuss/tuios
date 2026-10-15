@@ -2107,7 +2107,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			if idx >= len(customRows) {
 				break
 			}
-			st := m.railRowState(idx == hoverRow[sidebarSectionCustom], false)
+			st := m.railRowState(idx == hoverRow[sidebarSectionCustom], false, false)
 			lines = append(lines, compose(st.mark(pal, m.sidebarCustomRow(customRows[idx], cw, pal, st))))
 		}
 		if h := hidden[sidebarSectionCustom]; h > 0 {
@@ -2146,7 +2146,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 				// The heading over a pane's subagent rows: the mouse and the
 				// keyboard both reach it, and activating it opens or shuts
 				// the rows.
-				st := m.railRowState(idx == hoverRow[sidebarSectionAgents], isCursor(sidebarRowSubagentToggle, e.SessionID, e.WindowID))
+				st := m.railRowState(idx == hoverRow[sidebarSectionAgents], isCursor(sidebarRowSubagentToggle, e.SessionID, e.WindowID), false)
 				recordHit(sidebarRowSubagentToggle, e.SessionID, e.WindowID, e.WindowIndex, rowH[sidebarSectionAgents])
 				lines = append(lines, compose(st.mark(pal, m.sidebarChildRow(e, cw, pal, st, false))))
 				if rowH[sidebarSectionAgents] > 1 {
@@ -2157,7 +2157,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			if e.sidebarSubRow() {
 				// A subagent's row: a click on it goes to its pane, and the
 				// keyboard steps over it, from the pane's row to the next.
-				st := m.railRowState(idx == hoverRow[sidebarSectionAgents], false)
+				st := m.railRowState(idx == hoverRow[sidebarSectionAgents], false, false)
 				recordClick(sidebarRowAgent, e.SessionID, e.WindowID, e.WindowIndex, rowH[sidebarSectionAgents])
 				lines = append(lines, compose(st.mark(pal, m.sidebarChildRow(e, cw, pal, st, false))))
 				if rowH[sidebarSectionAgents] > 1 {
