@@ -1589,6 +1589,12 @@ var optionSpecs = []Option{
 		Description: "Drag and drop between panes over the kitty drag and drop protocol (OSC 72)",
 		Default:     "false",
 	},
+	{
+		Path: "panes.navigator_sort", Type: OptionString, Section: "panes",
+		Description: "The order the pane navigator lists panes in when it opens",
+		Accepted:    NavigatorSorts,
+		Default:     NavigatorSortPosition,
+	},
 
 	// [scratch]. Read each time toggle_scratch creates or shows the scratch
 	// terminal. A show resizes the popup to the size in force.
