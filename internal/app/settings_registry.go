@@ -97,6 +97,7 @@ var settingLabels = map[string]string{
 	"hints.alphabet":                      "Hint letters",
 	"panes.label_keys":                    "Pane label keys",
 	"panes.navigator_layout":              "Navigator layout",
+	"panes.navigator_sort":                "Navigator sort",
 	"hints.open":                          "Ctrl opens a hint",
 	"hints.dim":                           "Dim around hints",
 	"hints.all_panes":                     "Hints on all panes",
