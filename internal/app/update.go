@@ -2032,6 +2032,8 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		// through a suspend shows the time now rather than after its next
 		// dockWallCheck. Focus coming back is often the first sign of a wake.
 		m.dockEngine.replan()
+		// A host can report focus-in without the preceding focus-out.
+		m.ResetPointerShape()
 		return m, m.noteHostFocus(true)
 
 	case tea.BlurMsg:

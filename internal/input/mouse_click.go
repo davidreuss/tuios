@@ -257,6 +257,9 @@ func handleMouseClick(msg tea.MouseClickMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return o, nil
 	}
 
+	// A refocusing press can arrive without blur or motion.
+	o.UpdatePointerForPosition(X, Y)
+
 	// A middle press over pane content can be a terminal-mode binding. It is
 	// looked up before guest mouse forwarding, so the shipped paste gesture also
 	// works over a program that tracks the mouse; removing or changing the
