@@ -230,7 +230,7 @@ func sidebarFilesEmptyRow(cw int, pal overlay.Palette) string {
 // with no colour and no icon at all. The icon in the glyph column is the layer
 // on top of it, not instead of it.
 func (m *OS) sidebarFileRow(row fileRowSpec, cw int, pal overlay.Palette, st sidebarRowState) string {
-	bg := sidebarRowBg(st, pal)
+	bg := m.sidebarRowBg(st, pal)
 
 	if row.Note {
 		ink := pal.FgMute

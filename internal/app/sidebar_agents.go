@@ -276,7 +276,7 @@ func (m *OS) refoldAgentsOnPaneFocus() {
 // sidebarAgentFoldRow draws the fold line, "+3 at rest", muted, at the name
 // column. On a tall section the second line names the folded panes.
 func (m *OS) sidebarAgentFoldRow(e sidebarAgentEntry, cw int, pal overlay.Palette, st sidebarRowState, names bool) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 	fg := pal.FgMute
 	if st.lit() {
 		fg = pal.Fg
