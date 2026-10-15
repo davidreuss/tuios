@@ -15,6 +15,7 @@ import (
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 	"github.com/Gaurav-Gosain/tuios/internal/sessiontree"
 	"github.com/Gaurav-Gosain/tuios/internal/terminal"
+	"github.com/Gaurav-Gosain/tuios/internal/theme"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -35,13 +36,9 @@ const sidebarRestoredTag = session.RestoredTag
 // land the whole rail on one: gutter col 0, glyph col 1, text col 3, and any
 // right-aligned figure inset one cell from the rail's own edge.
 //
-// Emphasis is spent on two things and no more, and neither of them paints a
-// standing row. "This is the current one" (the attached session, the focused
-// pane) is an accent mark in the rail's one-cell gutter, the same mark in both
-// places; a state wanting a human takes the same cell in its severity colour,
-// plus the rail's one bold. That leaves the only full-width band on the rail to
-// "this is where the cursor or the pointer is", which is the thing the user is
-// steering.
+// The attached session keeps a bold name and a background band. Hover uses
+// the same band, while the keyboard cursor and a dragged row use a stronger
+// one. Attention retains its severity glyph and gutter.
 
 // sidebarRowKind distinguishes what a sidebar row points at for mouse routing.
 type sidebarRowKind int
@@ -167,31 +164,48 @@ func (m *OS) railRowState(hover, cursor bool) sidebarRowState {
 	return sidebarRowState{Cursor: cursor, Hover: hover, Focused: m.sidebarRailFocused()}
 }
 
-// sidebarRowBg is the ground a row paints. Three steps, not one.
-//
-// It is one function rather than a choice made at each use because a row's
-// parts are rendered in more than one place and they have to agree: the "+" on
-// a machine's header is built before the row around it is, and rendering it on
-// the default ground left a block of unhighlighted cells sitting in the middle
-// of a highlighted row.
-//
-// The cursor on a focused rail takes Surface, the strongest of the three
-// grounds. The cursor on an unfocused rail drops to RowSel, so a rail that does
-// not own the keyboard stops claiming that it does while still saying where the
-// cursor will be when it gets it back. The mouse wash takes RowSel too, and is
-// told apart from an unfocused cursor by extent rather than by strength.
-//
-// The cursor always wins. A row that is both the cursor and st.lit() draws the
-// cursor treatment; the two are never composited, because a row carrying both
-// grounds reads as a third state that means nothing.
-func sidebarRowBg(st sidebarRowState, pal overlay.Palette) color.Color {
-	switch {
-	case st.Cursor && st.Focused:
-		return pal.Surface
-	case st.Cursor, st.Hover:
-		return pal.RowSel
+// sidebarRowBg keeps every part of a row on the same ground. Keyboard focus
+// takes priority when the pointer also rests on the cursor row.
+func (m *OS) sidebarRowBg(st sidebarRowState, pal overlay.Palette) color.Color {
+	if !st.lit() {
+		return nil
 	}
-	return nil
+	bg := m.sidebarBand(pal, st.Cursor && st.Focused)
+	if st.Cursor || pal.Depth == overlay.Depth16 {
+		return bg
+	}
+	ground := m.railGround()
+	return overlay.ReadableAt(overlay.MixColors(ground, bg, 0.3), ground, 1.03)
+}
+
+func (m *OS) sidebarBand(pal overlay.Palette, focused bool) color.Color {
+	ground := m.railGround()
+	if focused {
+		floor := 3.0
+		// A darker band on light grounds leaves too little contrast for text.
+		if theme.GroundIsLight(ground) {
+			floor = 2.5
+		}
+		return overlay.ReadableAt(pal.Surface, ground, floor)
+	}
+	bg := overlay.ReadableAt(pal.RowSel, ground, 1.75)
+	if pal.Depth == overlay.Depth256 && overlay.ContrastRatio(bg, overlay.Shown(ground)) > 2 {
+		bg = overlay.ReadableAt(overlay.MixColors(ground, bg, 0.85), ground, 1.75)
+	}
+	return bg
+}
+
+func (m *OS) sidebarActiveBand(pal overlay.Palette) color.Color {
+	if pal.Depth == overlay.Depth16 {
+		return m.sidebarBand(pal, false)
+	}
+	hover := m.sidebarRowBg(sidebarRowState{Hover: true}, pal)
+	ground := m.railGround()
+	bg := overlay.Lighter(hover, 1.1)
+	if overlay.ContrastRatio(bg, ground) < overlay.ContrastRatio(hover, ground) {
+		bg = overlay.Darker(hover, 1.1)
+	}
+	return overlay.Shown(bg)
 }
 
 // sidebarHeaderAdd places a section header's add control: right-aligned on the
@@ -553,6 +567,9 @@ func sidebarStyle(bg, fg color.Color) lipgloss.Style {
 		s = s.Background(bg)
 	}
 	if fg != nil {
+		if bg != nil {
+			fg = overlay.ReadableAt(fg, bg, overlay.MarkFloor)
+		}
 		s = s.Foreground(fg)
 	}
 	return s
@@ -2665,27 +2682,16 @@ func (m *OS) windowIndexByID(id string) int {
 	return slices.IndexFunc(m.Windows, func(w *terminal.Window) bool { return w != nil && w.ID == id })
 }
 
-// sidebarSessionRow renders one session row.
-//
-//	▎● name              3
-//	^ ^ ^                ^ window count, right-aligned, muted, inset one cell
-//	| | name: full strength on the attached session, dim on the rest
-//	| rolled-up agent glyph, state-colored, a quiet dot when there is none
-//	gutter: the session's own colour, severity when a pane wants a human
-//
-// Emphasis ladder, quietest to loudest: other rows dim; attached session an
-// accent gutter mark and a full-strength name; pointer or keyboard cursor a
-// Surface band; a state wanting a human a severity gutter mark, a coloured
-// glyph and the rail's one bold. No standing fill, so the only band on a
-// resting rail is the one under the pointer.
-//
-// A drag in progress keeps the band on the dragged row while it rides the
-// pointer.
+// sidebarSessionRow keeps the attached session visible when the rail does not
+// own the keyboard. The cursor and a dragged row retain the stronger band,
+// while attention keeps its severity gutter and glyph.
 func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw int, pal overlay.Palette, st sidebarRowState, dragged, showCounts bool) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
+	if node.IsCurrent && !(st.Cursor && st.Focused) {
+		rowBg = m.sidebarActiveBand(pal)
+	}
 	if dragged {
-		// A drag keeps the strongest band on the row riding the pointer.
-		rowBg = pal.Surface
+		rowBg = m.sidebarBand(pal, true)
 	}
 
 	// The session's colour takes whichever of the row's two marks the louder
@@ -2728,14 +2734,10 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	// non-attached session on the same ink as the heading above it once that
 	// heading stopped being bright. Two levels sharing an ink is the complaint
 	// the rail's hierarchy exists to answer.
-	//
-	// "Which one am I on" did not need the ink and does not lose anything: it
-	// is the tinted mark in the gutter, which is the rail's entire accent
-	// budget and is already spent on exactly that. The ink also no longer moves
-	// when a row is lit, because the band under it says that now, and a row
-	// that changes ground and ink at once reads as an error rather than as a
-	// selection.
 	fg := pal.Fg
+	if rowBg != nil {
+		fg = overlay.Readable(fg, rowBg)
+	}
 	title := printableTitle(node.Title)
 	indent := m.sidebarRowIndent()
 	// A worktree session is named by its branch under its repository's row,
@@ -2783,14 +2785,15 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 		branch = sidebarStyle(rowBg, nil).Render(" ") + sidebarStyle(rowBg, pal.FgMute).Render(b)
 	}
 	right := sidebarJoinFigures(figures[:], keep[1:], sidebarStyle(rowBg, pal.FgMute))
-	name := mark + sidebarStyle(rowBg, fg).Bold(sidebarAttention(node.AgentState)).
+	name := mark + sidebarStyle(rowBg, fg).Bold(node.IsCurrent || sidebarAttention(node.AgentState)).
 		Render(m.sidebarMarquee("s:"+node.ID, title, max(avail, 1), st.Cursor)) + branch
 
 	gutter := sidebarGutterTinted(node.IsCurrent, node.AgentState, tint, rowBg, pal, &m.Settings)
 	if tint != nil && stated && !node.IsCurrent && !sidebarAttention(node.AgentState) {
 		gutter = sidebarStyle(rowBg, tint).Render(accentMark())
 	}
-	return sidebarComposeGroupRow(indent, gutter, glyph, name, right, cw, rowBg)
+	row := sidebarComposeGroupRow(indent, gutter, glyph, name, right, cw, rowBg)
+	return pal.Mark(row, overlay.RowState{Cursor: node.IsCurrent && !st.Cursor})
 }
 
 // sidebarTerminalRow renders one pane of the session the terminals section is
@@ -2804,7 +2807,7 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 // emphasis. Severity gutters and state glyph colours stay, because they are
 // what the user peeked to see.
 func (m *OS) sidebarTerminalRow(e sidebarTerminalEntry, cw int, pal overlay.Palette, st sidebarRowState, peeked bool) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 
 	title := printableTitle(e.Title)
 	if title == "" {
@@ -2922,7 +2925,7 @@ const sidebarWorkspaceTagMax = 8
 // back, all on the name spine so it reads as the section's one row rather than
 // as a message about it. Clicking anywhere on it flips the filter.
 func (m *OS) sidebarAgentsEmptyRow(total, cw int, pal overlay.Palette, st sidebarRowState) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 	fg := pal.FgMute
 	if st.lit() {
 		fg = pal.Fg
@@ -2977,7 +2980,7 @@ func sidebarAgentName(e sidebarAgentEntry) string {
 // row is stays true at any width, where half a sentence is not a shorter
 // sentence.
 func (m *OS) sidebarAgentNoteRow(e sidebarAgentEntry, variant, cw int, pal overlay.Palette, st sidebarRowState) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 	indent := sidebarNameCol + 1
 	avail := sidebarNameAvail(cw, 0) - 1
 	plan := m.sidebarAgentTokensFor(e, variant, true, time.Now())
@@ -3159,7 +3162,7 @@ func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.P
 		fg = pal.Fg
 	}
 	if st.lit() {
-		rowBg = sidebarRowBg(st, pal)
+		rowBg = m.sidebarRowBg(st, pal)
 		fg = pal.Fg
 	}
 
