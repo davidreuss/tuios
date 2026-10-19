@@ -179,8 +179,16 @@ func handleMouseMotion(msg tea.MouseMotionMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return finalizeCtrlDrag(o, mouse.X, mouse.Y)
 	}
 
-	// Update pointer shape based on what we're hovering over (OSC 22)
-	o.UpdatePointerForPosition(mouse.X, mouse.Y)
+	// Update pointer shape based on what we're hovering over (OSC 22). A
+	// motion that reports the same position as the last one carries no
+	// hover news: with a mouse-mode guest the filter passes every motion
+	// through, including the re-emits a host sends on focus changes, and
+	// evaluating those would set a resize shape over a divider the
+	// stationary pointer happens to rest on.
+	if mouse.X != o.HoverEvalX || mouse.Y != o.HoverEvalY {
+		o.UpdatePointerForPosition(mouse.X, mouse.Y)
+	}
+	o.HoverEvalX, o.HoverEvalY = mouse.X, mouse.Y
 
 	// A link in pane content, which is the one hover that comes from what a
 	// program printed rather than from where the chrome is. It runs after the

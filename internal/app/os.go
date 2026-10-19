@@ -230,8 +230,15 @@ type OS struct {
 	// last motion that did reach it, which is what the filter's "moved a
 	// cell" tests are written against, so the two cannot be one field. See
 	// NotePointerSeen.
-	pointerSeenX    int
-	pointerSeenY    int
+	pointerSeenX int
+	pointerSeenY int
+	// HoverEvalX/Y is the raw position of the last motion whose hover shape
+	// UpdatePointerForPosition evaluated. A motion that reports the same
+	// position again is the host re-emitting on a focus change or trackpad
+	// idle, and re-arming a resize shape over a divider the pointer is
+	// resting on is exactly what it must not do.
+	HoverEvalX      int
+	HoverEvalY      int
 	ShowHelp        bool
 	InteractionMode bool              // True when actively dragging/resizing
 	WindowExitChan  chan string       // Channel to signal window closure
