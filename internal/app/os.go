@@ -2179,6 +2179,10 @@ func (m *OS) SwitchToSession(targetSession string) error {
 	m.SessionName = m.DaemonClient.SessionName()
 	m.rebuildForSession(state, savedWidth, savedHeight)
 	m.leftSession(from)
+	// The pointer shape was set by whatever the old session had under the
+	// cursor, and a switch fires no blur or focus to reset it. Default it and
+	// let the next motion event describe the new session.
+	m.ResetPointerShape()
 	// The components tell their commands which session they are drawing for,
 	// and that answer just changed.
 	m.SyncDockContext()
