@@ -36,7 +36,13 @@ func (m *OS) SetPointerShape(shape PointerShape) {
 }
 
 // ResetPointerShape sets the pointer back to default.
+//
+// It writes unconditionally rather than through SetPointerShape's dedup: the
+// last write can be lost while the host terminal is switching away or
+// repainting, and a stale resize shape that tuios believes was already reset
+// then sticks until real mouse motion changes it.
 func (m *OS) ResetPointerShape() {
+	m.currentPointer = ""
 	m.SetPointerShape(PointerDefault)
 }
 
