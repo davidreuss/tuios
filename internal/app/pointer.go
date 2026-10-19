@@ -2,6 +2,8 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
+	"runtime"
 )
 
 // PointerShape represents a CSS cursor shape name for OSC 22.
@@ -30,6 +32,9 @@ const (
 func (m *OS) SetPointerShape(shape PointerShape) {
 	if shape == m.currentPointer {
 		return
+	}
+	if _, file, line, ok := runtime.Caller(1); ok {
+		m.LogInfo("[POINTER] %s from %s:%d", shape, filepath.Base(file), line)
 	}
 	m.currentPointer = shape
 	m.writeHostSequence(fmt.Appendf(nil, "\x1b]22;%s\x1b\\", string(shape)))
