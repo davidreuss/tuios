@@ -2782,7 +2782,7 @@ func (m *OS) agentEntries(sessions []sessiontree.Node) []sidebarAgentEntry {
 	var agents []sidebarAgentEntry
 	// The same walk SwitchToSessionByIndex does, so the number the token draws
 	// is the number that opens the session.
-	localIndex := localSessionIndexes(sessions)
+	localIndex := m.localSessionIndexes(sessions)
 	for _, s := range sessions {
 		pr := ""
 		if s.Worktree != nil {
