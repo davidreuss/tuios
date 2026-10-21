@@ -73,13 +73,20 @@ func TestValidBranch(t *testing.T) {
 	}
 }
 
-func TestDetectDoesNotCallTheMainCheckoutAWorktree(t *testing.T) {
+func TestDetectReadsTheMainCheckoutOffItsGitDirectory(t *testing.T) {
 	repo := testutil.GitRepo(t)
-	if info, ok := Detect(repo); ok {
-		t.Errorf("Detect on the main checkout = %+v, want no worktree", info)
+	info, ok := Detect(repo)
+	if !ok {
+		t.Fatal("Detect on the main checkout found nothing")
+	}
+	if !info.Main {
+		t.Errorf("the main checkout's record is not marked main: %+v", info)
+	}
+	if info.Repo != filepath.Base(repo) || info.Path != repo || info.RepoRoot != repo {
+		t.Errorf("the main checkout's record names the wrong repository: %+v", info)
 	}
 	if info, ok := Detect(t.TempDir()); ok {
-		t.Errorf("Detect on a plain directory = %+v, want no worktree", info)
+		t.Errorf("Detect on a plain directory = %+v, want no record", info)
 	}
 }
 

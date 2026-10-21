@@ -41,30 +41,43 @@ type Info struct {
 	Branch string `json:"branch"`
 	// Path is the worktree's own root directory.
 	Path string `json:"path"`
+	// Main marks the repository's main checkout: the checkout that holds the
+	// shared .git, which the rail groups like any other checkout of the
+	// repository.
+	Main bool `json:"main,omitempty"`
 }
 
-// Detect reports whether dir lies inside a linked git worktree, and which one.
+// Detect reports whether dir lies inside a checkout of a git repository, and
+// which one.
 //
 // It walks up from dir looking for a ".git" entry. A ".git" file names a
 // linked worktree, and the answer is read from the gitdir it points to. A
-// ".git" directory is the main checkout, which is not a worktree in the sense
-// this package means: the sessions the rail groups are the ones a repository
-// was split into, not the repository itself.
+// ".git" directory is the main checkout, which comes back marked Main: the
+// rail groups every checkout of a repository under the repository's row, the
+// main one along with the split-out ones.
 func Detect(dir string) (Info, bool) {
 	dir = filepath.Clean(dir)
 	if dir == "" || dir == "." {
 		return Info{}, false
 	}
 	gitdir, commonDir, root, ok := gitstate.Locate(dir)
-	// The two git directories are the same in the main checkout, and when a
-	// ".git" file's gitdir has no commondir pointer. Neither is a linked
-	// worktree.
-	if !ok || gitdir == commonDir {
+	if !ok {
 		return Info{}, false
 	}
-	// Only a gitdir under <common>/worktrees/<name> is a linked worktree. A
-	// submodule also uses a ".git" file, and its gitdir sits under modules/.
-	if filepath.Base(filepath.Dir(gitdir)) != "worktrees" {
+	// A gitdir equal to the common one is either the main checkout, whose
+	// ".git" is the shared git directory itself, or a ".git" file whose
+	// gitdir carries no commondir pointer. The latter cannot say which
+	// repository it belongs to, so only the one named ".git" is taken.
+	// Otherwise only a gitdir under <common>/worktrees/<name> is a linked
+	// worktree: a submodule also uses a ".git" file, and its gitdir sits
+	// under modules/.
+	var main bool
+	if gitdir == commonDir {
+		if filepath.Base(gitdir) != ".git" {
+			return Info{}, false
+		}
+		main = true
+	} else if filepath.Base(filepath.Dir(gitdir)) != "worktrees" {
 		return Info{}, false
 	}
 	repoRoot := commonDir
@@ -80,6 +93,7 @@ func Detect(dir string) (Info, bool) {
 		RepoRoot: repoRoot,
 		Branch:   branch,
 		Path:     root,
+		Main:     main,
 	}, true
 }
 

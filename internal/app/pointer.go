@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"path/filepath"
 	"runtime"
+
+	"github.com/Gaurav-Gosain/tuios/internal/debuglog"
 )
 
 // PointerShape represents a CSS cursor shape name for OSC 22.
@@ -35,6 +37,7 @@ func (m *OS) SetPointerShape(shape PointerShape) {
 	}
 	if _, file, line, ok := runtime.Caller(1); ok {
 		m.LogInfo("[POINTER] %s from %s:%d", shape, filepath.Base(file), line)
+		debuglog.Internal{}.Printf("[POINTER] %s from %s:%d", shape, filepath.Base(file), line)
 	}
 	m.currentPointer = shape
 	m.writeHostSequence(fmt.Appendf(nil, "\x1b]22;%s\x1b\\", string(shape)))
