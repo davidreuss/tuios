@@ -85,6 +85,8 @@
 package tuie2e
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -102,8 +104,6 @@ import (
 	"testing"
 	"time"
 
-	"crypto/sha256"
-	"encoding/hex"
 	"github.com/Gaurav-Gosain/tuitest"
 )
 
@@ -149,6 +149,7 @@ var tuiosBin string
 func TestMain(m *testing.M) {
 	runRelayClientIfAsked()
 	runThrottleIfAsked()
+	runStandInIfAsked()
 	os.Exit(runE2E(m))
 }
 

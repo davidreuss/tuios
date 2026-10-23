@@ -67,6 +67,16 @@ func (m *OS) OverlayMouseClick(x, y int, right bool) (bool, tea.Cmd) {
 	// Clicking a panel brings it to the front.
 	m.raiseOverlay(h.Kind)
 
+	// The cockpit fills the screen and is not dragged: a click selects, a
+	// second one goes. See cockpit.go.
+	if h.Kind == "inbox" {
+		if right {
+			return true, nil
+		}
+		cmd, _ := m.CockpitClick(x, y)
+		return true, cmd
+	}
+
 	lx, ly := x-h.OriginX, y-h.OriginY
 
 	// Right-click anywhere on the panel grabs it for dragging.
@@ -146,6 +156,10 @@ func (m *OS) OverlayMouseMotion(x, y int) bool {
 	if !ok {
 		return false
 	}
+	if h.Kind == "inbox" {
+		m.CockpitHover(x, y)
+		return true
+	}
 	lx, ly := x-h.OriginX, y-h.OriginY
 	if h.Kind == "accent" {
 		// Only a held button paints in the picker. Bare hover must not, or the
@@ -205,12 +219,16 @@ func (m *OS) overlayRowHover(kind string, idx int) {
 		m.InboxSelect(idx)
 	case "workspace":
 		m.WorkspaceSwitcherSelected = idx
+	case "goto":
+		m.GotoPickerSelect(idx)
 	case overlayKindBuffers:
 		m.BufferChooserSelect(idx)
 	case overlayKindTransfers:
 		m.TransfersSelect(idx)
 	case overlayKindCopyDialog:
 		m.CopyDialogSelect(idx)
+	case overlayKindPluginApproval:
+		m.PluginApprovalSelect(idx)
 	case "navigator":
 		m.NavigatorSelect(idx)
 	case "aggregate":
@@ -223,6 +241,10 @@ func (m *OS) overlayRowHover(kind string, idx int) {
 		m.QuitMenuSelected = idx
 	case "sessionclose":
 		m.SessionCloseSelected = idx
+	case overlayKindRestart:
+		if m.restart.phase == restartConfirm {
+			m.restart.selected = idx
+		}
 	case overlayKindLogs:
 		m.LogSelected = idx
 	case "filedialog":
@@ -283,10 +305,12 @@ func (m *OS) OverlayMouseWheel(x, y int, up bool) bool {
 	case "agentmail":
 		m.AgentMailMove(wheelDelta(up))
 	case "inbox":
-		m.InboxMove(wheelDelta(up))
+		m.CockpitWheel(x, up)
 	case "workspace":
 		n := len(FilterWorkspaceItems(m.WorkspaceSwitcherItems, m.WorkspaceSwitcherQuery))
 		m.WorkspaceSwitcherMove(wheelDelta(up), n)
+	case "goto":
+		m.GotoPickerMove(wheelDelta(up))
 	case overlayKindBuffers:
 		m.BufferChooserMove(wheelDelta(up))
 	case overlayKindTransfers:
@@ -302,6 +326,8 @@ func (m *OS) OverlayMouseWheel(x, y int, up bool) bool {
 		m.AggregateViewMove(wheelDelta(up))
 	case "sessionclose":
 		m.SessionCloseMove(wheelDelta(up))
+	case overlayKindRestart:
+		m.DaemonRestartMove(wheelDelta(up))
 	case "filedialog":
 		m.FileConfirmMove(wheelDelta(up))
 	case "accent":
@@ -470,6 +496,9 @@ func (m *OS) overlayRowClick(kind string, row overlayRowHit, lx, ly int) tea.Cmd
 	case "workspace":
 		m.WorkspaceSwitcherSelected = row.Idx
 		m.WorkspaceSwitcherActivate(row.Idx)
+	case "goto":
+		m.GotoPickerSelect(row.Idx)
+		m.GotoPickerActivate()
 	case overlayKindBuffers:
 		return m.BufferChooserActivate(row.Idx)
 	case overlayKindTransfers:
@@ -481,6 +510,8 @@ func (m *OS) overlayRowClick(kind string, row overlayRowHit, lx, ly int) tea.Cmd
 		}
 	case overlayKindCopyDialog:
 		return m.CopyDialogActivate(row.Idx)
+	case overlayKindPluginApproval:
+		return m.PluginApprovalActivate(row.Idx)
 	case "navigator":
 		// A click on a session or a workspace row folds it, and a click on
 		// a pane goes to it, as enter does.
@@ -506,6 +537,8 @@ func (m *OS) overlayRowClick(kind string, row overlayRowHit, lx, ly int) tea.Cmd
 	case "sessionclose":
 		m.SessionCloseSelected = row.Idx
 		return m.SessionCloseActivate(row.Idx)
+	case overlayKindRestart:
+		return m.DaemonRestartActivate(row.Idx)
 	case "filedialog":
 		m.filePrompt.Selected = row.Idx
 		return m.FileConfirmActivate(row.Idx)
@@ -607,12 +640,17 @@ func (m *OS) closeOverlay(kind string) {
 		m.CloseInbox()
 	case "workspace":
 		m.CloseWorkspaceSwitcher()
+	case "goto":
+		m.CloseGotoPicker()
 	case overlayKindBuffers:
 		m.CloseBufferChooser()
 	case overlayKindTransfers:
 		m.CloseTransfers()
 	case overlayKindCopyDialog:
 		m.CloseCopyDialog()
+	case overlayKindPluginApproval:
+		// Click-away is not now: the plugin keeps waiting.
+		m.ClosePluginApproval()
 	case "worktreeprompt":
 		// Click-away cancels, matching Esc: nothing was asked yet, so nothing
 		// is lost.
@@ -638,6 +676,12 @@ func (m *OS) closeOverlay(kind string) {
 		// Click-away cancels, like esc. Dismissing is the safe answer, so it is
 		// the one an ambiguous gesture gets.
 		m.CloseSessionClose()
+	case overlayKindRestart:
+		// The same rule. A failure that left no daemon is the exception:
+		// CloseDaemonRestart quits then, and an ambiguous gesture must not.
+		if !(m.restart.phase == restartFailed && m.restart.lost) {
+			_ = m.CloseDaemonRestart()
+		}
 	case "filedialog":
 		// Same rule, and it matters more here: the ambiguous gesture must never
 		// be the one that removes a file.

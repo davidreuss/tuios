@@ -153,6 +153,19 @@ type HostReport struct {
 	// fields are the only thing that tells them apart.
 	Drops      int    `json:"drops,omitempty"`
 	DropReason string `json:"drop_reason,omitempty"`
+	// Cores, Load1, MemPct and AgentsWorking are the far machine's load
+	// from the last hello on the link, at LoadAt (Unix seconds). RTTMillis
+	// is that hello's round trip. All are absent until a hello carried a
+	// load: a daemon too old to send one never does.
+	Cores         int     `json:"cores,omitempty"`
+	Load1         float64 `json:"load1,omitempty"`
+	MemPct        float64 `json:"mem_pct,omitempty"`
+	AgentsWorking int     `json:"agents_working,omitempty"`
+	// LoadOK is the far machine's Load.LoadOK: false when it could not read
+	// Load1.
+	LoadOK    *bool `json:"load_ok,omitempty"`
+	LoadAt    int64 `json:"load_at,omitempty"`
+	RTTMillis int64 `json:"rtt_ms,omitempty"`
 	// Stalls counts streams this link dropped because nothing was reading
 	// them. It is the one number that separates a slow client from a dead
 	// machine, which would otherwise both read as a lost link.
@@ -561,4 +574,9 @@ func (m *Manager) CallAll(ctx context.Context, verb string, params any) []Answer
 	}
 	wg.Wait()
 	return out
+}
+
+// LoadKnown reports whether r holds a load to rank the machine by.
+func (r HostReport) LoadKnown() bool {
+	return Load{Cores: r.Cores, LoadOK: r.LoadOK}.Known()
 }

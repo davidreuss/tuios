@@ -220,7 +220,7 @@ func TestReplyCarriesTheAttachNonce(t *testing.T) {
 func TestARoutedKeyReplyIsNotSignedAsThePerson(t *testing.T) {
 	m := &OS{}
 	m.AgentMail.Composing = true
-	m.AgentMail.Comp = m.newMailDraft()
+	m.AgentMail.Comp = m.newMailDraft("")
 	m.AgentMailType("yes, ")
 
 	m.AgentMailType("go ahead")
@@ -242,7 +242,7 @@ func TestARoutedKeyReplyIsNotSignedAsThePerson(t *testing.T) {
 	// A reply sent by a routed Enter is automated whoever typed the text.
 	m.AgentMailCancelReply()
 	m.AgentMail.Composing = true
-	m.AgentMail.Comp = m.newMailDraft()
+	m.AgentMail.Comp = m.newMailDraft("")
 	m.AgentMailType("typed by hand")
 	m.ProcessingRemoteKeys = true
 	if got := m.agentMailReplyNonce("abc123"); got != "" {

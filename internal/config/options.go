@@ -309,6 +309,12 @@ var optionSpecs = []Option{
 		Percent: true,
 	},
 	{
+		Path: "appearance.popup_dim", Type: OptionInt, Section: "appearance",
+		Description: "How much the screen behind a focused plain popup is darkened, as a percent. 0 is off; popup --dim overrides it.",
+		Default:     strconv.Itoa(PopupDimDefault), Min: 0, Max: PopupDimMax,
+		Percent: true,
+	},
+	{
 		Path: "appearance.animations_enabled", Type: OptionBool, Section: "appearance",
 		Description: "Animate UI transitions instead of applying them instantly",
 		Default:     "true",
@@ -655,7 +661,7 @@ var optionSpecs = []Option{
 	},
 	{
 		Path: "appearance.dock_workspace_tooltip", Type: OptionBool, Section: "dock",
-		Description: "Pop a truncated workspace name in full on hover",
+		Description: "Show the workspace name on hover when the pill cuts the name or does not show it",
 		Default:     "true",
 	},
 	{
@@ -687,6 +693,11 @@ var optionSpecs = []Option{
 		Path: "appearance.dock_mode_icon_tiling", Type: OptionString, Section: "dock",
 		Description: "Icon in the mode pill while tiling is on. An empty value shows no icon. default uses the icon of the glyph set",
 		Default:     DockModeIconDefault, DefaultClears: true, Icon: true,
+	},
+	{
+		Path: "appearance.dock_mode_split_letter", Type: OptionBool, Section: "dock",
+		Description: "Show V or H after the tiling icon in the mode pill. The letter is the direction of the next split",
+		Default:     "true",
 	},
 	{
 		Path: "appearance.dock_compact", Type: OptionBool, Section: "dock",
@@ -1389,6 +1400,13 @@ var optionSpecs = []Option{
 		Path: "pip.corner", Type: OptionString, Section: "pip",
 		Description: "Corner the picture-in-picture view goes to first. It moves to another corner when the cursor enters it",
 		Accepted:    PiPCorners, Default: PiPCornerBottomRight,
+	},
+
+	// [mermaid]. Read each time tuios mermaid runs.
+	{
+		Path: "mermaid.theme", Type: OptionString, Section: "mermaid",
+		Description: "Colours of tuios mermaid: tuios for the colours of your theme, or a named theme such as flexoki, nord or rose-pine",
+		Default:     "tuios",
 	},
 
 	// [hints]. Read each time hints mode opens. hints.patterns is a list and

@@ -50,8 +50,17 @@ func baseLayoutKey(msg tea.KeyPressMsg) (string, bool) {
 // leader. The labels on a Latin keyboard are what its user binds, so only a
 // script no binding is spelled in (Cyrillic, Greek, Hebrew, Arabic and the
 // rest) goes by position.
+//
+// Windows reports AltGr as Ctrl+Alt, so a character typed with AltGr arrives
+// as a Ctrl+Alt chord that carries text. UK AltGr+4 types "€", German AltGr+2
+// types "²" and Swiss AltGr+5 types "§"; read by position they would be
+// ctrl+alt+4, 2 and 5 and move the pane to another workspace. A Ctrl+Alt key
+// with text is typing, so it keeps the key it produced.
 func usesBaseLayout(msg tea.KeyPressMsg) bool {
 	if msg.BaseCode == 0 || msg.BaseCode == msg.Code {
+		return false
+	}
+	if msg.Mod&(tea.ModCtrl|tea.ModAlt) == tea.ModCtrl|tea.ModAlt && msg.Text != "" {
 		return false
 	}
 	return msg.Code >= 0x80 && unicode.IsPrint(msg.Code) && !unicode.Is(unicode.Latin, msg.Code)
@@ -61,6 +70,33 @@ func usesBaseLayout(msg tea.KeyPressMsg) bool {
 // spell the key it produced rather than the US key at its position.
 func producedKey(msg tea.KeyPressMsg) tea.KeyPressMsg {
 	msg.BaseCode = 0
+	return msg
+}
+
+// withoutChordText is msg without the text a terminal attached to a modifier
+// chord, for matching against bindings.
+//
+// Under the Kitty protocol's associated-text flag, Windows Terminal sends the
+// character the key types along with an Alt chord: Alt+2 arrives as code 2,
+// Alt, and text "2". Kitty and Ghostty send no text there. Bubble Tea spells a
+// key by its text when it has one, so that Alt+2 read as a plain "2". tuios
+// asks for associated text whenever it reads keys itself (window mode, a
+// prefix, the rail, an overlay), so in window mode Alt+2 selected window 2
+// instead of switching workspace, while terminal mode, which does not ask for
+// the text, switched as it should.
+//
+// Ctrl+Alt keeps its text. Windows reports AltGr as Ctrl+Alt, and a character
+// typed with AltGr (€, ², §) is text, not the chord. The pane still gets the
+// key with its text; this only changes how a binding reads it.
+func withoutChordText(msg tea.KeyPressMsg) tea.KeyPressMsg {
+	if msg.Text == "" {
+		return msg
+	}
+	mods := msg.Mod &^ (lockMods | tea.ModShift)
+	if mods == 0 || mods&(tea.ModCtrl|tea.ModAlt) == tea.ModCtrl|tea.ModAlt {
+		return msg
+	}
+	msg.Text = ""
 	return msg
 }
 
@@ -94,6 +130,7 @@ func isLayoutTextWithoutBase(msg tea.KeyPressMsg) bool {
 // a non-ASCII character, so the base-layout key is the only one that can mean
 // anything. Do not use it where the key is typed as text.
 func commandKey(msg tea.KeyPressMsg) string {
+	msg = withoutChordText(msg)
 	key := producedKey(msg).String()
 	if isASCII(key) {
 		return key

@@ -48,7 +48,7 @@ func (m *OS) RunAction(name string) error {
 	handled, cmd := (*r)(name, m)
 	if !handled {
 		if _, known := config.ActionDescriptions[name]; known {
-			return fmt.Errorf("%s is a key of its own view, such as the Inbox, mail or the rail, and runs only there. Open the view, then use Press", name)
+			return fmt.Errorf("%s is a key of its own view, such as the agents view, mail or the rail, and runs only there. Open the view, then use Press", name)
 		}
 		return fmt.Errorf("%q is not an action. Run 'tuios keybinds list' for the action names", name)
 	}
@@ -78,6 +78,11 @@ func (m *OS) PressKeys(keys []string) error {
 	wasScript := m.ScriptMode
 	m.ScriptMode = false
 	defer func() { m.ScriptMode = wasScript }()
+	// A tape is not the person: what it presses must not answer a
+	// question only the person may answer (plugin_approval.go).
+	wasPressing := m.pressingTapeKeys
+	m.pressingTapeKeys = true
+	defer func() { m.pressingTapeKeys = wasPressing }()
 	for _, msg := range msgs {
 		_, cmd := handler(msg, m)
 		m.queueScriptCmd(cmd)

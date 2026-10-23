@@ -28,14 +28,21 @@ tuios-web --host 0.0.0.0 --auto-tls --password-file ~/.config/tuios/web-password
   Use `--user` to change it.
 - There is no flag that takes the password itself. Other users can see command
   line arguments in `ps`.
-- The password file must belong to you. Its mode must be 600 or 400.
-  tuios-web does not check the file permissions on Windows.
+- The password file must belong to you. Its mode must be 600 or 400. On
+  Windows, only you, SYSTEM and Administrators may read or change it.
 - tuios-web also reads the password from `TUIOS_WEB_PASSWORD`. It does not
   pass this variable to panes. But your own processes can still read it from
   `/proc`. Use `--password-file` instead.
 - A host other than `localhost` needs a password. TLS encrypts the connection,
   but it does not check who connects. Use `--no-auth` only on a network you
   trust.
+- `--no-auth` does not work with `--host 0.0.0.0` or `--host ::`. These
+  addresses also listen on this machine. tuios-web checks the Host header only
+  on a loopback host, so a web page in your browser can open a shell (DNS
+  rebinding). Give `--no-auth` the address of one interface, or set a password.
+- tuios-web finds the address of a `--host` name once and binds that address.
+  The rules above apply to the address, not to the name. tuios-web refuses a
+  name that has both loopback and other addresses.
 - On `localhost`, the password is optional. With no password, other users on
   this machine can connect, and tuios-web prints one line at start to say so.
   Use `--random-password` to stop this.
@@ -94,7 +101,7 @@ gigabytes together.
 - A window with too many cells keeps its columns and loses rows. A window that
   is 1200 columns wide gets 208 rows.
 
-## Open the Inbox from a notification
+## Open the agents view from a notification
 
 A push notification from the `[notify]` table links to the Inbox item when
 `notify.web_url` is the address of tuios-web. See

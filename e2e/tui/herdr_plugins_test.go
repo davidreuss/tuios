@@ -115,7 +115,7 @@ func savePluginArtifact(t *testing.T, base, id, name string) {
 
 // envValue reads KEY=VALUE from a file a stand-in wrote.
 func envValue(text, key string) string {
-	for _, l := range strings.Split(text, "\n") {
+	for l := range strings.SplitSeq(text, "\n") {
 		if v, ok := strings.CutPrefix(l, key+"="); ok {
 			return v
 		}
@@ -214,6 +214,17 @@ func TestHerdrPluginTrustAndHooks(t *testing.T) {
 		t.Fatalf("plugins enable: %v\n%s", err, out)
 	}
 	waitPluginFile(t, base, id, "startup.log", "startup startup e2e.hooks")
+	// A pane cannot restart it either. plugin.restart has no herdr CLI
+	// command, so the step sends the request on the socket itself. A
+	// restart that went through would run startup a second time, which the
+	// count below catches.
+	steps = runHerdrSteps(t, base, "w1", "restart", "step restart python3 -c '"+
+		`import json,os,socket,sys; s=socket.socket(socket.AF_UNIX); s.connect(os.environ["HERDR_SOCKET_PATH"]); `+
+		`s.sendall((json.dumps({"id":"r1","method":"plugin.restart","params":{"plugin_id":sys.argv[1]}})+"\n").encode()); `+
+		`r=json.loads(s.makefile().readline()); print(r); sys.exit(1 if "error" in r else 0)' `+id+"\n")
+	if s := steps["restart"]; s.code == 0 || !strings.Contains(s.out, "forbidden") {
+		t.Fatalf("plugin.restart from a pane was not refused: exit %d\n%s%s", s.code, s.out, s.err)
+	}
 	if out, err := tuiosCLI(t, base, "plugins", "run", "e2e.actions", "hello", "--wait"); err == nil || !strings.Contains(out, "plugin_disabled") {
 		t.Fatalf("the person's enable of %s also enabled e2e.actions, which a pane wrote into config.toml: %v\n%s", id, err, out)
 	}
@@ -228,7 +239,7 @@ func TestHerdrPluginTrustAndHooks(t *testing.T) {
 	w2 := herdrPaneByLabel(t, base, "w2")["pane_id"].(string)
 	events := waitPluginFile(t, base, id, "events.log", "pane.created "+w2+" ")
 	line := ""
-	for _, l := range strings.Split(events, "\n") {
+	for l := range strings.SplitSeq(events, "\n") {
 		if strings.Contains(l, w2) {
 			line = l
 		}
@@ -455,15 +466,28 @@ func TestHerdrPluginPanes(t *testing.T) {
 
 // TestHerdrPluginPalette runs an enabled plugin's action and opens its popup
 // from the command palette, as the person does. A plugin that is not enabled
-// has no row: its action is not offered, and nothing of it runs.
+// has no row: its action is not offered, and nothing of it runs. A command
+// key of type plugin_action runs the same action, as herdr's
+// [[keys.command]] does, and a key that names an action no plugin has is a
+// config warning. The actions fixture's manifest starts with a UTF-8
+// byte order mark and asks for herdr 0.9.5, so every test that runs it also
+// shows that both load.
 //
 // Negative controls (NEGATIVE_CONTROLS.md, "herdr plugins"): with the
 // pluginPaletteItems call cut from rebuildPaletteItems, the palette never
 // lists "Say hello"; with the Runnable check cut from pluginPaletteItems,
 // the palette offers the hidden plugin's action.
 func TestHerdrPluginPalette(t *testing.T) {
-	term, base := pluginClient(t, pluginsConfig(t, []string{"e2e.actions", "e2e.panes"}, "actions", "panes", "hidden"))
+	keys := "\n[[keybindings.command]]\nkey = \"alt+y\"\ntype = \"plugin_action\"\ncommand = \"hello\"\ndescription = \"Hello key\"\n" +
+		"\n[[keybindings.command]]\nkey = \"alt+u\"\ntype = \"plugin_action\"\ncommand = \"e2e.nope\"\n"
+	term, base := pluginClient(t, pluginsConfig(t, []string{"e2e.actions", "e2e.panes"}, "actions", "panes", "hidden")+keys)
 	const id = "e2e.actions"
+
+	// A plugin_action key that no plugin has is a config problem, not an
+	// error: tuios starts and says so.
+	if err := term.WaitForText("1 config problem", uiTimeout); err != nil {
+		t.Fatalf("the key for an action no plugin has was not reported: %v\n%s", err, term.Snapshot())
+	}
 
 	openPaletteQuery := func(query string) {
 		t.Helper()
@@ -504,6 +528,19 @@ func TestHerdrPluginPalette(t *testing.T) {
 		t.Fatalf("the palette's action could not reach herdr's CLI:\n%s", run)
 	}
 	savePluginArtifact(t, base, id, "run-0.env")
+
+	// The command key runs the action, with keybinding as its source. Its
+	// bare id hello is also an action of the hidden plugin, which is off, so
+	// the enabled plugin's action runs.
+	if err := term.SendKeys(tuitest.Alt('y')); err != nil {
+		t.Fatalf("press the plugin action key: %v", err)
+	}
+	run = waitPluginFile(t, base, id, "run-1.env", "herdr=")
+	ctx = nil
+	if err := json.Unmarshal([]byte(envValue(run, "context")), &ctx); err != nil || ctx["invocation_source"] != "keybinding" || envValue(run, "action") != "hello" {
+		t.Fatalf("the key's action saw context %q (%v), want invocation_source keybinding\n%s", envValue(run, "context"), err, run)
+	}
+	savePluginArtifact(t, base, id, "run-1.env")
 
 	// The enabled pane opens from the palette as a popup.
 	openPaletteQuery("E2E popup")

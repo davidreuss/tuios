@@ -54,6 +54,11 @@ func HandleTerminalModeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return handleNavigatorInput(msg, o)
 	}
 
+	// The go-to picker, the same way.
+	if o.GotoPickerOpen() {
+		return handleGotoPickerInput(msg, o)
+	}
+
 	// Handle workspace switcher overlay
 	if o.ShowWorkspaceSwitcher {
 		return handleWorkspaceSwitcherInput(msg, o)
@@ -140,8 +145,10 @@ func HandleTerminalModeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return HandleScrollbackBrowserKey(msg, o)
 	}
 
-	// Check for prefix key in terminal mode
-	if isLeaderKey(msg, &o.Settings, o.HostBaseCode(msg)) {
+	// Check for prefix key in terminal mode. A leader the prefix_mode table
+	// binds, pressed after the leader, is that binding's and goes to
+	// HandlePrefixCommand below (issue #866).
+	if isLeaderKey(msg, &o.Settings, o.HostBaseCode(msg)) && !leaderBoundInPrefix(msg, o) {
 		// Leader twice sends the leader itself to the pane, as tmux does with
 		// prefix prefix. It is encoded like any forwarded key: CSI u for a
 		// kitty pane, legacy bytes otherwise. A leader with no legacy encoding
@@ -190,6 +197,11 @@ func HandleTerminalModeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	// The tuios menu: the tuios keys a preset moved.
 	if o.TuiosPrefixActive {
 		return HandleTuiosPrefixCommand(msg, o)
+	}
+
+	// A declared menu (Ctrl+B, then the key that opens it, ...)
+	if o.Menu != "" {
+		return HandleMenuCommand(msg, o)
 	}
 
 	// Handle layout prefix commands (Ctrl+B, L, ...)
@@ -245,6 +257,13 @@ func HandleTerminalModeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 			return o, o.RequestPaste()
 		}
 		return o, nil
+	}
+	// A TML window takes the key itself: its surface is drawn by this
+	// client, and its PTY only holds the place. See app/tml.go.
+	if o.DrawsTML(focusedWindow) {
+		recordTerminalKey(o, msg)
+		o.NotePaneKey()
+		return o, o.TMLKey(focusedWindow, msg.String())
 	}
 	// Normal terminal mode: pass through all keys
 	if focusedWindow != nil {

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/Gaurav-Gosain/tuios/internal/worktree"
 )
@@ -56,7 +57,7 @@ import (
 // herdrTargetVersion is the herdr release whose API this file follows, and
 // herdrTargetProtocol the protocol number that release reports.
 const (
-	herdrTargetVersion  = "0.9.3"
+	herdrTargetVersion  = "0.9.5"
 	herdrTargetProtocol = 22
 )
 
@@ -69,6 +70,7 @@ const (
 // herdrError is a failed method: herdr's error code and message.
 type herdrError struct{ code, msg string }
 
+//go:noinline
 func herdrErr(code, msg string) *herdrError { return &herdrError{code: code, msg: msg} }
 
 func (e *herdrIDError) herdr() *herdrError { return herdrErr(e.code, e.msg) }
@@ -206,32 +208,33 @@ type herdrWorktreeSource struct {
 // under the verb's name. Name and Focus are pointers because the empty name
 // and focus false are values the verbs read.
 type herdrArgs struct {
-	Session   string  `json:"session,omitempty"`
-	Window    string  `json:"window,omitempty"`
-	Name      *string `json:"name,omitempty"`
-	Workspace int     `json:"workspace,omitempty"`
-	ToSession string  `json:"to_session,omitempty"`
-	Focus     *bool   `json:"focus,omitempty"`
-	Cwd       string  `json:"cwd,omitempty"`
-	Text      string  `json:"text,omitempty"`
-	Keys      string  `json:"keys,omitempty"`
-	Literal   bool    `json:"literal,omitempty"`
-	Paste     bool    `json:"paste,omitempty"`
-	Submit    bool    `json:"submit,omitempty"`
-	Source    string  `json:"source,omitempty"`
-	Styled    bool    `json:"styled,omitempty"`
-	Lines     int     `json:"lines,omitempty"`
-	Direction string  `json:"direction,omitempty"`
-	Order     []int   `json:"order,omitempty"`
-	Condition string  `json:"condition,omitempty"`
-	Pattern   string  `json:"pattern,omitempty"`
-	Until     string  `json:"until,omitempty"`
-	Timeout   *int64  `json:"timeout,omitempty"`
-	Repo      string  `json:"repo,omitempty"`
-	Branch    string  `json:"branch,omitempty"`
-	Base      string  `json:"base,omitempty"`
-	Force     bool    `json:"force,omitempty"`
-	Command   string  `json:"command,omitempty"`
+	Session   string            `json:"session,omitempty"`
+	Window    string            `json:"window,omitempty"`
+	Name      *string           `json:"name,omitempty"`
+	Workspace int               `json:"workspace,omitempty"`
+	ToSession string            `json:"to_session,omitempty"`
+	Focus     *bool             `json:"focus,omitempty"`
+	Cwd       string            `json:"cwd,omitempty"`
+	Text      string            `json:"text,omitempty"`
+	Keys      string            `json:"keys,omitempty"`
+	Literal   bool              `json:"literal,omitempty"`
+	Paste     bool              `json:"paste,omitempty"`
+	Submit    bool              `json:"submit,omitempty"`
+	Source    string            `json:"source,omitempty"`
+	Styled    bool              `json:"styled,omitempty"`
+	Lines     int               `json:"lines,omitempty"`
+	Direction string            `json:"direction,omitempty"`
+	Order     []int             `json:"order,omitempty"`
+	Condition string            `json:"condition,omitempty"`
+	Pattern   string            `json:"pattern,omitempty"`
+	Until     string            `json:"until,omitempty"`
+	Timeout   *int64            `json:"timeout,omitempty"`
+	Repo      string            `json:"repo,omitempty"`
+	Branch    string            `json:"branch,omitempty"`
+	Base      string            `json:"base,omitempty"`
+	Force     bool              `json:"force,omitempty"`
+	Command   string            `json:"command,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
 }
 
 // herdrMethod answers one method for cs.
@@ -240,16 +243,27 @@ type herdrMethod struct {
 	required []string
 }
 
-// herdrMethods are the methods tuios answers besides the pane reports, with
-// the params each must have.
-var herdrMethods map[string]herdrMethod
+// herdrMethods returns the methods tuios answers besides the pane reports,
+// with the params each must have. It is built on first use and not in init,
+// for the reason verbRegistry gives: a table init builds keeps every handler
+// it names in every program that links this package.
+func herdrMethods() map[string]herdrMethod {
+	herdrMethodsOnce.Do(func() { herdrMethodsMap = buildHerdrMethods() })
+	return herdrMethodsMap
+}
 
-func init() {
+var (
+	herdrMethodsOnce sync.Once
+	herdrMethodsMap  map[string]herdrMethod
+)
+
+// buildHerdrMethods makes the table herdrMethods returns.
+func buildHerdrMethods() map[string]herdrMethod {
 	pane := []string{"pane_id"}
 	tab := []string{"tab_id"}
 	ws := []string{"workspace_id"}
 	target := []string{"target"}
-	herdrMethods = map[string]herdrMethod{
+	return map[string]herdrMethod{
 		"ping":             {run: (*Daemon).herdrPing},
 		"session.snapshot": {run: (*Daemon).herdrSnapshot},
 
@@ -341,7 +355,7 @@ var herdrUnsupported = []string{
 // herdrAPICall answers a method that is not a pane report. handled is false
 // for a method herdr does not have.
 func (d *Daemon) herdrAPICall(cs *connState, method string, params json.RawMessage) (any, *herdrError, bool) {
-	m, ok := herdrMethods[method]
+	m, ok := herdrMethods()[method]
 	if !ok {
 		// The plugin methods are answered by the plugin host. See
 		// herdr_plugins.go.
@@ -352,6 +366,9 @@ func (d *Daemon) herdrAPICall(cs *connState, method string, params json.RawMessa
 			return nil, herdrErr("unsupported", "tuios does not answer "+method+". See the herdr compatibility section of docs/AGENT_STATE.md for what it answers"), true
 		}
 		return nil, nil, false
+	}
+	if herr := d.herdrAllowed(cs, method); herr != nil {
+		return nil, herr, true
 	}
 	in := &herdrIn{}
 	if herr := herdrDecode(params, in, m.required...); herr != nil {
@@ -441,7 +458,7 @@ func herdrString(m map[string]any, key string) string {
 	return s
 }
 
-func ptr[T any](v T) *T { return &v }
+func ptr[T any](v T) *T { return new(v) }
 
 // herdrVersion is the version a pong and a snapshot report: the herdr
 // release whose API this follows, marked as tuios in semver build metadata,
@@ -552,10 +569,7 @@ func (d *Daemon) herdrWorkspaceInfo(cs *connState, id string) (*herdrResult, *he
 // workspace. tuios has no verb that moves an attached client to another
 // session, so focus is taken and does nothing.
 func (d *Daemon) herdrWorkspaceCreate(cs *connState, in *herdrIn) (*herdrResult, *herdrError) {
-	if len(in.Env) > 0 {
-		return nil, herdrErr("unsupported", "tuios does not set env for a new workspace. Leave env out")
-	}
-	return d.herdrNewSession(cs, herdrArgs{Cwd: in.Cwd}, in.label(), "workspace_create_failed", &herdrResult{Type: "workspace_created"})
+	return d.herdrNewSession(cs, herdrArgs{Cwd: in.Cwd, Env: in.Env}, in.label(), "workspace_create_failed", &herdrResult{Type: "workspace_created"})
 }
 
 // herdrNewSession runs new-session, names the session label when one is
@@ -657,7 +671,7 @@ func (d *Daemon) herdrTabInfo(cs *connState, id string) (*herdrResult, *herdrErr
 	if herr != nil {
 		return nil, herr
 	}
-	if t := v.tab(herdrTabID(sess.ID, ws)); t != nil {
+	if t := v.tab(herdrTabID(sess.ID, sess.GetState().WorkspaceTabKey(ws))); t != nil {
 		return &herdrResult{Type: "tab_info", Tab: t}, nil
 	}
 	return nil, herdrNotFound("tab", id).herdr()
@@ -666,9 +680,6 @@ func (d *Daemon) herdrTabInfo(cs *connState, id string) (*herdrResult, *herdrErr
 // herdrTabCreate puts a window on the first workspace of the session that is
 // not a tab yet, and names the workspace when a label is given.
 func (d *Daemon) herdrTabCreate(cs *connState, in *herdrIn) (*herdrResult, *herdrError) {
-	if len(in.Env) > 0 {
-		return nil, herdrErr("unsupported", "tuios does not set env for a new tab. Leave env out")
-	}
 	sess, herr := d.herdrSessionOrFocused(cs, in.WorkspaceID)
 	if herr != nil {
 		return nil, herr
@@ -693,10 +704,10 @@ func (d *Daemon) herdrTabCreate(cs *connState, in *herdrIn) (*herdrResult, *herd
 			return nil, herr
 		}
 	}
-	out, herr := d.herdrVerb(cs, "new-window", herdrArgs{Session: sess.Name(), Workspace: ws, Focus: &in.Focus, Cwd: in.Cwd}, fail)
+	out, herr := d.herdrVerb(cs, "new-window", herdrArgs{Session: sess.Name(), Workspace: ws, Focus: &in.Focus, Cwd: in.Cwd, Env: in.Env}, fail)
 	if herr != nil {
 		if label != "" {
-			_, _ = d.herdrVerb(cs, "set-workspace-name", herdrArgs{Session: sess.Name(), Workspace: ws, Name: ptr("")}, fail)
+			_, _ = d.herdrVerb(cs, "set-workspace-name", herdrArgs{Session: sess.Name(), Workspace: ws, Name: new("")}, fail)
 		}
 		return nil, herr
 	}
@@ -747,8 +758,10 @@ func (d *Daemon) herdrTabVerb(cs *connState, id, verb string, args herdrArgs, fa
 	return d.herdrTabInfo(cs, id)
 }
 
-// herdrTabMove is set-workspace-order. insert_index counts places in the
-// session's tab list before the tab is taken out, as herdr's does.
+// herdrTabMove is set-workspace-order, which renumbers the workspaces: the
+// tabs take the numbers they hold between them in their new order, and keep
+// their ids. insert_index counts places in the session's tab list before the
+// tab is taken out, as herdr's does.
 func (d *Daemon) herdrTabMove(cs *connState, in *herdrIn) (*herdrResult, *herdrError) {
 	if *in.InsertIndex < 0 {
 		return nil, herdrErr("invalid_request", "invalid request: insert_index must not be negative")
@@ -757,7 +770,7 @@ func (d *Daemon) herdrTabMove(cs *connState, in *herdrIn) (*herdrResult, *herdrE
 	if ierr != nil {
 		return nil, ierr.herdr()
 	}
-	order := herdrWorkspaceOrder(sess.GetState())
+	order := herdrOrderedTabs(sess.GetState())
 	from := slices.Index(order, ws)
 	at := min(*in.InsertIndex, len(order))
 	order = slices.Insert(order, at, ws)
@@ -788,7 +801,7 @@ func (d *Daemon) herdrTabClose(cs *connState, in *herdrIn) (*herdrResult, *herdr
 	// The name goes first: clearing it is admin, as closing is, and a pane
 	// refused here has closed nothing.
 	if st.WorkspaceNames[ws] != "" {
-		if _, herr := d.herdrVerb(cs, "set-workspace-name", herdrArgs{Session: sess.Name(), Workspace: ws, Name: ptr("")}, fail); herr != nil {
+		if _, herr := d.herdrVerb(cs, "set-workspace-name", herdrArgs{Session: sess.Name(), Workspace: ws, Name: new("")}, fail); herr != nil {
 			return nil, herr
 		}
 	}
@@ -1019,7 +1032,7 @@ func (d *Daemon) herdrPaneRename(cs *connState, in *herdrIn) (*herdrResult, *her
 		return nil, ierr.herdr()
 	}
 	args := herdrWin(sess, win.ID)
-	args.Name = ptr(strings.TrimSpace(in.label()))
+	args.Name = new(strings.TrimSpace(in.label()))
 	if _, herr := d.herdrVerb(cs, "set-window", args, "pane_rename_failed"); herr != nil {
 		return nil, herr
 	}
@@ -1054,9 +1067,6 @@ func (d *Daemon) herdrPaneSplit(cs *connState, in *herdrIn) (*herdrResult, *herd
 	default:
 		return nil, herdrErr("invalid_request", "invalid request: unknown variant `"+in.Direction+"`, expected `right` or `down`")
 	}
-	if len(in.Env) > 0 {
-		return nil, herdrErr("unsupported", "tuios does not set env for a new pane. Leave env out")
-	}
 	target := in.TargetPaneID
 	if target == "" {
 		sess, herr := d.herdrSessionOrFocused(cs, in.WorkspaceID)
@@ -1075,7 +1085,9 @@ func (d *Daemon) herdrPaneSplit(cs *connState, in *herdrIn) (*herdrResult, *herd
 	}
 	const fail = "pane_split_failed"
 	newID, split := "", false
-	if in.Cwd == "" && d.findTUIClient(sess.ID) != nil {
+	// split-window takes no cwd or env, so a split that names either is a
+	// new window on the target's workspace, which the client tiles.
+	if in.Cwd == "" && len(in.Env) == 0 && d.findTUIClient(sess.ID) != nil {
 		args := herdrWin(sess, win.ID)
 		args.Direction = dir
 		out, verr := d.callVerb(cs, "split-window", args)
@@ -1092,7 +1104,7 @@ func (d *Daemon) herdrPaneSplit(cs *connState, in *herdrIn) (*herdrResult, *herd
 		}
 	}
 	if !split {
-		out, herr := d.herdrVerb(cs, "new-window", herdrArgs{Session: sess.Name(), Workspace: max(win.Workspace, 1), Focus: &in.Focus, Cwd: in.Cwd}, fail)
+		out, herr := d.herdrVerb(cs, "new-window", herdrArgs{Session: sess.Name(), Workspace: max(win.Workspace, 1), Focus: &in.Focus, Cwd: in.Cwd, Env: in.Env}, fail)
 		if herr != nil {
 			return nil, herr
 		}
@@ -1148,7 +1160,7 @@ func (d *Daemon) herdrPaneWaitForOutput(cs *connState, in *herdrIn) (*herdrResul
 	var matched *string
 	for line := range strings.SplitSeq(res.Read.Text, "\n") {
 		if re.MatchString(line) {
-			matched = ptr(line)
+			matched = new(line)
 		}
 	}
 	return &herdrResult{Type: "output_matched", PaneID: res.Read.PaneID, Revision: &res.Read.Revision, MatchedLine: matched, Read: res.Read}, nil
@@ -1382,7 +1394,7 @@ func herdrWorktreeOf(e worktree.Entry, open map[string]string) herdrWorktreeReco
 		IsLinkedWorktree: e.Linked, OpenWorkspaceID: open[herdrRealPath(e.Path)], Label: filepath.Base(e.Path),
 	}
 	if e.Branch != "" {
-		r.Branch, r.Label = ptr(e.Branch), e.Branch
+		r.Branch, r.Label = new(e.Branch), e.Branch
 	}
 	return r
 }
@@ -1421,7 +1433,7 @@ func (d *Daemon) herdrWorktreeCreate(cs *connState, in *herdrIn) (*herdrResult, 
 	if herr != nil {
 		return nil, herr
 	}
-	wt := &herdrWorktreeRecord{Path: herdrString(out, "path"), Branch: ptr(in.Branch), IsLinkedWorktree: true, Label: in.Branch}
+	wt := &herdrWorktreeRecord{Path: herdrString(out, "path"), Branch: new(in.Branch), IsLinkedWorktree: true, Label: in.Branch}
 	return d.herdrLabelled(cs, herdrString(out, "session"), herdrString(out, "window_id"), in.label(), fail, &herdrResult{Type: "worktree_created", Worktree: wt})
 }
 
@@ -1463,7 +1475,7 @@ func (d *Daemon) herdrWorktreeOpen(cs *connState, in *herdrIn) (*herdrResult, *h
 	}
 	open := d.herdrOpenCheckouts(cs)
 	rec := herdrWorktreeOf(*entry, open)
-	res := &herdrResult{Type: "worktree_opened", Worktree: &rec, AlreadyOpen: ptr(false)}
+	res := &herdrResult{Type: "worktree_opened", Worktree: &rec, AlreadyOpen: new(false)}
 	if id := open[herdrRealPath(entry.Path)]; id != "" {
 		sess, ierr := d.herdrFindSession(id)
 		if ierr != nil {
@@ -1474,7 +1486,7 @@ func (d *Daemon) herdrWorktreeOpen(cs *connState, in *herdrIn) (*herdrResult, *h
 		if root == "" && len(st.Windows) > 0 {
 			root = st.Windows[0].ID
 		}
-		res.AlreadyOpen = ptr(true)
+		res.AlreadyOpen = new(true)
 		return d.herdrCreated(cs, sess, root, res)
 	}
 	args := herdrArgs{Cwd: entry.Path}

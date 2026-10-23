@@ -3,6 +3,7 @@ package app
 import (
 	"fmt"
 	"log"
+	"maps"
 	"sync"
 
 	"github.com/Gaurav-Gosain/tuios/internal/session"
@@ -135,6 +136,17 @@ func (m *OS) WireDaemonClient(client *session.TUIClient) {
 			clientLog("ClientEventChan full, displaced an event for a pane mark")
 		}
 	})
+	// Native plugins that wait for the person's approval. See
+	// plugin_approval.go.
+	client.OnPluginApprovals(func(p session.PluginApprovalsPayload) {
+		if m.QueueClientEvent(ClientEvent{Type: "plugin-approvals", PluginAsks: p.Asks}) {
+			clientLog("ClientEventChan full, displaced an event for plugin approvals")
+		}
+	})
+	// A TML surface opened, changed or closed. Applied in Update; see
+	// tml.go.
+	m.initTML()
+	client.OnTMLSurface(m.queueTMLSurface)
 	// A paste the daemon refused twice, or one too large to send. The person
 	// is told, so a paste never vanishes. See session/paste_retry.go.
 	client.OnPasteRefused(func(_, message string) {
@@ -187,6 +199,7 @@ func (m *OS) UnwireDaemonClient(client *session.TUIClient) {
 	client.OnStateSync(nil)
 	client.OnClientJoined(nil)
 	client.OnAgentMail(nil)
+	client.OnTMLSurface(nil)
 	client.OnDirChanged(nil)
 	client.OnPasteRefused(nil)
 	client.OnClientLeft(nil)
@@ -235,6 +248,7 @@ func (m *OS) QueueClientEvent(ev ClientEvent) (displaced bool) {
 // which session is live heard from local clients only. A session switch runs
 // the same window steps through rebuildForSession.
 func (m *OS) RestoreAttachedSession(state *session.SessionState) {
+	m.pruneTMLViews(state)
 	if m.DaemonClient != nil {
 		m.sessionClients = m.DaemonClient.AttachClientCount()
 	}
@@ -360,9 +374,17 @@ func (m *OS) adoptEmptySessionVersion(state *session.SessionState) {
 	// daemon's. The [startup] tiling that follows saw it on and did nothing,
 	// and the daemon made the first window floating (#480). A nil state is a
 	// session with nothing set, so tiling is off.
+	m.WorkspaceLayoutMode = nil
+	m.sessionLayoutMode = ""
 	if state != nil {
 		m.AutoTiling = state.AutoTiling
+		// The per-workspace modes are the session's, and kept from the session
+		// just left they followed the client here: the next switch found the
+		// map holding another session's choices and pushed them to this one.
+		m.WorkspaceLayoutMode = make(map[int]string, len(state.WorkspaceLayoutModes))
+		maps.Copy(m.WorkspaceLayoutMode, state.WorkspaceLayoutModes)
 		m.ApplyLayoutModeName(state.LayoutMode)
+		m.adoptSessionLayoutMode(state)
 	} else {
 		m.AutoTiling = false
 	}

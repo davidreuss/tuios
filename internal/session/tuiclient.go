@@ -41,6 +41,21 @@ type DisconnectHandler func(err error)
 // TUIClient is used by the TUIOS TUI to communicate with the daemon.
 // It handles PTY I/O and state synchronization.
 type TUIClient struct {
+	// HandshakeTimeout, when set, bounds the dial and each read of the
+	// handshake, instead of the 30 seconds an attach is given. A client that
+	// dials a daemon that may still be starting sets it. See handshaking.
+	HandshakeTimeout time.Duration
+	handshaking      bool
+	// AttachDeadline, when set, is the latest time the reply to the next
+	// AttachSession may come, instead of 30 seconds from the request. A
+	// client that waits for a new daemon sets it to the end of its wait: a
+	// daemon that says hello and then stalls must not hold it past that.
+	// AttachSession clears it.
+	AttachDeadline time.Time
+	// goodbye is the daemon's last word before it closed, and when it came.
+	// See daemon_goodbye.go.
+	goodbye atomic.Pointer[Goodbye]
+
 	// Served and AllowNested are sent with every attach. Set them before the
 	// first one. See AttachPayload.
 	Served      bool
@@ -274,6 +289,17 @@ type TUIClient struct {
 	sessionsChangedHandler func()
 	// paneMarkHandler takes the daemon's MsgPaneMark push. See OnPaneMark.
 	paneMarkHandler func(PaneMarkPayload)
+	// tmlSurfaceHandler takes the daemon's MsgTMLSurface push. See
+	// OnTMLSurface. tmlBacklog holds the pushes that came before a handler
+	// did, the newest per surface: the daemon sends the open surfaces right
+	// behind the attach reply, before the client has wired its handlers.
+	tmlSurfaceHandler func(*TMLSurfacePayload)
+	// pluginAsksHandler takes the daemon's MsgPluginApprovals push. See
+	// OnPluginApprovals. pluginAsksLast is the newest push that came before
+	// a handler did: the daemon sends it right behind the attach reply.
+	pluginAsksHandler func(PluginApprovalsPayload)
+	pluginAsksLast    *PluginApprovalsPayload
+	tmlBacklog        []*TMLSurfacePayload
 	// pasteRefusedHandler takes a paste the daemon refused. See
 	// paste_retry.go. pastes holds the large inputs sent and not answered,
 	// and pasteBarriers the pings behind them, by request id, under
@@ -382,14 +408,21 @@ func (c *TUIClient) ConnectWithCapabilities(version string, width, height int, c
 		return fmt.Errorf("failed to get socket path: %w", err)
 	}
 
-	conn, err := net.DialTimeout("unix", socketPath, 5*time.Second)
+	dialWait := 5 * time.Second
+	if c.HandshakeTimeout > 0 {
+		dialWait = min(dialWait, c.HandshakeTimeout)
+	}
+	conn, err := net.DialTimeout("unix", socketPath, dialWait)
 	if err != nil {
 		return fmt.Errorf("failed to connect to daemon: %w", err)
 	}
 	c.conn = conn
 	c.br = nil
 
-	if err := c.handshake(version, width, height, caps); err != nil {
+	c.handshaking = true
+	err = c.handshake(version, width, height, caps)
+	c.handshaking = false
+	if err != nil {
 		_ = conn.Close()
 		return err
 	}
@@ -419,7 +452,17 @@ func (c *TUIClient) handshake(version string, width, height int, caps *ClientCap
 		ListingPush: true,
 		// See pane_marks.go.
 		PaneMarks: true,
+		// See daemon_goodbye.go.
+		Goodbye: true,
 	}
+	// A client draws TML surfaces of this machine's daemon only: what the
+	// person does on one goes back through this machine's socket, which
+	// holds no surface of a session on another machine. Through a host the
+	// window shows its placeholder line instead. See tml_surface.go.
+	hello.TMLSurfaces = c.viaHost == ""
+	// Plugins run on this machine's daemon, and only the person here
+	// answers for them. See plugin_approval.go.
+	hello.PluginApprovals = c.viaHost == ""
 
 	// Add graphics capabilities if provided
 	if caps != nil {
@@ -542,6 +585,13 @@ func (c *TUIClient) noteDaemonBuild(clientVersion, daemonVersion string) {
 // ClientVersion is the build this client announced at the handshake.
 func (c *TUIClient) ClientVersion() string { return c.clientBuild }
 
+// DaemonVersion is the build the daemon named at the handshake.
+func (c *TUIClient) DaemonVersion() string {
+	c.multiClientMu.RLock()
+	defer c.multiClientMu.RUnlock()
+	return c.daemonBuild
+}
+
 // BuildMismatch reports the daemon's build and this client's when they differ,
 // and empty strings when they agree or when either is unknown.
 func (c *TUIClient) BuildMismatch() (clientBuild, daemonBuild string) {
@@ -577,11 +627,19 @@ func (c *TUIClient) AttachSession(name string, createNew bool, width, height int
 	}
 	c.DetachOthers = false
 
+	deadline := c.AttachDeadline
+	c.AttachDeadline = time.Time{}
+
 	if err := c.send(msg); err != nil {
 		return nil, err
 	}
 
-	resp, err := c.recv()
+	var resp *Message
+	if deadline.IsZero() {
+		resp, err = c.recv()
+	} else {
+		resp, err = c.recvUntil(deadline)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1145,6 +1203,44 @@ func (c *TUIClient) OnPaneMark(handler func(PaneMarkPayload)) {
 	c.multiClientMu.Unlock()
 }
 
+// OnPluginApprovals registers the handler for MsgPluginApprovals, the
+// daemon's list of native plugins that wait for the person. A push that
+// came before the handler is handed to it now. It runs on the read-loop
+// goroutine, so it only queues. See plugin_approval.go.
+func (c *TUIClient) OnPluginApprovals(handler func(PluginApprovalsPayload)) {
+	c.multiClientMu.Lock()
+	c.pluginAsksHandler = handler
+	last := c.pluginAsksLast
+	c.pluginAsksLast = nil
+	c.multiClientMu.Unlock()
+	if handler != nil && last != nil {
+		handler(*last)
+	}
+}
+
+// DrawsTML reports whether this client draws TML surfaces: only a client of
+// this machine's daemon does. See the hello.
+func (c *TUIClient) DrawsTML() bool { return c.viaHost == "" }
+
+// OnTMLSurface registers the handler for MsgTMLSurface, the daemon's push of
+// a TML surface when it opens, changes or closes, and of every open one when
+// this client attaches. It runs on the read-loop goroutine, so it only
+// queues. See tml_surface.go.
+func (c *TUIClient) OnTMLSurface(handler func(*TMLSurfacePayload)) {
+	c.multiClientMu.Lock()
+	c.tmlSurfaceHandler = handler
+	backlog := c.tmlBacklog
+	if handler != nil {
+		c.tmlBacklog = nil
+	}
+	c.multiClientMu.Unlock()
+	if handler != nil {
+		for _, p := range backlog {
+			handler(p)
+		}
+	}
+}
+
 // ListingPush reports whether the daemon pushes listing changes, so the
 // listing needs no poll.
 func (c *TUIClient) ListingPush() bool { return c.listingPush.Load() }
@@ -1350,10 +1446,11 @@ func (c *TUIClient) SendNewWindowIntent(cwd string, workspace int, sshFrom, comm
 //
 // sshFrom, when set, names the window whose ssh the new one follows, as
 // SendNewWindowIntent's does.
-func (c *TUIClient) SendNewWindowFrom(workspace int, cwdFrom, sshFrom string) error {
+func (c *TUIClient) SendNewWindowFrom(workspace, tabKey int, cwdFrom, sshFrom string) error {
 	return c.sendNewWindow(&ExecuteCommandPayload{
 		CommandType:  "NewWindow",
 		Workspace:    workspace,
+		TabKey:       tabKey,
 		CwdFrom:      cwdFrom,
 		SSHFrom:      sshFrom,
 		FocusIfShown: true,
@@ -1774,6 +1871,11 @@ func (c *TUIClient) handleMessage(msg *Message) {
 			closedHandler()
 		}
 
+	case MsgGoodbye:
+		var payload GoodbyePayload
+		_ = msg.ParsePayload(&payload)
+		c.goodbye.Store(&Goodbye{Reason: payload.Reason, At: time.Now()})
+
 	case MsgSessionEnded:
 		// The attached session was destroyed (killed from the CLI, from another
 		// client, or over the control plane). Notify once so the app can exit;
@@ -1866,6 +1968,40 @@ func (c *TUIClient) handleMessage(msg *Message) {
 		var payload PaneMarkPayload
 		if handler != nil && msg.ParsePayload(&payload) == nil {
 			handler(payload)
+		}
+
+	case MsgPluginApprovals:
+		var payload PluginApprovalsPayload
+		if err := msg.ParsePayload(&payload); err != nil {
+			debugLog("[CLIENT] Failed to parse plugin approvals: %v", err)
+			return
+		}
+		c.multiClientMu.Lock()
+		handler := c.pluginAsksHandler
+		if handler == nil {
+			c.pluginAsksLast = &payload
+		}
+		c.multiClientMu.Unlock()
+		if handler != nil {
+			handler(payload)
+		}
+
+	case MsgTMLSurface:
+		var payload TMLSurfacePayload
+		if msg.ParsePayload(&payload) != nil {
+			return
+		}
+		c.multiClientMu.Lock()
+		handler := c.tmlSurfaceHandler
+		if handler == nil {
+			// Kept, in order, for the handler OnTMLSurface registers. The
+			// handler is wired right after the attach, so only the pushes
+			// that follow the attach reply wait here.
+			c.tmlBacklog = append(c.tmlBacklog, &payload)
+		}
+		c.multiClientMu.Unlock()
+		if handler != nil {
+			handler(&payload)
 		}
 
 	case MsgDetached:
@@ -2413,10 +2549,23 @@ func (c *TUIClient) send(msg *Message) error {
 }
 
 func (c *TUIClient) recv() (*Message, error) {
+	wait := 30 * time.Second
+	if c.handshaking && c.HandshakeTimeout > 0 {
+		wait = c.HandshakeTimeout
+	}
+	return c.recvUntil(time.Now().Add(wait))
+}
+
+// recvUntil reads one message that must arrive by deadline, and never later
+// than the 30 seconds recv gives.
+func (c *TUIClient) recvUntil(deadline time.Time) (*Message, error) {
 	c.readMu.Lock()
 	defer c.readMu.Unlock()
 
-	_ = c.conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	if limit := time.Now().Add(30 * time.Second); deadline.After(limit) {
+		deadline = limit
+	}
+	_ = c.conn.SetReadDeadline(deadline)
 	return ReadMessage(c.reader())
 }
 

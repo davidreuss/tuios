@@ -7,26 +7,25 @@ import (
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 )
 
-// TestAgentsViewAnswersOnlyWhatItShowed: in the agents view a digit answers
-// the approval the selected agent waits on, as the person, and only once the
-// thread has shown it whole for the settle time. A key that lands before the
-// thread drew it, or too soon after, sends nothing. It is the attention
-// list's rule, and the view must not be a way around it.
-func TestAgentsViewAnswersOnlyWhatItShowed(t *testing.T) {
+// TestCockpitAnswersOnlyWhatItShowed: in the cockpit a answers the approval
+// the selected agent waits on, as the person, and only once its card has
+// shown it whole for the settle time. A key that lands before the card was
+// drawn, or too soon after, sends nothing. It is the Inbox's rule, and the
+// letters must not be a way around it.
+func TestCockpitAnswersOnlyWhatItShowed(t *testing.T) {
 	m, q := replyOS(t)
 	m.Windows[1].AgentState, m.Windows[1].AgentHarness = "needs_input", "claude-code"
 	held := heldApproval("7", "r7", session.ApprovalOnce, session.ApprovalDeny)
 	held.Session, held.Window = "here", "w-2"
 	m.applyInboxSnapshot(InboxSnapshotMsg{Items: []session.AttentionItem{held}})
 	m.OpenInbox("")
-	m.Inbox.agents.on = true
-	e, ok := m.inboxAgentSelected()
+	e, ok := m.cockpitAgent()
 	if !ok || e.WindowID != "w-2" {
 		t.Fatalf("the agent waiting on you is not selected: %+v", e)
 	}
 
 	// Not drawn yet: nothing is sent.
-	if cmd := m.InboxAgentsNumber(1); cmd != nil {
+	if cmd, _ := m.CockpitAnswerLetter("a"); cmd != nil {
 		runMsg(t, m, cmd)
 	}
 	if _, sent := q.last("reply-approval"); sent {
@@ -34,8 +33,8 @@ func TestAgentsViewAnswersOnlyWhatItShowed(t *testing.T) {
 	}
 
 	// Drawn just now: still too soon.
-	m.threadLines(e, 80, 20, time.Now())
-	if cmd := m.InboxAgentsNumber(1); cmd != nil {
+	m.renderInbox()
+	if cmd, _ := m.CockpitAnswerLetter("a"); cmd != nil {
 		runMsg(t, m, cmd)
 	}
 	if _, sent := q.last("reply-approval"); sent {
@@ -44,7 +43,7 @@ func TestAgentsViewAnswersOnlyWhatItShowed(t *testing.T) {
 
 	// Shown for the settle time: 1 allows once, for that request.
 	m.Inbox.shown.since = time.Now().Add(-time.Second)
-	cmd := m.InboxAgentsNumber(1)
+	cmd, _ := m.CockpitAnswerLetter("a")
 	if cmd == nil {
 		t.Fatalf("a settled approval was not answered: %q", lastNotice(m).Message)
 	}
@@ -52,5 +51,28 @@ func TestAgentsViewAnswersOnlyWhatItShowed(t *testing.T) {
 	p, sent := q.last("reply-approval")
 	if !sent || p["request_id"] != "r7" || p["decision"] != session.ApprovalOnce || p["human_nonce"] != "nonce-1" {
 		t.Fatalf("reply-approval = %v (sent %v)", p, sent)
+	}
+}
+
+// TestCockpitTabStepBeforeTheTranscriptAnswer: ] pressed before the daemon
+// says whether it has a transcript for the pane lands where it will stay.
+// The Changes tab used to be drawn until the daemon said there was no file,
+// so a ] in that window picked Changes, and the tab then went away and left
+// the focus on Thread instead of Checkpoints.
+func TestCockpitTabStepBeforeTheTranscriptAnswer(t *testing.T) {
+	m, _ := replyOS(t)
+	m.Windows[1].AgentState, m.Windows[1].AgentHarness = "working", "codex"
+	m.Width, m.Height = 100, 30
+	m.OpenInbox("")
+	e, ok := m.cockpitAgent()
+	if !ok || e.WindowID != "w-2" {
+		t.Fatalf("the agent is not selected: %+v", e)
+	}
+	_ = m.InboxThreadFetch()
+	m.CockpitTab(1)
+	m.Update(threadPageMsg{key: agentKey(e), err: &session.VerbCallError{Code: session.ErrVerbNoTranscript}})
+	r, _ := m.cockpitSelected()
+	if got, tabs := m.cockpitTab(), m.cockpitTabs(e, r); got != "Checkpoints" {
+		t.Fatalf("] before the answer left the focus on %q, tabs %v", got, tabs)
 	}
 }

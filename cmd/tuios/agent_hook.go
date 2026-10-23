@@ -281,10 +281,12 @@ func startHint(out agentHookOutcome) bool {
 // holdable reports whether a hook run may wait for an answer from the Inbox:
 // the event is a prompt the harness takes a decision for, and the pane is now
 // on needs_input by this hook's own report. A report that failed or was
-// refused, a nested harness's for one, holds nothing.
+// refused, a nested harness's for one, holds nothing. A harness outside the
+// pane holds nothing even when the pane's own agent is on needs_input: the
+// prompt on the pane is not its prompt.
 func holdable(out agentHookOutcome) bool {
 	return out.Approval != nil && out.Error == "" && out.Report != nil &&
-		out.State == "needs_input" && out.Window != ""
+		out.State == "needs_input" && out.Window != "" && out.Reason != "foreign_pane"
 }
 
 // holdForAnswer asks the daemon to hold the pane's prompt for the person and
@@ -566,7 +568,8 @@ func reportHookActivity(client verbCaller, sess, window, harness string, harness
 // flushAtTurnEnd sends what the pane's status line feed held back when this
 // report ends a turn, since the status line does not run again until the
 // conversation changes. A report the identity guard refused is a nested
-// run's, and its turn is not the pane's.
+// run's, or a harness's that runs outside the pane, and its turn is not the
+// pane's.
 func flushAtTurnEnd(out agentHookOutcome, res hookReportResult, client verbCaller, hio agentHookIO) bool {
 	if hio.stampDir == nil || out.Report == nil {
 		return false
@@ -574,7 +577,7 @@ func flushAtTurnEnd(out agentHookOutcome, res hookReportResult, client verbCalle
 	if st := out.Report.State; st != "done" && st != "errored" {
 		return false
 	}
-	if res.Reason == "foreign_session" || res.Reason == "foreign_harness" {
+	if res.Reason == "foreign_session" || res.Reason == "foreign_harness" || res.Reason == "foreign_pane" {
 		return false
 	}
 	dir, err := hio.stampDir()
@@ -632,7 +635,7 @@ type hookReportResult struct {
 // the ones every daemon takes. activity is the hook event for the pane's
 // activity ring; a daemon from before it drops it, and the report goes
 // without it.
-var hookFields = []string{"kind", "agent_session_id", "transcript_path", "if_state", "harness_pid", "activity", "agent_cwd"}
+var hookFields = []string{"kind", "agent_session_id", "transcript_path", "if_state", "harness_pid", "activity", "agent_cwd", "session_start"}
 
 // setAgentStateParams asks the daemon which params its set-agent-state takes.
 //
@@ -722,6 +725,9 @@ func reportHook(client verbCaller, sess, window, harness string, harnessPID int,
 	}
 	if r.Activity != nil {
 		extra["activity"] = r.Activity
+	}
+	if r.SessionStart && r.SessionID != "" {
+		extra["session_start"] = true
 	}
 	var dropped []string
 	if len(extra) > 0 {

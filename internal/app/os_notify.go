@@ -1,10 +1,10 @@
 package app
 
 import (
-	"charm.land/lipgloss/v2"
 	"fmt"
 	"time"
 
+	"charm.land/lipgloss/v2"
 	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/hooks"
 	"github.com/Gaurav-Gosain/tuios/internal/session"
@@ -59,6 +59,8 @@ func (m *OS) appendLog(entry LogMessage) {
 // LogInfo logs an informational message. INFO logs are skipped entirely unless
 // verbose logging is enabled, so the format string and args are never evaluated
 // into the ring buffer in the common (non-debug) case.
+//
+//go:noinline
 func (m *OS) LogInfo(format string, args ...any) {
 	if !verboseLog {
 		return
@@ -145,6 +147,8 @@ func (m *OS) LogWarn(format string, args ...any) {
 }
 
 // LogError logs an error message.
+//
+//go:noinline
 func (m *OS) LogError(format string, args ...any) {
 	m.Log("ERROR", format, args...)
 }
@@ -195,6 +199,8 @@ func notificationLifetime(notifType string, requested time.Duration, s *config.S
 //
 // Severity comes from notifType, and duration is a floor rather than the whole
 // answer (see notificationLifetime).
+//
+//go:noinline
 func (m *OS) ShowNotification(message, notifType string, duration time.Duration) {
 	m.showNotification(message, notifType, "", duration, nil)
 }
@@ -357,6 +363,11 @@ func (m *OS) DismissNotifications() bool {
 	if len(m.Notifications) == 0 {
 		return false
 	}
+	for _, n := range m.Notifications {
+		if isRestartNotice(n.Target) {
+			m.restartLater = true
+		}
+	}
 	m.Notifications = nil
 	return true
 }
@@ -396,6 +407,10 @@ func (m *OS) ClearNotification(message string) bool {
 func (m *OS) dismissVisibleNotification() bool {
 	if len(m.Notifications) == 0 {
 		return false
+	}
+	// Dismissing the version notice is the "later" answer, for this run.
+	if isRestartNotice(m.Notifications[len(m.Notifications)-1].Target) {
+		m.restartLater = true
 	}
 	m.Notifications = m.Notifications[:len(m.Notifications)-1]
 	return true

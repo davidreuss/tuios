@@ -6,11 +6,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Gaurav-Gosain/tuios/internal/composer"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/Gaurav-Gosain/tuios/internal/composer"
 
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 )
@@ -319,7 +319,7 @@ func (m *OS) deliverImageCmd(window string, data []byte) tea.Cmd {
 func (m *OS) applyImagePasted(msg ImagePastedMsg) {
 	if msg.Err != nil {
 		if callErr, ok := errors.AsType[*session.VerbCallError](msg.Err); ok && callErr.Code == session.ErrVerbUnknownVerb {
-			m.ShowNotification("This daemon cannot take a pasted image. Restart it with a newer tuios: tuios kill-server", "error", m.Settings.NotificationDuration*2)
+			m.ShowNotification("This daemon cannot take a pasted image. "+m.restartHint(), "error", m.Settings.NotificationDuration*2)
 			return
 		}
 		if callErr, ok := errors.AsType[*session.VerbCallError](msg.Err); ok && callErr.Code == session.ErrVerbUnknownHost && callErr.Hint != nil && callErr.Hint.Detail != "" {

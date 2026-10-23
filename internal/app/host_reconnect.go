@@ -313,7 +313,8 @@ func (m *OS) resumeOnHost(client *session.TUIClient, state *session.SessionState
 	m.MarkAllDirty()
 	m.LogInfo("The link to %s is back after %s", host, took)
 	m.ShowNotification(fmt.Sprintf("The link to %s is back.", host), "success", m.Settings.NotificationDuration)
-	return nil
+	// A rebuild forgot the agents view's live pane. See rebuildForSession.
+	return m.CockpitSideFetch()
 }
 
 // samePaneSet reports whether the session still has exactly the panes this
@@ -414,7 +415,7 @@ func hostReconnectReason(host string, err error) string {
 		case session.ErrVerbUnknownHost:
 			return fmt.Sprintf("The host %s is not configured. Add it with 'tuios hosts add'.", host)
 		case session.ErrVerbProtocolMismatch, session.ErrVerbUnknownVerb:
-			return "The daemon on this machine is too old. Restart it with 'tuios kill-server'."
+			return "The daemon on this machine is too old. Restart it with 'tuios restart-server'."
 		}
 	}
 	return what + fmt.Sprintf(" The session keeps running there. Run 'tuios hosts' to see %s.", host)
@@ -426,6 +427,9 @@ func hostReconnectReason(host string, err error) string {
 func (m *OS) hostLinkNote() string {
 	r := m.hostReconnect
 	if r == nil {
+		if m.daemonReconnect != nil {
+			return " " + daemonWaitNote + " "
+		}
 		return m.hostOpenNote()
 	}
 	name := r.host

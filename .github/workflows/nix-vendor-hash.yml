@@ -19,6 +19,13 @@ on:
       - swatch/go.sum
       - shot/go.mod
       - shot/go.sum
+      - tml/go.mod
+      - plot/go.mod
+      - plot/go.sum
+      - loom/go.mod
+      - loom/go.sum
+      - sketch/go.mod
+      - sketch/go.sum
       - tuios.nix
       - flake.nix
       - flake.lock
@@ -36,6 +43,13 @@ on:
       - swatch/go.sum
       - shot/go.mod
       - shot/go.sum
+      - tml/go.mod
+      - plot/go.mod
+      - plot/go.sum
+      - loom/go.mod
+      - loom/go.sum
+      - sketch/go.mod
+      - sketch/go.sum
       - tuios.nix
       - flake.nix
       - flake.lock
@@ -45,7 +59,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  # A pull request's group is its ref, so a newer push cancels the run in
+  # progress. Every other run (main, the nightly, a manual run) gets a group of
+  # its own and is never cancelled or replaced while it waits.
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:
@@ -57,7 +74,7 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Install Nix
-        uses: cachix/install-nix-action@13d8dd58da0234aa297dedd986986ccb8e7f3e24 # v31.11.1
+        uses: cachix/install-nix-action@448cde739abec1eaf0646249e3d25bb8d9bc7702 # v31.11.2
         with:
           extra_nix_config: |
             experimental-features = nix-command flakes

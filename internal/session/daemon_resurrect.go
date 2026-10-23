@@ -103,6 +103,13 @@ func (d *Daemon) restoreSessionOffers(state *SessionState) (*Session, []resumeOf
 	if existing := d.manager.GetSession(state.Name); existing != nil {
 		return existing, nil, nil
 	}
+	// A fan's judge does not survive a restart: its pane comes back as a
+	// fresh shell, which must not keep the judge's reach.
+	if wt := state.Worktree; wt != nil && (wt.JudgeSession != "" || wt.JudgeWindow != "") {
+		w := *wt
+		w.JudgeSession, w.JudgeWindow = "", ""
+		state.Worktree = &w
+	}
 
 	// A session whose windows were all closed leaves a state file behind, and
 	// restoring it produced a session with nothing in it that no surface tells
@@ -159,6 +166,10 @@ func (d *Daemon) restoreSessionOffers(state *SessionState) (*Session, []resumeOf
 	restored.WorkspaceMasterSplits = cloneMasterSplits(state.WorkspaceMasterSplits)
 	restored.WorkspaceMasterLayout = maps.Clone(state.WorkspaceMasterLayout)
 	restored.WorkspaceHasCustom = maps.Clone(state.WorkspaceHasCustom)
+	restored.WorkspaceLayoutModes = maps.Clone(state.WorkspaceLayoutModes)
+	// A display order saved by a build that kept one comes back as the
+	// numbering it showed. See applyLegacyWorkspaceOrder.
+	restored.applyLegacyWorkspaceOrder()
 
 	// A window whose shell will not start is dropped rather than kept. Keeping it
 	// left its PTYID naming the dead daemon's PTY, which nothing will ever answer
@@ -190,6 +201,12 @@ func (d *Daemon) restoreSessionOffers(state *SessionState) (*Session, []resumeOf
 		// popup, before groups had a workspace, moves to one here.
 		if w.Popup && !w.Scratch {
 			debugLog("[DEBUG] dropping restored popup %s, a popup lives only as long as its command", shortID(w.ID))
+			continue
+		}
+		// A TML surface lives in the daemon, so the daemon that held it took
+		// it along. Its window would come back empty.
+		if w.Kind == WindowKindTML {
+			debugLog("[DEBUG] dropping restored TML window %s, its surface ended with the daemon", shortID(w.ID))
 			continue
 		}
 		if w.Scratch {
@@ -316,13 +333,19 @@ func (d *Daemon) restoreSessionOffers(state *SessionState) (*Session, []resumeOf
 		}
 	}
 
+	// UpdateState takes the daemon-owned fields from the new session, the
+	// tab keys among them, so they are put back from here afterwards.
+	tabKeys, nextTabKey := restored.WorkspaceTabKeys, restored.NextWorkspaceTabKey
+	masterLayouts := restored.WorkspaceMasterLayout
 	sess.UpdateState(&restored)
 	// After UpdateState, which takes this field from canonical state and would
 	// undo it if the restore wrote it into the pushed snapshot instead.
 	sess.MarkRestored()
 	// The master-stack shapes are daemon-owned in the same way. See
 	// RestoreMasterLayouts.
-	sess.RestoreMasterLayouts(state.WorkspaceMasterLayout)
+	sess.RestoreMasterLayouts(masterLayouts)
+	// The herdr tab keys are daemon-owned in the same way.
+	sess.RestoreWorkspaceTabKeys(tabKeys, nextTabKey)
 	// Whether the rail is shown is daemon-owned in the same way. See
 	// RestoreSidebar.
 	sess.RestoreSidebar(state.Sidebar)
@@ -400,6 +423,11 @@ func restoredWorktree(saved *WorktreeInfo) *WorktreeInfo {
 		return nil
 	}
 	wt := *saved
+	// A record from before launched_from_id names its lead by name alone,
+	// which another session may hold now. It reaches nothing, so drop it.
+	if wt.LaunchedFromID == "" {
+		wt.LaunchedFrom = ""
+	}
 	if PromptWaiting(wt.PromptStatus) {
 		wt.PromptStatus = PromptNotSent
 		wt.PromptNote = "The daemon restarted before the prompt was typed. Send the prompt with send-text."

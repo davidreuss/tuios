@@ -1,0 +1,165 @@
+=== truecolor 66x14
+|╭─ go test ./... ────────────────────── from claude in api-auth ─╮|
+|│                                                                │|
+|│  412 passed   3 failed   9 skipped             ━━━━━━━━ 99.3%  │|
+|│                                                                │|
+|│  Seconds per run, last 7                                       │|
+|│                                  ▅▅▅▅▅▅                        │|
+|│  ▃▃▃▃▃▃  ▁▁▁▁▁▁  ▅▅▅▅▅▅  ▂▂▂▂▂▂  ██████  ██████                │|
+|│  ██████  ██████  ██████  ██████  ██████  ██████  ██████        │|
+|│                                                                │|
+|│  ▾ Failures  3                                                 │|
+|│    PACKAGE               TEST                          TIME ▼  │|
+|│  ▌ internal/session      TestAttachRace                 2.21s  │|
+|│                                                                │|
+|╰────────────────────────────────────────────────────────────────╯|
+--- styles
+|aabccbccccbcccccbaaaaaaaaaaaaaaaaaaaaaadeeeedeeeeeedeedeeeeeeeedaa|
+|adddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda|
+|addfffdeeeeeedddgdeeeeeedddhdeeeeeeedddddddddddddaaaaaaaidcccccdda|
+|adddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda|
+|addhhhhhhhbhhhbhhhhbhhhhbhddddddddddddddddddddddddddddddddddddddda|
+|addddddddddddddddddddddddddddddddddjjjjjjdddddddddddddddddddddddda|
+|addjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjdddddddddddddddda|
+|addjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjdddddddda|
+|adddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda|
+|addkdccccccccbbgddddddddddddddddddddddddddddddddddddddddddddddddda|
+|addddkkkkkkkdddddddddddddddkkkkddddddddddddddddddddddddddhhhhdjdda|
+|addlmnnnnnnnnnnnnnnnnmmmmmmoooooooooooooommmmmmmmmmmmmmmmmooooodda|
+|adddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+a: fg=accent bg=panel
+b: bg=panel bold
+c: fg=fg bg=panel bold
+d: bg=panel
+e: fg=dim bg=panel
+f: fg=success bg=panel bold
+g: fg=error bg=panel bold
+h: fg=dim bg=panel bold
+i: fg=track bg=panel
+j: fg=accent-bright bg=panel
+k: fg=mute bg=panel
+l: fg=accent bg=surface
+m: bg=surface
+n: fg=dim bg=surface
+o: fg=fg bg=surface bold
+=== 256 66x14
+|╭─ go test ./... ────────────────────── from claude in api-auth ─╮|
+|│                                                                │|
+|│  412 passed   3 failed   9 skipped             ━━━━━━━━ 99.3%  │|
+|│                                                                │|
+|│  Seconds per run, last 7                                       │|
+|│                                  ▅▅▅▅▅▅                        │|
+|│  ▃▃▃▃▃▃  ▁▁▁▁▁▁  ▅▅▅▅▅▅  ▂▂▂▂▂▂  ██████  ██████                │|
+|│  ██████  ██████  ██████  ██████  ██████  ██████  ██████        │|
+|│                                                                │|
+|│  ▾ Failures  3                                                 │|
+|│    PACKAGE               TEST                          TIME ▼  │|
+|│  ▌ internal/session      TestAttachRace                 2.21s  │|
+|│                                                                │|
+|╰────────────────────────────────────────────────────────────────╯|
+--- styles
+|aabccbccccbcccccbaaaaaaaaaaaaaaaaaaaaaadeeeedeeeeeedeedeeeeeeeedaa|
+|adddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda|
+|addfffdeeeeeedddgdeeeeeedddhdeeeeeeedddddddddddddaaaaaaaidcccccdda|
+|adddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda|
+|addhhhhhhhbhhhbhhhhbhhhhbhddddddddddddddddddddddddddddddddddddddda|
+|addddddddddddddddddddddddddddddddddjjjjjjdddddddddddddddddddddddda|
+|addjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjdddddddddddddddda|
+|addjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjddjjjjjjdddddddda|
+|adddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda|
+|addkdccccccccbbgddddddddddddddddddddddddddddddddddddddddddddddddda|
+|addddkkkkkkkdddddddddddddddkkkkddddddddddddddddddddddddddhhhhdjdda|
+|addlmnnnnnnnnnnnnnnnnmmmmmmoooooooooooooommmmmmmmmmmmmmmmmooooodda|
+|adddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddda|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+a: fg=accent bg=panel
+b: bg=panel bold
+c: fg=fg bg=panel bold
+d: bg=panel
+e: fg=dim bg=panel
+f: fg=success bg=panel bold
+g: fg=error bg=panel bold
+h: fg=dim bg=panel bold
+i: fg=success-tint bg=panel
+j: fg=accent-bright bg=panel
+k: fg=mute bg=panel
+l: fg=accent bg=surface
+m: bg=surface
+n: fg=dim bg=surface
+o: fg=fg bg=surface bold
+=== 16 66x14
+|╭─ go test ./... ────────────────────── from claude in api-auth ─╮|
+|│                                                                │|
+|│  412 passed   3 failed   9 skipped             ━━━━━━━━ 99.3%  │|
+|│                                                                │|
+|│  Seconds per run, last 7                                       │|
+|│                                  ▅▅▅▅▅▅                        │|
+|│  ▃▃▃▃▃▃  ▁▁▁▁▁▁  ▅▅▅▅▅▅  ▂▂▂▂▂▂  ██████  ██████                │|
+|│  ██████  ██████  ██████  ██████  ██████  ██████  ██████        │|
+|│                                                                │|
+|│  ▾ Failures  3                                                 │|
+|│    PACKAGE               TEST                          TIME ▼  │|
+|│  ▌ internal/session      TestAttachRace                 2.21s  │|
+|│                                                                │|
+|╰────────────────────────────────────────────────────────────────╯|
+--- styles
+|aabccbccccbcccccbaaaaaaaaaaaaaaaaaaaaaa dddd dddddd dd dddddddd aa|
+|a                                                                a|
+|a  eee dddddd   f dddddd   g ddddddd             aaaaaaah ccccc  a|
+|a                                                                a|
+|a  gggggggbgggbggggbggggbg                                       a|
+|a                                  iiiiii                        a|
+|a  iiiiii  iiiiii  iiiiii  iiiiii  iiiiii  iiiiii                a|
+|a  iiiiii  iiiiii  iiiiii  iiiiii  iiiiii  iiiiii  iiiiii        a|
+|a                                                                a|
+|a  h ccccccccbbf                                                 a|
+|a    hhhhhhh               hhhh                          gggg i  a|
+|a  ajkkkkkkkkkkkkkkkkjjjjjjlllllllllllllljjjjjjjjjjjjjjjjjlllll  a|
+|a                                                                a|
+|aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|
+a: fg=accent
+b: bold
+c: fg=fg bold
+d: fg=dim
+e: fg=success bold
+f: fg=error bold
+g: fg=dim bold
+h: fg=mute
+i: fg=accent-bright
+j: reverse
+k: fg=dim reverse
+l: fg=dim bold reverse
+=== ascii 66x14
+|+- go test ./... ---------------------- from claude in api-auth -+|
+||                                                                ||
+||  412 passed   3 failed   9 skipped             [######] 99.3%  ||
+||                                                                ||
+||  Seconds per run, last 7                                       ||
+||                                  ######                        ||
+||                  ######          ######  ######                ||
+||  ######  ######  ######  ######  ######  ######  ######        ||
+||                                                                ||
+||  v Failures  3                                                 ||
+||    PACKAGE               TEST                          TIME v  ||
+||  > internal/session      TestAttachRace                 2.21s  ||
+||                                                                ||
+|+----------------------------------------------------------------+|
+--- styles
+|  aaaaaaaaaaaaaaa                                                 |
+|                                                                  |
+|   aaa          a          a                              aaaaa   |
+|                                                                  |
+|   aaaaaaaaaaaaaaaaaaaaaaa                                        |
+|                                                                  |
+|                                                                  |
+|                                                                  |
+|                                                                  |
+|     aaaaaaaaaaa                                                  |
+|                                                         aaaa     |
+|    bbbbbbbbbbbbbbbbbbbbbbbccccccccccccccbbbbbbbbbbbbbbbbbccccc   |
+|                                                                  |
+|                                                                  |
+a: bold
+b: reverse
+c: bold reverse

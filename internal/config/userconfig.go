@@ -53,6 +53,9 @@ type UserConfig struct {
 	// PiP is the [pip] table: the size and corner of the picture-in-picture
 	// view that toggle_pip pins. Client-local, like the spotlight. See pip.go.
 	PiP PiPConfig `toml:"pip"`
+
+	// Mermaid is the [mermaid] table: the colours of tuios mermaid. See mermaid.go.
+	Mermaid MermaidConfig `toml:"mermaid"`
 	// Launcher is the [launcher] table: how the app launcher starts a
 	// graphical program. See launcher.go.
 	Launcher LauncherConfig `toml:"launcher"`
@@ -68,6 +71,9 @@ type UserConfig struct {
 	// was already the user's for another action in the same table. It is
 	// worked out on load and never written. See yieldingDefaults.
 	YieldedDefaults []YieldedDefault `toml:"-"`
+	// RetiredKeybinds are the user's bindings to actions tuios no longer
+	// has, dropped on load. See migrateInboxKeys.
+	RetiredKeybinds []RetiredKeybind `toml:"-"`
 	// LoadWarnings say what the load of a config split over several files
 	// skipped: an included file that is not there, or an include cycle. It is
 	// worked out on load and never written. See include.go.
@@ -353,6 +359,7 @@ type AppearanceConfig struct {
 	AnimationsEnabled        *bool                   `toml:"animations_enabled,omitempty"` // Deprecated: folded into motion on load (false is none)
 	Motion                   string                  `toml:"motion"`                       // How much moves: none, basic (window slides, copy sweep), full (also fades and the working shimmer) (default: full)
 	ModalDim                 *int                    `toml:"modal_dim"`                    // Percent the screen behind a modal overlay is darkened; 0 is off (default: 30)
+	PopupDim                 *int                    `toml:"popup_dim"`                    // Percent the screen behind a popup is darkened; 0 is off (default: 0)
 	ConfirmQuit              *bool                   `toml:"confirm_quit"`                 // Always show quit confirmation dialog (default: false). When false, only shown if foreground processes are running.
 	WhichKeyEnabled          *bool                   `toml:"whichkey_enabled"`             // Show which-key popup after pressing leader key (default: true)
 	WhichKeyPosition         string                  `toml:"whichkey_position"`            // Which-key popup position: bottom-right, bottom-left, top-right, top-left, center (default: bottom-right)
@@ -386,10 +393,11 @@ type AppearanceConfig struct {
 	MaxFPS                 FPSLimit `toml:"max_fps"`                   // Maximum render FPS: 0 uses 60, "auto" follows the display, otherwise 10 to 240
 	DockWorkspaceTabs      *bool    `toml:"dock_workspace_tabs"`       // Clickable workspace strip in the dock (default: true)
 	DockWorkspaceTabFormat string   `toml:"dock_workspace_tab_format"` // Format string for workspace tabs: {index}, {name} (default: "{name}")
-	DockWorkspaceTooltip   *bool    `toml:"dock_workspace_tooltip"`    // Pop a truncated workspace name in full on hover (default: true)
+	DockWorkspaceTooltip   *bool    `toml:"dock_workspace_tooltip"`    // Show the workspace name on hover when the pill cuts or omits it (default: true)
 	DockWorkspaceLabelMax  *int     `toml:"dock_workspace_label_max"`  // Cell cap on a workspace pill's label; 0 draws the whole name (default: 12)
 	DockPrefixIndicator    string   `toml:"dock_prefix_indicator"`     // Where an armed leader shows: pill (default) or badge
 	DockPillCaps           *bool    `toml:"dock_pill_caps"`            // Rounded caps on every dock pill (default: true; false draws flat pills)
+	DockModeSplitLetter    *bool    `toml:"dock_mode_split_letter"`    // V or H after the tiling icon in the mode pill (default: true)
 	DockModeIconWindow     *string  `toml:"dock_mode_icon_window"`     // Mode pill icon in window mode; "" draws none (default: the glyph set's)
 	DockModeIconTerminal   *string  `toml:"dock_mode_icon_terminal"`   // Mode pill icon in terminal mode; "" draws none (default: the glyph set's)
 	DockModeIconTiling     *string  `toml:"dock_mode_icon_tiling"`     // Mode pill icon while tiling is on; "" draws none (default: the glyph set's)
@@ -901,7 +909,8 @@ type KeybindingsConfig struct {
 	// LeaderTwice is what the leader pressed two times does: "send" (the
 	// default) sends the leader to the pane in terminal mode and cancels in
 	// window mode; "last_workspace" goes back to the last workspace, as
-	// screen's C-a C-a does. send_prefix sends the leader either way.
+	// screen's C-a C-a does. send_prefix sends the leader either way. A
+	// prefix_mode binding on the leader key wins over both (issue #866).
 	LeaderTwice string `toml:"leader_twice,omitempty"`
 	// KeyboardLayout is the layout tuios assumes for a key the terminal does
 	// not describe: "us" (the default when empty) or "other". With "us" a
@@ -943,8 +952,12 @@ type KeybindingsConfig struct {
 	// TuiosPrefix is the tuios menu, the leader then prefix_tuios's key. A
 	// preset puts the tuios features whose keys it takes here. Empty without
 	// a preset.
-	TuiosPrefix  map[string][]string `toml:"tuios_prefix,omitempty"`
-	TerminalMode map[string][]string `toml:"terminal_mode"` // Direct keybinds in terminal mode (no prefix required)
+	TuiosPrefix map[string][]string `toml:"tuios_prefix,omitempty"`
+	// Menus are prefix menus the user declares, each opened by binding the
+	// action open_menu:NAME in any section, so menus nest as deep as the
+	// config does. None ships: see menus.go.
+	Menus        map[string]MenuConfig `toml:"menus,omitempty"`
+	TerminalMode map[string][]string   `toml:"terminal_mode"` // Direct keybinds in terminal mode (no prefix required)
 	// Global binds are consulted in window mode and in terminal mode alike, so
 	// the palette and the launcher answer to one key wherever the user is. They
 	// are a section of their own rather than entries in terminal_mode because
@@ -1043,6 +1056,7 @@ func DefaultConfig() *UserConfig {
 			Glyphs:                   theme.GlyphSetNone,
 			Motion:                   MotionFull,
 			ModalDim:                 new(ModalDimDefault),
+			PopupDim:                 new(PopupDimDefault),
 			PanelPadding:             overlay.DefaultPanelPadding,
 			ClockFormat:              DefaultClockFormat,
 			TilingScheme:             TilingSchemeSpiral,
@@ -1115,6 +1129,7 @@ func DefaultConfig() *UserConfig {
 		Hints:        defaultHintsConfig(),
 		Scratch:      defaultScratchConfig(),
 		PiP:          defaultPiPConfig(),
+		Mermaid:      MermaidConfig{Theme: "tuios"},
 		Panes:        defaultPanesConfig(),
 		PasteBuffers: defaultPasteBuffersConfig(),
 		Keybindings: KeybindingsConfig{
@@ -1301,6 +1316,9 @@ func DefaultConfig() *UserConfig {
 				"prefix_toggle_spotlight":   {"B"},
 				"prefix_session_switcher":   {"S"},
 				"prefix_workspace_switcher": {"W"},
+				// G for go to, one shift from the g that shows the scratch
+				// terminal.
+				"goto_picker": {"G"},
 				// /, which searches everywhere else too. tmux puts its tree on
 				// s, which is the scrollback browser here.
 				"choose_tree":       {"/"},
@@ -1568,21 +1586,40 @@ const (
 	ActionInboxSelect   = "inbox_select"
 	ActionInboxMailbox  = "inbox_mailbox"
 	ActionInboxClose    = "inbox_close"
-	// The agents view: tab switches to it and back, and s steps its sort.
-	ActionInboxAgents = "inbox_agents"
-	ActionInboxSort   = "inbox_sort"
+	// ActionInboxWrite opens the reply editor for the selected agent: tab,
+	// where the next words go. It took tab from inbox_agents, which
+	// switched the Inbox to the agents view before the Inbox became it.
+	ActionInboxWrite = "inbox_write"
+	ActionInboxSort  = "inbox_sort"
 	// ActionInboxViewPane zooms the selected agent's pane, out of the
 	// agents view, and ctrl+b i comes back.
 	ActionInboxViewPane = "inbox_view_pane"
 
 	// The Inbox's review, triage and approval keys.
-	ActionInboxReview       = "inbox_review"
-	ActionInboxSnooze       = "inbox_snooze"
-	ActionInboxUndo         = "inbox_undo"
-	ActionInboxShowSnoozed  = "inbox_show_snoozed"
-	ActionInboxDenyReason   = "inbox_deny_reason"
-	ActionInboxDetailDown   = "inbox_detail_down"
-	ActionInboxDetailUp     = "inbox_detail_up"
+	ActionInboxReview      = "inbox_review"
+	ActionInboxSnooze      = "inbox_snooze"
+	ActionInboxUndo        = "inbox_undo"
+	ActionInboxShowSnoozed = "inbox_show_snoozed"
+	ActionInboxDenyReason  = "inbox_deny_reason"
+	ActionInboxNewAgent    = "inbox_new_agent"
+	// ActionInboxCompare opens the comparison of the attempts of the fan
+	// under the cursor.
+	ActionInboxCompare    = "inbox_compare"
+	ActionInboxDetailDown = "inbox_detail_down"
+	ActionInboxDetailUp   = "inbox_detail_up"
+	// The approval card's keys, the keys that open and close the focus on a
+	// narrow screen, help, and the bulk marks.
+	ActionInboxAllow       = "inbox_allow"
+	ActionInboxAllowAlways = "inbox_allow_always"
+	ActionInboxOpen        = "inbox_open"
+	ActionInboxBack        = "inbox_back"
+	ActionInboxHelp        = "inbox_help"
+	ActionInboxMark        = "inbox_mark"
+	ActionInboxMarkAll     = "inbox_mark_all"
+	// The focus\'s tabs, and every line of every thread card.
+	ActionInboxTabPrev      = "inbox_tab_prev"
+	ActionInboxTabNext      = "inbox_tab_next"
+	ActionInboxExpand       = "inbox_expand"
 	ActionAgentUnread       = "agent_unread"
 	ActionAgentSnooze       = "agent_snooze"
 	ActionAgentReply        = "agent_reply"
@@ -1636,20 +1673,34 @@ func getDefaultInboxKeybinds() map[string][]string {
 		ActionInboxSelect:   {"/"},
 		ActionInboxMailbox:  {"m"},
 		ActionInboxClose:    {"esc", "q"},
-		ActionInboxAgents:   {"tab"},
+		ActionInboxWrite:    {"tab", "i"},
 		ActionInboxSort:     {"s"},
 		ActionInboxViewPane: {"ctrl+]"},
 		// Review, triage and approvals. z snoozes and waits for a digit; u
 		// undoes a dismiss or snooze made a moment ago; S shows what is
-		// snoozed; n denies with a reason, where 3 stays the plain deny; J
-		// and K scroll a long detail such as a plan.
+		// snoozed; R rejects with a reason, after the a A r R of the
+		// approval card, where 3 stays the plain reject; n starts a new
+		// agent; J and K scroll a long detail such as a plan. On a held
+		// approval r rejects: inbox_reply answers it.
 		ActionInboxReview:      {"v"},
 		ActionInboxSnooze:      {"z"},
 		ActionInboxUndo:        {"u"},
 		ActionInboxShowSnoozed: {"S"},
-		ActionInboxDenyReason:  {"n"},
+		ActionInboxDenyReason:  {"R"},
+		ActionInboxNewAgent:    {"n"},
+		ActionInboxCompare:     {"c"},
 		ActionInboxDetailDown:  {"J", "ctrl+d"},
 		ActionInboxDetailUp:    {"K", "ctrl+u"},
+		ActionInboxAllow:       {"a"},
+		ActionInboxAllowAlways: {"A"},
+		ActionInboxOpen:        {"l", "right"},
+		ActionInboxBack:        {"h", "left"},
+		ActionInboxHelp:        {"?"},
+		ActionInboxMark:        {"x"},
+		ActionInboxMarkAll:     {"*"},
+		ActionInboxTabPrev:     {"["},
+		ActionInboxTabNext:     {"]"},
+		ActionInboxExpand:      {"e"},
 	}
 }
 
@@ -1834,46 +1885,64 @@ func getDefaultWorkspaceKeybinds() map[string][]string {
 		// macOS users think in terms of Option key
 		// The KeyNormalizer expands opt+1 to [opt+1, alt+1]
 		base = map[string][]string{
-			"switch_workspace_1": {"opt+1"},
-			"switch_workspace_2": {"opt+2"},
-			"switch_workspace_3": {"opt+3"},
-			"switch_workspace_4": {"opt+4"},
-			"switch_workspace_5": {"opt+5"},
-			"switch_workspace_6": {"opt+6"},
-			"switch_workspace_7": {"opt+7"},
-			"switch_workspace_8": {"opt+8"},
-			"switch_workspace_9": {"opt+9"},
-			"move_and_follow_1":  {"opt+shift+1"},
-			"move_and_follow_2":  {"opt+shift+2"},
-			"move_and_follow_3":  {"opt+shift+3"},
-			"move_and_follow_4":  {"opt+shift+4"},
-			"move_and_follow_5":  {"opt+shift+5"},
-			"move_and_follow_6":  {"opt+shift+6"},
-			"move_and_follow_7":  {"opt+shift+7"},
-			"move_and_follow_8":  {"opt+shift+8"},
-			"move_and_follow_9":  {"opt+shift+9"},
+			"switch_workspace_1":  {"opt+1"},
+			"switch_workspace_2":  {"opt+2"},
+			"switch_workspace_3":  {"opt+3"},
+			"switch_workspace_4":  {"opt+4"},
+			"switch_workspace_5":  {"opt+5"},
+			"switch_workspace_6":  {"opt+6"},
+			"switch_workspace_7":  {"opt+7"},
+			"switch_workspace_8":  {"opt+8"},
+			"switch_workspace_9":  {"opt+9"},
+			"move_and_follow_1":   {"opt+shift+1"},
+			"move_and_follow_2":   {"opt+shift+2"},
+			"move_and_follow_3":   {"opt+shift+3"},
+			"move_and_follow_4":   {"opt+shift+4"},
+			"move_and_follow_5":   {"opt+shift+5"},
+			"move_and_follow_6":   {"opt+shift+6"},
+			"move_and_follow_7":   {"opt+shift+7"},
+			"move_and_follow_8":   {"opt+shift+8"},
+			"move_and_follow_9":   {"opt+shift+9"},
+			"send_to_workspace_1": {"ctrl+opt+1"},
+			"send_to_workspace_2": {"ctrl+opt+2"},
+			"send_to_workspace_3": {"ctrl+opt+3"},
+			"send_to_workspace_4": {"ctrl+opt+4"},
+			"send_to_workspace_5": {"ctrl+opt+5"},
+			"send_to_workspace_6": {"ctrl+opt+6"},
+			"send_to_workspace_7": {"ctrl+opt+7"},
+			"send_to_workspace_8": {"ctrl+opt+8"},
+			"send_to_workspace_9": {"ctrl+opt+9"},
 		}
 	} else {
 		// Linux and other platforms use alt
 		base = map[string][]string{
-			"switch_workspace_1": {"alt+1"},
-			"switch_workspace_2": {"alt+2"},
-			"switch_workspace_3": {"alt+3"},
-			"switch_workspace_4": {"alt+4"},
-			"switch_workspace_5": {"alt+5"},
-			"switch_workspace_6": {"alt+6"},
-			"switch_workspace_7": {"alt+7"},
-			"switch_workspace_8": {"alt+8"},
-			"switch_workspace_9": {"alt+9"},
-			"move_and_follow_1":  {"alt+shift+1"},
-			"move_and_follow_2":  {"alt+shift+2"},
-			"move_and_follow_3":  {"alt+shift+3"},
-			"move_and_follow_4":  {"alt+shift+4"},
-			"move_and_follow_5":  {"alt+shift+5"},
-			"move_and_follow_6":  {"alt+shift+6"},
-			"move_and_follow_7":  {"alt+shift+7"},
-			"move_and_follow_8":  {"alt+shift+8"},
-			"move_and_follow_9":  {"alt+shift+9"},
+			"switch_workspace_1":  {"alt+1"},
+			"switch_workspace_2":  {"alt+2"},
+			"switch_workspace_3":  {"alt+3"},
+			"switch_workspace_4":  {"alt+4"},
+			"switch_workspace_5":  {"alt+5"},
+			"switch_workspace_6":  {"alt+6"},
+			"switch_workspace_7":  {"alt+7"},
+			"switch_workspace_8":  {"alt+8"},
+			"switch_workspace_9":  {"alt+9"},
+			"move_and_follow_1":   {"alt+shift+1"},
+			"move_and_follow_2":   {"alt+shift+2"},
+			"move_and_follow_3":   {"alt+shift+3"},
+			"move_and_follow_4":   {"alt+shift+4"},
+			"move_and_follow_5":   {"alt+shift+5"},
+			"move_and_follow_6":   {"alt+shift+6"},
+			"move_and_follow_7":   {"alt+shift+7"},
+			"move_and_follow_8":   {"alt+shift+8"},
+			"move_and_follow_9":   {"alt+shift+9"},
+			"send_to_workspace_1": {"ctrl+alt+1"},
+			"send_to_workspace_2": {"ctrl+alt+2"},
+			"send_to_workspace_3": {"ctrl+alt+3"},
+			"send_to_workspace_4": {"ctrl+alt+4"},
+			"send_to_workspace_5": {"ctrl+alt+5"},
+			"send_to_workspace_6": {"ctrl+alt+6"},
+			"send_to_workspace_7": {"ctrl+alt+7"},
+			"send_to_workspace_8": {"ctrl+alt+8"},
+			"send_to_workspace_9": {"ctrl+alt+9"},
 		}
 	}
 
@@ -2205,6 +2274,12 @@ func fillMissingAppearance(cfg, defaultCfg *UserConfig) {
 		cfg.Appearance.ModalDim = new(*defaultCfg.Appearance.ModalDim)
 	} else if d := *cfg.Appearance.ModalDim; d < 0 || d > ModalDimMax {
 		cfg.Appearance.ModalDim = new(min(max(d, 0), ModalDimMax))
+	}
+
+	if cfg.Appearance.PopupDim == nil {
+		cfg.Appearance.PopupDim = new(*defaultCfg.Appearance.PopupDim)
+	} else if d := *cfg.Appearance.PopupDim; d < 0 || d > PopupDimMax {
+		cfg.Appearance.PopupDim = new(min(max(d, 0), PopupDimMax))
 	}
 
 	if cfg.Appearance.BorderStyle == "" {
@@ -2539,6 +2614,9 @@ func ApplyAppearanceConfig(cfg *UserConfig, s *Settings) {
 	if cfg.Appearance.DockPillCaps != nil {
 		s.DockPillCaps = *cfg.Appearance.DockPillCaps
 	}
+	if cfg.Appearance.DockModeSplitLetter != nil {
+		s.DockModeSplitLetter = *cfg.Appearance.DockModeSplitLetter
+	}
 	// A typo or an empty value lands on the default, and a key removed from
 	// the file goes back to it on reload.
 	if slices.Contains(DockPrefixIndicators, cfg.Appearance.DockPrefixIndicator) {
@@ -2746,6 +2824,10 @@ func ApplyAppearanceConfig(cfg *UserConfig, s *Settings) {
 	}
 	if a.ModalDim != nil {
 		s.ModalDim = min(max(*a.ModalDim, 0), ModalDimMax)
+	}
+
+	if a.PopupDim != nil {
+		s.PopupDim = min(max(*a.PopupDim, 0), PopupDimMax)
 	}
 
 	// ConfirmQuit defaults to false (nil means use default)
@@ -3208,6 +3290,48 @@ func migrateCornerSnapDigits(cfg *UserConfig) {
 	}
 }
 
+// migrateInboxKeys takes the Inbox keys the agents cockpit moved off a config
+// an older tuios wrote. inbox_agents switched the Inbox to the agents view,
+// which the Inbox now always is: it is dropped, and a key the user gave it
+// other than the old tab is listed in RetiredKeybinds for keybinds doctor.
+// inbox_deny_reason on the old n, exactly, is the stale default, so it is
+// dropped too and takes R with the fill, and n starts a new agent. Like
+// migrateCornerSnapDigits it runs before the fill.
+func migrateInboxKeys(cfg *UserConfig) {
+	t := cfg.Keybindings.Inbox
+	if t == nil {
+		return
+	}
+	if keys, ok := t["inbox_agents"]; ok {
+		delete(t, "inbox_agents")
+		if len(keys) > 0 && !slices.Equal(keys, []string{"tab"}) {
+			cfg.RetiredKeybinds = append(cfg.RetiredKeybinds, RetiredKeybind{
+				Section: "inbox", Action: "inbox_agents", Keys: keys, Use: ActionInboxWrite,
+			})
+		}
+	}
+	if slices.Equal(t[ActionInboxDenyReason], []string{"n"}) {
+		delete(t, ActionInboxDenyReason)
+		cfg.RetiredKeybinds = append(cfg.RetiredKeybinds, RetiredKeybind{
+			Section: "inbox", Action: ActionInboxDenyReason, Keys: []string{"n"},
+			Note: "n starts a new agent now, and inbox_deny_reason moved to R. To keep n, bind inbox_new_agent to another key first.",
+		})
+	}
+}
+
+// RetiredKeybind is a binding to an action tuios no longer has, dropped on
+// load.
+type RetiredKeybind struct {
+	Section string   `json:"section"`
+	Action  string   `json:"action"`
+	Keys    []string `json:"keys"`
+	// Use is the action that does its work now, empty when none does.
+	Use string `json:"use,omitempty"`
+	// Note says what happened instead, for a binding dropped from an
+	// action tuios still has.
+	Note string `json:"note,omitempty"`
+}
+
 // fillMissingKeybinds fills in any missing keybindings with defaults
 func fillMissingKeybinds(cfg, defaultCfg *UserConfig) {
 	// A preset is applied to the defaults first, so everything below fills
@@ -3341,6 +3465,7 @@ func fillMissingKeybinds(cfg, defaultCfg *UserConfig) {
 	migrateLegacyKeybinds(cfg)
 	migrateSettingsComma(cfg)
 	migrateCornerSnapDigits(cfg)
+	migrateInboxKeys(cfg)
 
 	// Set default leader key if not specified
 	if cfg.Keybindings.LeaderKey == "" {
@@ -3349,7 +3474,13 @@ func fillMissingKeybinds(cfg, defaultCfg *UserConfig) {
 
 	// Fill in missing keys with defaults
 	fillMapDefaults(cfg.Keybindings.WindowManagement, defaultCfg.Keybindings.WindowManagement)
+	// The workspaces table is part of the window-mode keymap as well, so a new
+	// workspace default yields the same way a new layout default does.
+	workspaceYield := yieldTakenDefaults("workspaces", windowModeTables(cfg), defaultCfg.Keybindings.Workspaces)
 	fillMapDefaults(cfg.Keybindings.Workspaces, defaultCfg.Keybindings.Workspaces)
+	for _, y := range workspaceYield {
+		delete(cfg.Keybindings.Workspaces, y.Action)
+	}
 	// The layout table is one of several that make up the window-mode keymap,
 	// and it wins a key over window_management. So a new layout default yields
 	// to the user's own binding for its key in any of those tables.
@@ -3368,6 +3499,7 @@ func fillMissingKeybinds(cfg, defaultCfg *UserConfig) {
 	for _, y := range cfg.YieldedDefaults {
 		delete(cfg.Keybindings.PrefixMode, y.Action)
 	}
+	cfg.YieldedDefaults = append(cfg.YieldedDefaults, workspaceYield...)
 	cfg.YieldedDefaults = append(cfg.YieldedDefaults, layoutYield...)
 	presetYield = append(presetYield, fillPrefix("window_prefix", cfg.Keybindings.WindowPrefix, defaultCfg.Keybindings.WindowPrefix)...)
 	fillMapDefaults(cfg.Keybindings.MinimizePrefix, defaultCfg.Keybindings.MinimizePrefix)
@@ -3408,7 +3540,19 @@ func fillMissingKeybinds(cfg, defaultCfg *UserConfig) {
 	// The Inbox, its peek and the mailbox had their keys written into the
 	// input path before these sections existed, so every config written
 	// before them has none and has to get the keys it always had.
+	// The cockpit's new Inbox keys yield to a key the user already holds.
+	inboxYield := yieldTakenDefaults("inbox", cfg.Keybindings.Inbox, defaultCfg.Keybindings.Inbox)
 	fillMapDefaults(cfg.Keybindings.Inbox, defaultCfg.Keybindings.Inbox)
+	// Only the taken key yields: an action keeps its other default keys.
+	for _, y := range inboxYield {
+		keys := slices.DeleteFunc(slices.Clone(cfg.Keybindings.Inbox[y.Action]), func(k string) bool { return sameKeyPress(k, y.Key) })
+		if len(keys) == 0 {
+			delete(cfg.Keybindings.Inbox, y.Action)
+		} else {
+			cfg.Keybindings.Inbox[y.Action] = keys
+		}
+	}
+	cfg.YieldedDefaults = append(cfg.YieldedDefaults, inboxYield...)
 	fillMapDefaults(cfg.Keybindings.InboxPeek, defaultCfg.Keybindings.InboxPeek)
 	fillMapDefaults(cfg.Keybindings.Mail, defaultCfg.Keybindings.Mail)
 	// The Copies panel's section is newer than every config written before it.
@@ -3438,6 +3582,8 @@ var yieldingDefaults = map[string]bool{
 	"open_keybind_presets": true,
 	// / after the prefix, new in the release after v0.8.5.
 	"choose_tree": true,
+	// G after the prefix, new with the go-to picker.
+	"goto_picker": true,
 	// p in window mode, new in the release after v0.8.2.
 	"toggle_pip": true,
 	// V after the prefix, new in the release after v0.8.2.
@@ -3452,6 +3598,34 @@ var yieldingDefaults = map[string]bool{
 	// j and k in window mode, new in the release after v0.8.0.
 	"focus_down": true,
 	"focus_up":   true,
+	// The Inbox keys new with the agents cockpit, after v0.10.1. R and n
+	// changed hands: R was free and n was inbox_deny_reason's.
+	"inbox_new_agent":    true,
+	"inbox_deny_reason":  true,
+	"inbox_write":        true,
+	"inbox_allow":        true,
+	"inbox_allow_always": true,
+	"inbox_open":         true,
+	"inbox_back":         true,
+	"inbox_help":         true,
+	"inbox_mark":         true,
+	"inbox_mark_all":     true,
+	"inbox_tab_prev":     true,
+	"inbox_tab_next":     true,
+	"inbox_expand":       true,
+	// ctrl+alt+N (ctrl+opt+N on macOS), the first default for
+	// send_to_workspace_N.
+	"send_to_workspace_1": true,
+	"send_to_workspace_2": true,
+	"send_to_workspace_3": true,
+	"send_to_workspace_4": true,
+	"send_to_workspace_5": true,
+	"send_to_workspace_6": true,
+	"send_to_workspace_7": true,
+	"send_to_workspace_8": true,
+	"send_to_workspace_9": true,
+	// c, new with the fan comparison.
+	"inbox_compare": true,
 }
 
 // windowModeTables is every binding the user's config holds in the tables

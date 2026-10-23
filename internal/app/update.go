@@ -212,6 +212,8 @@ type ClientEvent struct {
 	Mail session.AgentMailPayload
 	// PaneMark is the push behind a "pane-mark" event.
 	PaneMark session.PaneMarkPayload
+	// PluginAsks is the push behind a "plugin-approvals" event.
+	PluginAsks []session.PluginApprovalAsk
 }
 
 // SessionResizeMsg is sent when the effective session size changes (min of all clients).
@@ -275,6 +277,12 @@ const (
 	// another client attached with -d, single_client is on, or detach-client
 	// named it. The session keeps running, and this is not a failure.
 	ExitDetached
+	// ExitRestarted means the person restarted the daemon from the app and
+	// the new one answers. The entry point runs RestartExec to come back.
+	ExitRestarted
+	// ExitRestartFailed means a restart from the app failed after the old
+	// daemon stopped. RestartFailure says what to do next.
+	ExitRestartFailed
 )
 
 // InputHandler is a function type that handles input messages.
@@ -421,6 +429,10 @@ func (m *OS) Init() tea.Cmd {
 		cmds = append(cmds, ListenForClientEvents(m.ClientEventChan))
 	}
 
+	// The TML surfaces the daemon pushes, and what their inputs left to do.
+	// See tml.go.
+	cmds = append(cmds, m.listenForTML())
+
 	// The session's mail so far, read once. Everything after this arrives as
 	// a push, so an idle client never asks again.
 	if cmd := m.agentMailLoad(); cmd != nil {
@@ -535,6 +547,8 @@ func clientEventMsg(event ClientEvent) tea.Msg {
 		return SessionsChangedMsg{}
 	case "pane-mark":
 		return PaneMarkMsg{Mark: event.PaneMark}
+	case "plugin-approvals":
+		return PluginApprovalsMsg{Asks: event.PluginAsks}
 	case "paste-refused":
 		return PasteRefusedMsg{Message: event.Reason}
 	case "agent-mail-mark":
@@ -562,7 +576,7 @@ func clientEventMsg(event ClientEvent) tea.Msg {
 func (m *OS) tickNeedsWork() bool {
 	return m.tickAtFrameRate() || len(m.Notifications) > 0 ||
 		len(m.pendingAgentAlerts) > 0 || m.programAlertHeld() || m.spotlightMotionPending ||
-		m.tickPolledWork()
+		m.cockpitHoldDue(time.Now()) || m.tickPolledWork()
 }
 
 // tickAtFrameRate reports whether something moves on every frame and the
@@ -784,16 +798,16 @@ func (m *OS) foreignSessionReplanCmd() tea.Cmd {
 
 // foreignSessionRefreshPlan decides whether the next poll should hit the daemon
 // and how long to wait before re-arming. A consumer is on screen when the
-// sidebar reserves columns or the session switcher is open; poll fast then, even
-// for a lone session, because the listing is where the rail reads the titles of
-// windows this client has unsubscribed from. Off screen, fall back to a slow
+// sidebar reserves columns or the session switcher or the go-to picker is open;
+// poll fast then, even for a lone session, because the listing is where the
+// rail reads the titles of windows this client has unsubscribed from. Off screen, fall back to a slow
 // cache-warming poll while foreign sessions exist, and do nothing at all for a
 // lone session, which is what keeps a hidden sidebar free at idle.
 func (m *OS) foreignSessionRefreshPlan() (after time.Duration, refresh bool) {
 	if m.DaemonClient == nil {
 		return foreignSessionRefreshIdle, false
 	}
-	if m.SidebarActive() || m.ShowSessionSwitcher {
+	if m.SidebarActive() || m.ShowSessionSwitcher || m.gotoPicker.open {
 		return foreignSessionRefreshActive, true
 	}
 	if m.DaemonClient.SessionCount() <= 1 {
@@ -917,6 +931,7 @@ func (m *OS) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Focus reports for every path that moved the focus without FocusWindow.
 	m.reportFocusChange()
 	m.reconcilePrevFocus()
+	m.noteGotoPlace()
 	m.recordScrollAnchors()
 	// Asked again after the handler, not only before it, because the handler
 	// itself is one of the things that lengthens a pane's history: a workspace
@@ -964,6 +979,24 @@ func (m *OS) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// the settings page opening and a pane starting an agent are both things
 	// any handler can do. See settings_agents.go.
 	agents := m.agentsSyncCmd()
+	// A reply editor the rows moved the cursor away from closes, keeping
+	// its draft.
+	m.CockpitReplyCheck()
+	// Checkpoints a frame of the agents view drew for an older state: a
+	// turn that ended with no input is read now. A flag check when not.
+	if side := m.CockpitSideWanted(); side != nil {
+		agents = tea.Batch(agents, side)
+	}
+	// A verdict the open fan comparison does not show yet is read now. A
+	// nil check when the comparison is closed.
+	if cmp := m.cockpitCompareStale(); cmp != nil {
+		agents = tea.Batch(agents, cmp)
+	}
+	// The restart dialog's plan, on the same beat: the palette, a menu, the
+	// settings and the notice can each open the dialog. See daemon_restart.go.
+	if plan := m.restartPlanCmd(); plan != nil {
+		agents = tea.Batch(agents, plan)
+	}
 	// The maintenance tick last, after every sync above has said what it asked
 	// for: it is armed for the earliest job that is due, and not at all when
 	// none is. See nextWake.
@@ -1119,6 +1152,17 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		m.applyReplyPreview(msg)
 		return m, nil
 
+	case ckCheckpointsMsg:
+		m.applyCheckpoints(msg)
+		return m, nil
+	case ckCompareMsg:
+		return m, m.applyCompare(msg)
+	case ckFanActMsg:
+		return m, m.applyFanAct(msg)
+	case ckLivePrimeMsg:
+		m.applyLivePrime(msg)
+		return m, nil
+
 	case PasteTimeoutMsg:
 		// The terminal never answered the clipboard query. Say so, because the
 		// alternative is a paste key that looks broken. See clipboard_paste.go.
@@ -1230,6 +1274,10 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		m.handleMotionFrame(msg)
 		return m, nil
 
+	case ckHoldMsg:
+		m.cockpitSettleHold(time.Now())
+		return m, nil
+
 	case TickerMsg:
 		// Maintenance tick: animations, dock stats, script playback, process cleanup.
 		// Does NOT trigger rendering unless animations/interactions are active.
@@ -1249,6 +1297,9 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			return m, nil
 		}
 		m.tickStats.Work++
+
+		// An agent row held in its group a moment moves now.
+		m.cockpitSettleHold(time.Time(msg))
 
 		// Agent alerts whose settle window has closed. Done before the window
 		// sweep below so an alert about a pane that exited this tick is dropped
@@ -1528,6 +1579,12 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		m.renderSkipped = false
 		return m, cmd
 
+	case spawnInfoMsg:
+		m.applySpawnInfo(msg)
+		return m, nil
+	case spawnStartedMsg:
+		m.applySpawnStarted(msg)
+		return m, nil
 	case worktreeCreatedMsg:
 		// A worktree create that finished on its own goroutine, possibly after a
 		// clone's worth of minutes. The handler attaches to the session it made,
@@ -1642,6 +1699,36 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	case PasteRefusedMsg:
 		m.ShowNotification(msg.Message, "error", m.Settings.NotificationDuration)
 		return m, ListenForClientEvents(m.ClientEventChan)
+
+	case TMLInputFailedMsg:
+		m.ShowNotification(msg.Text, "warning", m.Settings.NotificationDuration)
+		return m, nil
+
+	case tmlRefreshFailedMsg:
+		if v := m.tml.views[msg.id]; v != nil {
+			v.refreshing = false
+		}
+		return m, nil
+
+	case TMLClockMsg:
+		return m, m.handleTMLClock()
+
+	case TMLActionFailedMsg:
+		m.ShowNotification(msg.Text, "warning", m.Settings.NotificationDuration)
+		return m, nil
+
+	case TMLWakeMsg:
+		// A TML surface was pushed, an answer came back, or a click left a
+		// side effect. See tml.go.
+		return m, m.handleTMLWake()
+
+	case PluginApprovalsMsg:
+		m.setPluginAsks(msg.Asks)
+		return m, nil
+
+	case pluginApprovalDoneMsg:
+		m.pluginApprovalDone(msg)
+		return m, nil
 
 	case PaneMarkMsg:
 		// A pane out of view rang the bell or printed. One push per pane
@@ -1903,6 +1990,7 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			m.syncScratchView()
 			// Said once, on the first frame that has a screen to say it on.
 			m.warnOnBuildMismatch()
+			m.announceRestart()
 		}
 
 		// Notify daemon of our terminal size for multi-client size calculation
@@ -1995,6 +2083,11 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 
 		// The PTY resize, the SIGWINCH it carries and the whole-screen redraw
 		// every guest answers with land in ViewportResizeSettledMsg instead.
+		// An open image view needs its picture at the new size, and a side
+		// column the new width hides lets its live pane go.
+		if cmd := tea.Batch(m.CockpitImagePicture(), m.cockpitLiveFollow()); cmd != nil {
+			return m, tea.Batch(settle, cmd)
+		}
 		return m, settle
 
 	case ViewportResizeSettledMsg:
@@ -2169,6 +2262,9 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 	case PasteBufferDeletedMsg:
 		m.handlePasteBufferDeleted(msg)
 		return m, nil
+
+	case WorkspaceRenumberedMsg:
+		return m, m.handleWorkspaceRenumbered(msg)
 
 	case RenameAppliedMsg:
 		if msg.Err != nil {
@@ -2349,7 +2445,10 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 
 	case AgentMailSentMsg:
 		m.applyAgentMailSent(msg)
-		return m, nil
+		if msg.Err != nil || msg.histWindow == "" {
+			return m, nil
+		}
+		return m, m.replyHistoryAdd(msg.histSession, msg.histWindow, msg.histParts)
 
 	case AgentMailMarkedMsg:
 		if msg.Err != nil {
@@ -2430,6 +2529,11 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return m, ListenForClientEvents(m.ClientEventChan)
 
 	case DaemonDisconnectedMsg:
+		// A restart from the app stops the daemon on purpose. The dialog
+		// shows the steps, and the client goes on until they end.
+		if m.noteRestartDisconnect() {
+			return m, ListenForDaemonExit(m.daemonExitChan())
+		}
 		// The daemon connection was lost and cannot be recovered; quit cleanly
 		// so the user is not left staring at a frozen, unresponsive session.
 		// After a deliberate quit the drop is the expected consequence of
@@ -2464,10 +2568,27 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 			m.ExitReason = ExitHostLost
 			return m, tea.Quit
 		}
+		// The daemon on this machine may be restarting: wait a moment for
+		// the new one, and attach to the session it restored.
+		if cmd := m.beginDaemonReconnect(); cmd != nil {
+			return m, tea.Batch(cmd, ListenForDaemonExit(m.daemonExitChan()))
+		}
+		if m.ReconnectingToDaemon() {
+			return m, ListenForDaemonExit(m.daemonExitChan())
+		}
 		if !m.QuitRequested {
 			m.ExitReason = ExitDaemonLost
 		}
 		return m, tea.Quit
+
+	case daemonReconnectTickMsg:
+		return m, m.handleDaemonReconnectTick(msg)
+
+	case daemonReconnectResultMsg:
+		return m, m.handleDaemonReconnectResult(msg)
+
+	case restartPlanMsg, restartStepMsg, restartEndMsg, restartQuitMsg:
+		return m, m.handleRestartMsg(msg)
 
 	case hostReconnectTickMsg:
 		return m, m.handleHostReconnectTick(msg)
@@ -2476,6 +2597,10 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		return m, m.handleHostReconnectResult(msg)
 
 	case SessionEndedMsg:
+		// The old daemon ending its sessions is part of a restart.
+		if m.restart.running() {
+			return m, ListenForDaemonExit(m.daemonExitChan())
+		}
 		// The session was destroyed underneath this client. Its windows are
 		// gone and its PTYs are closed, so there is nothing left to render and
 		// nothing to sync back. Record why and quit; the caller reports it and

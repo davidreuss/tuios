@@ -1,6 +1,7 @@
 package herdrplugin
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -21,7 +22,7 @@ import (
 // HostVersion is the herdr release whose plugin format this package follows.
 // A manifest whose min_herdr_version is newer is refused, as herdr refuses
 // it.
-const HostVersion = "0.9.3"
+const HostVersion = "0.9.5"
 
 // ManifestName is the file name of a plugin manifest.
 const ManifestName = "herdr-plugin.toml"
@@ -41,6 +42,7 @@ type Error struct {
 
 func (e *Error) Error() string { return e.Code + ": " + e.Msg }
 
+//go:noinline
 func errf(code, format string, args ...any) *Error {
 	return &Error{Code: code, Msg: fmt.Sprintf(format, args...)}
 }
@@ -222,6 +224,23 @@ type Plugin struct {
 	LinkHandlers    []LinkHandler `json:"link_handlers,omitempty"`
 	Source          Source        `json:"source"`
 	Warnings        []string      `json:"warnings,omitempty"`
+	// Format is FormatTuios for a tuios-plugin.toml and "" for a herdr
+	// manifest.
+	Format string `json:"format,omitempty"`
+	// MinTuios is the oldest tuios release a native plugin runs on.
+	MinTuios string `json:"min_tuios,omitempty"`
+	// Grants are the pane grants a native manifest asks for.
+	Grants []string `json:"grants,omitempty"`
+	// Held are the grants a native plugin's processes hold now: the
+	// approved ones, or none. nil for a herdr plugin,
+	// which holds the default grants.
+	Held []string `json:"held_grants,omitempty"`
+	// Trust is the trust hash of a native plugin that this machine's
+	// approval must name (TrustOf).
+	Trust string `json:"trust_hash,omitempty"`
+	// Approval is the answer on this machine for a native plugin:
+	// ApprovalAllowed, ApprovalWaiting or ApprovalDenied.
+	Approval string `json:"approval,omitempty"`
 }
 
 // rawManifest is herdr-plugin.toml as written. Unknown keys are ignored, as
@@ -294,6 +313,9 @@ func Load(path string) (*Plugin, *Error) {
 	manifest := path
 	if info, err := os.Stat(path); err == nil && info.IsDir() {
 		manifest = filepath.Join(path, ManifestName)
+		if fileExists(filepath.Join(path, NativeManifestName)) {
+			manifest = filepath.Join(path, NativeManifestName)
+		}
 	}
 	abs, err := filepath.Abs(manifest)
 	if err != nil {
@@ -311,7 +333,13 @@ func Load(path string) (*Plugin, *Error) {
 	if err != nil {
 		return nil, errf("plugin_manifest_read_failed", "%v", err)
 	}
-	p, perr := Parse(data)
+	var p *Plugin
+	var perr *Error
+	if filepath.Base(abs) == NativeManifestName {
+		p, perr = parseNative(data, filepath.Dir(abs))
+	} else {
+		p, perr = Parse(data)
+	}
 	if perr != nil {
 		return nil, perr
 	}
@@ -322,10 +350,19 @@ func Load(path string) (*Plugin, *Error) {
 
 // Parse validates manifest bytes. The paths of the result are empty.
 func Parse(data []byte) (*Plugin, *Error) {
+	// herdr's toml crate skips a UTF-8 byte order mark. go-toml refuses one,
+	// and some manifests written on Windows start with it.
+	data = bytes.TrimPrefix(data, []byte("\xef\xbb\xbf"))
 	var raw rawManifest
 	if err := toml.Unmarshal(data, &raw); err != nil {
 		return nil, errf("plugin_manifest_parse_failed", "%v", err)
 	}
+	return parseRaw(&raw)
+}
+
+// parseRaw validates a decoded manifest. A native manifest is checked here
+// too, after it is turned into herdr's shape.
+func parseRaw(raw *rawManifest) (*Plugin, *Error) {
 	for _, f := range []struct {
 		name string
 		v    *string
@@ -336,7 +373,7 @@ func Parse(data []byte) (*Plugin, *Error) {
 	}
 	// Every command is required, so a missing one is a parse failure before
 	// any field is checked, as serde reports it.
-	if perr := checkRawCommands(&raw); perr != nil {
+	if perr := checkRawCommands(raw); perr != nil {
 		return nil, perr
 	}
 	p := &Plugin{Source: Source{Kind: "local"}}
@@ -348,8 +385,21 @@ func Parse(data []byte) (*Plugin, *Error) {
 	if p.Name, perr = nonEmpty(*raw.Name, "invalid_plugin_name", "plugin name is required"); perr != nil {
 		return nil, perr
 	}
+	// The name is shown in the approval dialog, the install question and
+	// the listings. A control or bidi character is dropped, so the name
+	// cannot hide or move text, and it is cut to MaxNameRunes, so it
+	// cannot push the grants off the screen.
+	p.Name = ShownName(p.Name)
+	if p.Name == "" {
+		return nil, errf("invalid_plugin_name", "plugin name is required")
+	}
 	if p.Version, perr = nonEmpty(*raw.Version, "invalid_plugin_version", "plugin version is required"); perr != nil {
 		return nil, perr
+	}
+	// tuios shows the version, the argv, the events and the placements in
+	// the install prompt, so none of them may hold a terminal control.
+	if hasControl(p.Version) {
+		return nil, errf("invalid_plugin_version", "plugin version must not contain control characters")
 	}
 	if p.MinHerdrVersion, perr = checkMinVersion(raw.MinHerdrVersion); perr != nil {
 		return nil, perr
@@ -541,6 +591,9 @@ func event(e rawEvent) (EventHook, *Error) {
 	if perr != nil {
 		return EventHook{}, perr
 	}
+	if hasControl(on) {
+		return EventHook{}, errf("invalid_plugin_event", "event name must not contain control characters")
+	}
 	pl, perr := platforms(e.Platforms)
 	if perr != nil {
 		return EventHook{}, perr
@@ -572,6 +625,9 @@ func paneOf(r rawPane) (Pane, *Error) {
 	p := Pane{ID: id, Title: title, Description: trimmed(r.Description), Platforms: pl, Placement: PlacementOverlay, Command: argv}
 	if r.Placement != nil {
 		p.Placement = *r.Placement
+	}
+	if hasControl(p.Placement) {
+		return Pane{}, errf("invalid_plugin_pane_placement", "pane placement must not contain control characters")
 	}
 	if r.Width != nil {
 		s, _ := sizeOf(r.Width)
@@ -672,6 +728,9 @@ func platforms(raw *[]string) ([]string, *Error) {
 func argvOf(argv []string) ([]string, *Error) {
 	if len(argv) == 0 || slices.Contains(argv, "") {
 		return nil, errf("invalid_plugin_command", "command must contain non-empty argv strings")
+	}
+	if slices.ContainsFunc(argv, hasControl) {
+		return nil, errf("invalid_plugin_command", "command must not contain control characters")
 	}
 	return slices.Clone(argv), nil
 }

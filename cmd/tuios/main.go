@@ -16,6 +16,7 @@ import (
 	"github.com/Gaurav-Gosain/tuios/internal/cliflags"
 	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/fang"
+	"github.com/Gaurav-Gosain/tuios/internal/herdrplugin"
 	"github.com/Gaurav-Gosain/tuios/internal/serverscope"
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 	"github.com/Gaurav-Gosain/tuios/internal/theme"
@@ -48,6 +49,16 @@ var (
 )
 
 func main() {
+	// A plugin command's reaper does nothing else (internal/herdrplugin,
+	// reaper.go).
+	if len(os.Args) > 1 && os.Args[1] == herdrplugin.ReaperArg {
+		os.Exit(herdrplugin.RunReaper(os.Args[2:]))
+	}
+	session.PluginReaper = pluginReaper()
+	// A `go install ...@vX` build has no ldflags; its module version stands in
+	// for them before anything below reads the stamps.
+	applyModuleVersion()
+
 	// The build identity, handed to internal/app before anything can crash.
 	// A crash report that cannot say which build produced it cannot be placed
 	// against a commit, and internal/app cannot read these vars itself.
@@ -114,200 +125,7 @@ func newRootCommand() *cobra.Command {
 
 	configCmd := newConfigCommand()
 
-	keybindsCmd := &cobra.Command{
-		Use:     "keybinds",
-		Aliases: []string{"keys", "kb"},
-		Short:   "List, check and change keybindings",
-		Long: `List the keybindings, check them for conflicts, and change them in config.toml.
-
-Start with "tuios keybinds list". Use "tuios keybinds explain <key>" to see
-what one key does.`,
-	}
-
-	var keybindsListJSON bool
-	keybindsListCmd := &cobra.Command{
-		Use:   "list",
-		Short: "List every keybinding and the action it runs",
-		Long: `List every action and the keys that run it, as your config.toml sets them.
-
-The list has one table for each scope. A scope is where the keys act: window
-mode, terminal mode, the sidebar, the Inbox, or a prefix menu such as ctrl+b L.
-Each key in a prefix menu shows with its chord.
-
-After the scopes, the list shows the fixed keys. tuios reads these keys itself,
-and you cannot rebind them: copy mode, hints mode, the message view, the list
-keys and the mouse. The last table shows the actions that have no key.
-
-Use --json to get the same rows as a JSON array.`,
-		Example: `  # Show every keybinding
-  tuios keybinds list
-
-  # Find the keys of one action
-  tuios keybinds list --json | jq '.[] | select(.action == "toggle_tiling")'`,
-		Args: cobra.NoArgs,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return listKeybindings(keybindsListJSON)
-		},
-	}
-	keybindsListCmd.Flags().BoolVar(&keybindsListJSON, "json", false, "print the rows as a JSON array")
-
-	keybindsCustomCmd := &cobra.Command{
-		Use:   "list-custom",
-		Short: "List the keybindings that differ from the defaults",
-		Long: `List only the keybindings that your config.toml changes.
-
-Each row shows the default keys and your keys.`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return listCustomKeybindings()
-		},
-	}
-
-	var (
-		keybindsJSON  bool
-		keybindsGuest string
-	)
-
-	keybindsDoctorCmd := &cobra.Command{
-		Use:   "doctor",
-		Short: "Report keybinding conflicts",
-		Long: `Report each key that two actions claim, each key that tuios takes from the
-pane, and each of those keys that a common program uses.
-
-Each finding names its evidence. "certain" comes from the tuios key routing.
-"observed" comes from a pane. "reference" comes from a list of common program
-defaults, and is not detection. --json prints the same report that the keybind
-manager shows.`,
-		RunE: func(_ *cobra.Command, _ []string) error {
-			return keybindsDoctor(keybindsJSON, keybindsGuest)
-		},
-	}
-	keybindsDoctorCmd.Flags().BoolVar(&keybindsJSON, "json", false, "emit the report as JSON")
-	keybindsDoctorCmd.Flags().StringVar(&keybindsGuest, "guest", "", "treat this program as the one running in the pane")
-
-	keybindsExplainCmd := &cobra.Command{
-		Use:   "explain <key>",
-		Short: "Say what tuios does with one key",
-		Long: `Show each scope that the key acts in, and whether the program in the pane
-gets the key. Also show the key that the terminal sends the same way, and the
-common programs that use the key. The key recorder in the keybind manager
-shows the same answer.`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return keybindsExplain(args[0], keybindsJSON, keybindsGuest)
-		},
-	}
-	keybindsExplainCmd.Flags().BoolVar(&keybindsJSON, "json", false, "emit the answer as JSON")
-	keybindsExplainCmd.Flags().StringVar(&keybindsGuest, "guest", "", "treat this program as the one running in the pane")
-
-	keybindsUnbindCmd := &cobra.Command{
-		Use:   "unbind <action> [key]",
-		Short: "Take a key off one action",
-		Long: `Take a key off one action and write the change to config.toml.
-
-Name a key to remove that one. Name none and the action loses every key it has.
-An action with no keys is written as an empty list, which is different from
-leaving it out of the file: an action the file does not mention gets its default
-back at the next load, and an empty list does not.
-
-This changes one action. To stop tuios taking a key at all, so the program in
-your pane receives it, use ` + "`tuios keybinds free`" + `.`,
-		Example: `  # Stop w closing a window, leaving x
-  tuios keybinds unbind close_window w
-
-  # Leave the action with no key at all
-  tuios keybinds unbind close_window`,
-		Args: cobra.RangeArgs(1, 2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			key := ""
-			if len(args) > 1 {
-				key = args[1]
-			}
-			return keybindsUnbind(args[0], key)
-		},
-	}
-
-	keybindsFreeCmd := &cobra.Command{
-		Use:   "free <key>",
-		Short: "Hand a key back to the program in the pane",
-		Long: `Take one key off every action in every scope and write the change to
-config.toml.
-
-Every scope at once is the point. A key tuios still claims anywhere is a key the
-program in your pane never sees, so freeing one table at a time does not free
-the key. Each action that runs out of keys is written as an empty list, so the
-default does not come back at the next load.
-
-Two things this cannot take. The leader key is keybindings.leader_key rather
-than an entry in a table, so it is moved rather than unbound. A few keys are
-read by the input path itself and have no config entry. Either way the command
-says so instead of reporting a success.`,
-		Example: `  # Give alt+left back to your shell
-  tuios keybinds free alt+left
-
-  # Check first: this says every scope the key acts in
-  tuios keybinds explain alt+left`,
-		Args: cobra.ExactArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			return keybindsFree(args[0])
-		},
-	}
-
-	keybindsPresetCmd := &cobra.Command{
-		Use:   "preset [name]",
-		Short: "Show or set the keybind preset: tuios, or the keys of tmux",
-		Long: `With no name, print the preset in use and its leader. With a name, use that
-preset and write it to config.toml.
-
-A preset changes the leader, the keys after the leader and the terminal-mode
-keys. Window mode, the sidebar, copy mode and the Inbox keep the tuios keys.
-A tuios feature whose key the preset uses moves to the tuios menu: press the
-leader, then ctrl+t, then the key it had.
-
-Your own bindings in config.toml win over the preset. Setting a preset
-removes keybindings.leader_key, so the leader is the preset's.`,
-		Example: `  tuios keybinds preset
-  tuios keybinds preset tmux
-  tuios keybinds preset list
-  tuios keybinds preset show tmux`,
-		Args: cobra.MaximumNArgs(2),
-		RunE: func(_ *cobra.Command, args []string) error {
-			switch {
-			case len(args) == 0:
-				return keybindsPreset("")
-			case args[0] == "list":
-				return keybindsPresetList()
-			case args[0] == "show" && len(args) == 2:
-				return keybindsPresetShow(args[1])
-			case len(args) == 1:
-				return keybindsPreset(args[0])
-			}
-			return fmt.Errorf("use: tuios keybinds preset [name | list | show NAME]")
-		},
-	}
-
-	var cheatSheetJSON bool
-	keybindsCheatSheetCmd := &cobra.Command{
-		Use:   "cheatsheet [preset]",
-		Short: "Show what a keybind preset keeps, moves and does not have",
-		Long: `Print a preset's keys in three groups: the keys that do what they do in the
-other multiplexer, the tuios keys the preset moved and where they are now, and
-what the other multiplexer has that tuios does not. With no name, the preset in
-use.`,
-		Example: `  tuios keybinds cheatsheet tmux
-  tuios keybinds cheatsheet --json`,
-		Args: cobra.MaximumNArgs(1),
-		RunE: func(_ *cobra.Command, args []string) error {
-			name := ""
-			if len(args) == 1 {
-				name = args[0]
-			}
-			return keybindsCheatSheet(name, cheatSheetJSON)
-		},
-	}
-	keybindsCheatSheetCmd.Flags().BoolVar(&cheatSheetJSON, "json", false, "Output as JSON")
-
-	keybindsCmd.AddCommand(keybindsListCmd, keybindsCustomCmd, keybindsDoctorCmd,
-		keybindsExplainCmd, keybindsUnbindCmd, keybindsFreeCmd, keybindsPresetCmd, keybindsCheatSheetCmd)
+	keybindsCmd := newKeybindsCommand()
 
 	tapeCmd := &cobra.Command{
 		Use:   "tape",
@@ -452,6 +270,10 @@ the remote client. See 'tuios hosts --help'.`,
 	attachCmd.Flags().BoolVar(&attachForce, "force", false, "Attach even from a pane of the same session")
 	attachCmd.Flags().BoolVarP(&attachDetachOthers, "detach-others", "d", false, "Detach every other client of the session, as tmux attach -d does")
 	attachCmd.Flags().BoolVar(&attachTerminalMode, "terminal-mode", false, "Start in terminal mode, whatever startup.start_in_terminal_mode says")
+	attachCommand = attachCmd
+	// Set by the client a restart from the app starts. See restart_reattach.go.
+	attachCmd.Flags().BoolVar(&attachAfterRestart, "after-restart", false, "Say that the daemon restarted when the client starts")
+	_ = attachCmd.Flags().MarkHidden("after-restart")
 	registerHostNameCompletion(attachCmd, "host")
 
 	var newDetach bool
@@ -661,6 +483,7 @@ run this command manually.`,
 
 	var daemonLogLevel string
 	var daemonNoRestore bool
+	var daemonAdoptFD int
 	daemonCmd := &cobra.Command{
 		Use:   "daemon",
 		Short: "Run the TUIOS daemon in the foreground",
@@ -686,12 +509,20 @@ Debug log levels:
 			// the process a memory question is about. --pprof is a
 			// persistent flag, so it has to be honoured here too.
 			startPprofServer()
+			if daemonAdoptFD > 0 {
+				return runAdoptingDaemon(daemonAdoptFD)
+			}
 			return runDaemon(true, daemonNoRestore)
 		},
 	}
 	daemonCmd.Flags().StringVar(&daemonLogLevel, "log-level", "", "Debug log level: off, errors, basic, messages, verbose, trace")
 	daemonCmd.Flags().BoolVar(&daemonNoRestore, "no-restore", false, "Do not auto-restore saved sessions on start (use 'tuios resurrect' to restore on demand)")
+	// Set only by a live upgrade, which execs the next daemon image with the
+	// descriptor of the manifest its predecessor wrote. See daemon_upgrade.go.
+	daemonCmd.Flags().IntVar(&daemonAdoptFD, adoptFDFlag, 0, "Adopt the panes a live upgrade handed over on this descriptor")
+	_ = daemonCmd.Flags().MarkHidden(adoptFDFlag)
 
+	var killRestart bool
 	killDaemonCmd := &cobra.Command{
 		Use:   "kill-server",
 		Short: "Stop the TUIOS daemon",
@@ -704,9 +535,10 @@ session's state and removed its socket, so a new daemon can be started as soon
 as it returns. It fails if the daemon has not finished within 10 seconds.`,
 		Example: `  tuios kill-server`,
 		RunE: func(_ *cobra.Command, _ []string) error {
-			return runKillDaemon()
+			return runKillDaemon(killRestart)
 		},
 	}
+	killDaemonCmd.Flags().BoolVar(&killRestart, "restart", false, "Tell the attached clients that a new daemon follows, so they attach to it again")
 
 	// Remote control commands
 	var sendKeysSession string
@@ -1420,6 +1252,7 @@ window as one line with its uri.`,
 	var popupSession string
 	var popupWidth string
 	var popupHeight string
+	var popupDim int
 	var popupName string
 	var popupCwd string
 	var popupWorkspace int
@@ -1447,7 +1280,10 @@ command prints. Not on Windows.
 
 --width and --height take cells or a percentage of the pane region. A size
 larger than the region is cut down to the region. Neither has a short form: -w
-selects a window everywhere else, and -h is help.`,
+selects a window everywhere else, and -h is help.
+
+--dim takes a percent from 0 to 90 and overrides appearance.popup_dim for this
+popup. Omit it to follow the config (default: 0); --dim 0 disables dimming.`,
 		Example: `  # Pick a file in a centred popup and use the answer
   file=$(tuios popup --capture-stdout -- fzf)
 
@@ -1466,11 +1302,19 @@ selects a window everywhere else, and -h is help.`,
   # Watch something, then press q to close it
   tuios popup --width 90% --height 80% -- htop
 
+  # Dim the background while choosing
+  tuios popup --dim 30 -- gum choose one two three
+
   # Capture the popup's id for scripting
   tuios popup --json -- fzf | jq -r .window_id`,
 		Args: cobra.ArbitraryArgs,
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			var dim *config.PopupDim
+			if cmd.Flags().Changed("dim") {
+				dim = &config.PopupDim{Percent: popupDim}
+			}
 			return runPopup(popupOptions{
+				dim:       dim,
 				session:   popupSession,
 				name:      popupName,
 				cwd:       popupCwd,
@@ -1494,6 +1338,7 @@ selects a window everywhere else, and -h is help.`,
 	// would reach for already mean something else here.
 	popupCmd.Flags().StringVar(&popupWidth, "width", "", "Popup width in cells or percent (default: 80%)")
 	popupCmd.Flags().StringVar(&popupHeight, "height", "", "Popup height in cells or percent (default: 60%)")
+	popupCmd.Flags().IntVar(&popupDim, "dim", 0, "Dim the background by 0 to 90 percent (default: appearance.popup_dim; 0 disables)")
 	popupCmd.Flags().StringVar(&popupName, "name", "", "Name for the popup")
 	popupCmd.Flags().StringVar(&popupCwd, "cwd", "", "Directory to run the command in (default: the daemon's)")
 	popupCmd.Flags().IntVar(&popupWorkspace, "workspace", 0, "Workspace to open the popup on (default: the current one)")
@@ -1596,7 +1441,8 @@ the move instead of staying put.
 With --to-session, the window moves to another session. The program in it
 keeps running, and the window keeps its id and its scrollback. The workspace
 is optional then: without it, the window goes to the workspace that session
-shows. A popup, a scratch pane and a pane on another machine cannot move.`,
+shows. A popup, a scratch pane, a TML pane and a pane on another machine
+cannot move.`,
 		Example: `  # Move the focused window to workspace 3
   tuios move-window 3
 
@@ -3112,7 +2958,7 @@ command in authorized_keys to make the policy a boundary:
 	rootCmd.AddCommand(newDetachClientCmd())
 	rootCmd.AddCommand(newSSHAgentPathCmd())
 	rootCmd.AddCommand(newDisplayEnvCmd())
-	rootCmd.AddCommand(startDaemonCmd, daemonCmd, killDaemonCmd)
+	rootCmd.AddCommand(startDaemonCmd, daemonCmd, killDaemonCmd, newRestartServerCommand())
 	rootCmd.AddCommand(sendKeysCmd, runCommandCmd, setConfigCmd, getConfigCmd, logsCmd, capturePaneCmd, screenshotCmd)
 	rootCmd.AddCommand(setAgentStateCmd, setAgentMetaCmd, setAgentSessionCmd, newResumeAgentCommand(), getAgentStateCmd, explainAgentDetectCmd, explainAgentScreenCmd)
 	rootCmd.AddCommand(listAgentsCmd, sendAgentMessageCmd, readAgentMessagesCmd, askAgentCmd, newListAttentionCommand(),
@@ -3133,6 +2979,8 @@ command in authorized_keys to make the policy a boundary:
 	rootCmd.AddCommand(newHerdrGroupCommand("pane"), newHerdrGroupCommand("notification"))
 	rootCmd.AddCommand(newPluginsCommand())
 	rootCmd.AddCommand(newCpCommand(), newTransfersCommand())
+	rootCmd.AddCommand(newMermaidCommand())
+	rootCmd.AddCommand(newTMLCommand())
 
 	addExplorers(rootCmd)
 	return rootCmd

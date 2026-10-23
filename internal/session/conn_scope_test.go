@@ -13,13 +13,13 @@ import (
 // safe default and also a silent one: this makes adding a verb a decision about
 // what a restricted caller may do with it.
 func TestVerbScopesNameEveryVerb(t *testing.T) {
-	for name := range verbRegistry {
+	for name := range verbRegistry() {
 		if _, ok := verbScopes[name]; !ok {
 			t.Errorf("verb %q has no entry in verbScopes", name)
 		}
 	}
 	for name := range verbScopes {
-		if _, ok := verbRegistry[name]; !ok {
+		if _, ok := verbRegistry()[name]; !ok {
 			t.Errorf("verbScopes names %q, which is not a verb", name)
 		}
 	}
@@ -208,7 +208,7 @@ func TestRestrictConnectionReachesTheFanGroup(t *testing.T) {
 	}
 	// b was launched from a; c and e are siblings of one fan; e is in no
 	// group of a's.
-	mustSetWorktree(t, d, "b", &WorktreeInfo{LaunchedFrom: "a"})
+	mustSetWorktree(t, d, "b", &WorktreeInfo{LaunchedFrom: "a", LaunchedFromID: d.manager.GetSession("a").ID})
 	sibling := func(name string) {
 		info := &WorktreeInfo{Group: "fan/x", Managed: true}
 		info.RepoRoot = "/src/repo"
@@ -261,6 +261,8 @@ func TestRestrictedSubscribeCarriesOnlyTheSessionsItReaches(t *testing.T) {
 		t.Fatalf("subscribe ack = %v", ack)
 	}
 
+	// The person, outside every pane: a pane reports only for itself.
+	d.setApprovalPeer(func(*connState) (bool, string) { return false, "" })
 	plain := dialVerb(t, sp)
 	setAgentState(t, plain, "b", b1, "working", "", "")
 	setAgentState(t, plain, "a", a1, "working", "", "")

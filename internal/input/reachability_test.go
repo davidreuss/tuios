@@ -397,6 +397,10 @@ var notTerminalSections = map[string]string{
 	// action NoteAction could record. TestListKeysFromConfigMoveTheCommandPalette
 	// presses them through the real entry point.
 	"lists": "every list overlay, through listKey",
+	// Declared by the user and absent from the default config, so there is no
+	// key to press from here. TestDeclaredMenusNest presses them through the
+	// real entry point.
+	"menus": "user-declared prefix menus, none ship",
 }
 
 // TestReachabilityTableCoversEveryBindingSection stops the table from going
@@ -408,8 +412,7 @@ func TestReachabilityTableCoversEveryBindingSection(t *testing.T) {
 		covered[sec.name] = true
 	}
 	typ := reflect.TypeFor[config.KeybindingsConfig]()
-	for i := range typ.NumField() {
-		f := typ.Field(i)
+	for f := range typ.Fields() {
 		if f.Type.Kind() != reflect.Map {
 			continue
 		}
@@ -443,6 +446,7 @@ var actionsWithNoDefaultBinding = map[string]string{
 	"kill_session":          "context menu row",
 	"kill_session_next":     "context menu row",
 	"kill_session_quit":     "context menu row",
+	"restart_daemon":        "command palette row, rail machine menu row, settings row, version notice",
 	"paste_clipboard":       "context menu row",
 	"repo_new_worktree":     "rail repo header menu row",
 	"session_new_worktree":  "rail session row menu row",
@@ -501,15 +505,6 @@ var actionsWithNoDefaultBinding = map[string]string{
 	"send_prefix":          "user binding",
 	"move_workspace_left":  "user binding",
 	"move_workspace_right": "user binding",
-	"send_to_workspace_1":  "user binding",
-	"send_to_workspace_2":  "user binding",
-	"send_to_workspace_3":  "user binding",
-	"send_to_workspace_4":  "user binding",
-	"send_to_workspace_5":  "user binding",
-	"send_to_workspace_6":  "user binding",
-	"send_to_workspace_7":  "user binding",
-	"send_to_workspace_8":  "user binding",
-	"send_to_workspace_9":  "user binding",
 	"reload_config":        "user binding",
 	"toggle_mouse":         "user binding",
 	"cycle_layout":         "user binding",

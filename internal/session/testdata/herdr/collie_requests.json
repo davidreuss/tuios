@@ -1,6 +1,6 @@
 {
   "source": "Collie bridge/mux/herdr/client.ts at d0411be (v1.14.2): the request each HerdrClient method sends and the result fields it reads.",
-  "herdr": "0.9.3",
+  "herdr": "0.9.5",
   "steps": [
     {"call": "listWorkspaces", "method": "workspace.list", "params": {},
      "type": "workspace_list", "read": ["workspaces[].workspace_id", "workspaces[].number", "workspaces[].label", "workspaces[].focused", "workspaces[].pane_count", "workspaces[].tab_count", "workspaces[].active_tab_id", "workspaces[].agent_status"]},
@@ -38,7 +38,7 @@
     {"call": "closePane", "method": "pane.close", "params": {"pane_id": "$TABPANE"},
      "type": "ok", "read": []},
     {"call": "closeTab", "method": "tab.close", "params": {"tab_id": "$TAB"},
-     "type": "ok", "read": []},
+     "error": "tab_not_found"},
     {"call": "createWorkspace", "method": "workspace.create", "params": {"cwd": "$CWD", "focus": false, "label": "phone space"},
      "type": "workspace_created", "read": ["workspace.label", "root_pane.pane_id", "root_pane.workspace_id", "root_pane.tab_id", "root_pane.cwd"]},
     {"call": "listWorktrees", "method": "worktree.list", "params": {"cwd": "$REPO"},

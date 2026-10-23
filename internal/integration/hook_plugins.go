@@ -198,12 +198,12 @@ func translatePi(in Input, p fields) Decision {
 		failed, _ := p["is_error"].(bool)
 		if failed {
 			if a := toolActivity(ActivityToolFailed, p); a != nil {
-				a.OK = boolPtr(false)
+				a.OK = new(false)
 				a.Text = activityText(p.first("error", "message"))
 				r.Activity = a
 			}
 		} else if a := toolActivity(ActivityToolDone, p); a != nil {
-			a.OK = boolPtr(true)
+			a.OK = new(true)
 			r.Activity = a
 		}
 	case "prompt":

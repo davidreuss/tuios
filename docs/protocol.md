@@ -134,6 +134,7 @@ Result:
   "sessions": 2,
   "link_policy": true,
   "pane_grants": true,
+  "load": {"cores": 8, "load1": 0.84, "mem_pct": 41.5, "agents_working": 3},
   "os": "linux"
 }}
 ```
@@ -148,6 +149,15 @@ for a link, and refuses when it is set. It is absent from an older daemon.
 platform where the daemon cannot read the peer's pid, the `tuios` CLI reads it
 and then presents `$TUIOS_PANE_ID` and `$TUIOS_PANE_TOKEN` on every
 connection it opens from a pane. It is absent from an older daemon.
+
+`load` is the machine's load: `cores`, `load1` (the one-minute load
+average), `mem_pct` (memory in use, Linux only), `agents_working` and
+`load_ok`. `load_ok` is false when the daemon could not read the load, as on
+Windows and FreeBSD: `load1` is then 0 and means nothing. It is absent from a
+daemon from before the field, whose `load1` was read. The daemon reads the
+system at most every 5 seconds. A linked daemon reads it off
+the hello its heartbeat sends, so `list-hosts` can report each host's load
+with no call of its own. It is absent from an older daemon.
 
 `os` is the operating system the daemon runs on, as Go names it: `linux`,
 `darwin`, `windows`. A client attached from another machine reads it to start
@@ -175,6 +185,17 @@ Changes that alter what an existing verb does, for a caller that relied on the
 old behaviour. None of them bumps the protocol integer: every field keeps its
 name and type, and a caller that sends nothing new keeps working. What changes
 is an answer, and each entry says which.
+
+**list-host-sessions rows carry agents.** A remote session row gains
+`agents`, one entry per agent pane: `id`, `title`, `state`, `state_at`,
+`harness`, `message`, `kind`, `meta` and `subagents`, at most 32 a session.
+The agents view draws them as rows.
+
+**list-hosts reports each host's load.** A host row gains `cores`, `load1`,
+`mem_pct`, `agents_working`, `load_ok`, `load_at` and `rtt_ms`, from the last hello on the
+link: the handshake, then the heartbeat. A link that carries traffic is not
+pinged, so its heartbeat now pings once the load is older than a minute. The
+fields are absent until a hello from the host carried a load.
 
 **send-agent-message takes a message in parts.** `text` is no longer
 required when `parts` is given. `parts` is the form `queue-prompt` takes. A
@@ -958,6 +979,12 @@ changes for everyone:
   `launched_from` for such a session. Rows of any other session are unchanged.
   The field is additive on the saved session record, so an older daemon reads
   a newer record and drops it.
+  The record also holds that session's ID, and reach is checked by the ID, so
+  a later session that takes the name reaches nothing. When that session ends,
+  the sessions it started stop naming it. A record written before the ID names
+  its lead by name alone. That name reaches nothing, and a restore drops it,
+  so such a lead reaches its attempts again only by `fan --join` or as the
+  person.
 - On a restricted connection, every verb outside the table in
   `internal/session/conn_scope.go` answers `forbidden` with a hint naming
   `restrict-connection`, and under scope `own` a verb that names no session
@@ -1582,6 +1609,7 @@ catalog.
 | `invalid_params` | The params failed to decode, or a required field was missing. |
 | `session_not_found` | The named session does not exist (or no sessions exist). |
 | `session_exists` | new-session was given a name the daemon already holds. |
+| `fan_exists` | fan was given the name of a fan that exists in the repository, with no `join`. The hint lists the fan's sessions that the caller reaches. |
 | `window_not_found` | The window target did not resolve to a window. |
 | `no_windows` | The session has no windows to act on. |
 | `pty_not_found` | The target window has no live PTY. |
@@ -1638,6 +1666,9 @@ catalog.
 | `disk_full` | The disk had no room for the write. What was written stays in the part. |
 | `no_transfer` | No transfer has that id. A finished one leaves the list 30 minutes after it ends. |
 | `busy` | The daemon had no room for the request now, or (`transfer-start`) another copy writes that destination now. Nothing was done. |
+| `invalid_tml` | The TML document does not parse or does not validate. Nothing was opened or changed. The error carries `problems`: each one has `at` (a JSON Pointer to the node), `code`, `message`, and where it helps `did_you_mean`, `accepted` or `available`. |
+| `no_surface` | No open TML surface has that id. It closed, or the id is wrong. `list-windows` names the surface of each TML window. |
+| `too_many_surfaces` | The caller holds as many open TML surfaces as it may: 8 for a pane, and 32 per session for the callers outside the panes. Nothing was opened. |
 
 Codes are stable and additive: existing codes never change meaning, and a new
 code is only ever introduced for a condition that previously had none. A client
@@ -2364,8 +2395,11 @@ Without it, a detached session keeps the window until something closes it),
 line that shows the exit status under the last output; not with
 `close_on_exit`), `wait` (default false; answer when the process exits, with
 `exit_code` and, when a signal stopped it, `signal`; not for a window on
-another machine), and `timeout` (with `wait`, milliseconds before the
-`timeout` error; 0 waits with no limit).
+another machine), `timeout` (with `wait`, milliseconds before the
+`timeout` error; 0 waits with no limit), and `env` (an object of variables
+to set in the process; checked as `start-agent` checks its `env`; not for a
+window on another machine, and refused from another machine). `new-session`
+takes the same `env` for its first window, and refuses it with `window` false.
 
 A daemon that does not know `keep_open` and `wait` refuses them with
 `invalid_params`, as it refuses any parameter it does not know. A daemon from
@@ -2392,7 +2426,7 @@ none.
 
 Params: `command` (required argv), `session` (optional), `width` and `height`
 (optional, cells such as `"60"` or a share of the pane region such as `"60%"`,
-default `"80%"` and `"60%"`), `name`, `cwd` and `workspace` (all optional),
+default `"80%"` and `"60%"`), `name`, `cwd`, `workspace` and `dim` (all optional),
 `wait`, `capture_stdout` and `timeout` (optional, below), and `scratch` and
 `scratch_name` (optional). `scratch` starts a scratch group, the layout a key
 shows and hides, with its first pane. The pane is not a popup: it is a tiled
@@ -2406,6 +2440,10 @@ group's workspace adds a pane to the group, and one with a scratch workspace
 no group is on fails. `list-windows` marks each pane of a group with
 `"scratch": true` and its `"scratch_name"`. Every group survives a daemon
 restart, hidden, each pane with a new shell and its saved history.
+
+`dim` is `0` to `90`. Omitted, it inherits `appearance.popup_dim`
+(`appearance.modal_dim` for a TML popup); explicit `0` turns it off. Dimming
+applies only while the popup has focus.
 
 The popup's command starts at the size the popup has on the screen: the size
 the caller asked for, in the session's pane region.
@@ -2438,6 +2476,175 @@ Response:
 {"result": {"type": "popup_opened", "window_id": "9a3c...", "name": "fzf",
             "workspace": 1, "pty_id": "4bff...", "width": "60%", "height": "60%"}}
 ```
+
+### tml-open
+
+Show a TML document as a popup or a pane. TML is a markup for terminal
+surfaces: a tree of known components with a JSON state. The daemon keeps the
+surface: its tree, its state and a version. Every attached client draws it in
+the window with its own theme colours, and keeps its own view state (focus,
+the cursor row, the open tab, sort and scroll). The surface stays while nobody
+is attached, and ends with the daemon.
+
+Params: `doc` (required: TML text or TML JSON as a string, or a TML JSON
+object), `target` (`popup`, the default, or `pane`), `session`, `name`
+(default: the document's title), `width` and `height` (popup only, as for
+`popup`), `workspace`, `wait` and `timeout`.
+
+The document is checked as `tuios tml validate` checks it. A document with
+errors fails with `invalid_tml`, and the error carries `problems`, each with a
+JSON Pointer to the node and the fix. A caller in no pane may send up to 1 MiB,
+and a caller in a pane up to 256 KiB. A pane may hold 8 open surfaces, and the
+callers outside the panes 32 per session; one more fails with
+`too_many_surfaces`. A popup needs an attached client and fails with
+`needs_client` without one. Control characters are dropped from `name`.
+
+The window is of kind `tml`, and `list-windows` reports it with `kind`, `uri`
+(`tuios://tml/<surface>`) and `surface`. Like a `view` window it has a PTY,
+whose program prints one line for a client that does not draw TML. A popup
+closes on an esc the document does not use. Focus, close-window and the
+layout treat it as any window, but it cannot move to another session. A
+client draws the surfaces of its own machine's daemon only: a client attached
+through a host shows the placeholder line.
+
+The surface's local actions run in the client: tabs, sorting, the cursor,
+folding, scrolling, `set` and `toggle`. A change to the state goes back to the
+daemon, so another client and a later attach see it. `close(value)` closes the
+surface with that value. `copy(value)` copies through the client.
+`emit('name', value)` sends a `tml-event` to the owner.
+`pane('send-text', params)`, `pane('focus', params)` and
+`pane('new-window', params)` run that verb (`send-text`, `focus-window`,
+`new-window`) with the grants of the pane that opened the surface, never the
+person's: a surface an agent opened cannot type into a pane that holds more
+than the agent's pane. The first `send-text` into a pane, and each
+`new-window` command, asks the person under the surface, and nothing happens
+until they press `y`. A send-text yes covers one pane, which the client
+resolves to its id in the surface's session before it asks; a number or a
+pane of another session is refused. A new-window yes covers one exact
+command, folder, window name and session, and the question shows each of
+them, quoted with any control or invisible character escaped; a command too
+long to show in the window is not run. The question is drawn whole or not at
+all: when the window is too small for it, it asks for room, and y and n do
+nothing until it fits. The client sends the session by name. A `new-window` from a surface takes only `session`, `name`, `workspace`,
+`cwd`, `focus` and `command`. A refusal shows as a message. A surface opened
+over a link, or by a pane this daemon cannot place, runs no pane action.
+`open` and links do nothing yet.
+
+Who may change a surface: a caller in a pane may patch, replace and close only
+the surfaces its pane opened, and needs the `write` grant for `tml-open`,
+`tml-patch`, `tml-replace` and `tml-close`; any other pane fails with
+`forbidden`. A caller in no pane, the person's own commands and hooks, may act
+on any surface. A surface takes at most 100 patches and replaces a second, and
+one more fails with `rate_limited`. The window's name is the owner, then the
+title, such as `from api · Deploy`, which the document cannot change. The
+owner is the opening pane's name when no other window has that name and it
+does not read like `pane 3f2a91c0`. Otherwise it is the window id with the
+name in brackets, `pane 3f2a91c0 (api)`, or the id alone when the pane has no
+name. It is never the pane's title or the program's name. The title drops the
+separator dot and brackets and is cut to 48 runes. A client cuts the title,
+never the owner: a popup's frame and the rail read the owner first, and a
+pane's title bar shows the title, then the owner. A surface a pane opened does not take the focus: the person clicks
+it or focuses it, and the first click on a TML window only focuses it. One
+`tml-input` carries at most 4 pane actions. A surface the person
+opened takes the focus. The pane that opened a surface reads it with
+`tml-get` with the `write` grant alone. A
+binding that calls `ago()` is evaluated again once a minute while its surface
+is shown; no other surface arms a timer. A paste into a surface is dropped, with a message: no
+component takes text yet.
+
+With `wait` the call stays open until the surface closes, and answers
+`{"type": "tml_result", "surface", "window_id", "value", "reason"}`. `reason`
+says who gave the value. `closed` is a `close()` action the person ran, so the
+value is the person's answer. `program` is a `tml-close`: a program gave the
+value, not the person. `dismissed` is the window closing without a value
+(esc, close-window, the session ending); `value` is then null.
+`timeout` bounds the wait in milliseconds and leaves the surface open when it
+runs out.
+
+With `events` the connection becomes the surface's owner stream: the answer
+carries `seq` and `boot_id` as a `subscribe` ack does, and each `tml-event` of
+this surface follows on the same connection, one JSON line each. The close is
+the last one. A `tml-event` value is at most 64 KiB, and the events are not
+kept for a later `subscribe` to replay. `events` cannot be used with `wait`,
+and a connection that has
+an event stream already is refused. The owner answers on another connection
+with `tml-patch` or `tml-replace`. Anyone may also `subscribe` with
+`types: ["tml-event"]`.
+
+Request:
+
+```json
+{"verb": "tml-open", "params": {"doc": "<tml version=\"1\" title=\"Hi\"><text>Hello</text></tml>", "wait": true}}
+```
+
+Response:
+
+```json
+{"result": {"type": "tml_opened", "surface": "tml-4f1a9c02", "window_id": "9a3c...",
+            "target": "popup", "workspace": 1}}
+```
+
+### tml-close
+
+Close a TML surface and its window. Params: `surface` (required) and `value`
+(any JSON, optional). A `tml-open` that waits on the surface answers with the
+value and reason `program`. An unknown or closed surface fails with
+`no_surface`.
+
+### tml-input
+
+What the person did on a TML surface, sent by the attached client that drew
+it: `ops`, a JSON Patch on the state from its local actions, `events`, the
+`emit` actions it ran (`[{"name", "value"}]`, each published as a
+`tml-event`), and `close` with an optional `value`. It needs `human_nonce`,
+the client's attach nonce, and fails with `not_human` without one. A program
+uses `tml-patch`, `tml-replace` and `tml-close` instead.
+
+### tml-patch
+
+Change a surface's state with a JSON Patch (RFC 6902). Params: `surface` and
+`ops`. A patch is at most 64 KiB, and the state stays within the document's
+limits. It applies whole or not at all: a `test` that does not match refuses
+it with `invalid_params`, and the hint says to read the state again with
+`tml-get`. Answers `{"type": "tml_patched", "version", "changed"}`. Each
+client then draws again only what reads the changed paths.
+
+### tml-replace
+
+Swap a surface's tree. Params: `surface`, `doc` (as `tml-open` takes it) and
+`keep_state` (keep the state the surface has now). Each client keeps its view
+state for the nodes whose ids stay. Answers `{"type": "tml_replaced",
+"version"}`.
+
+### tml-get
+
+Read a surface. Params: `surface`. Answers `doc` (the tree as TML JSON),
+`state`, `version`, `doc_version`, `window_id`, `title` and `owner`.
+
+`tml-get`, `tml-patch`, `tml-replace` and `tml-close` check the surface's
+session against the caller: a pane reaches its own session and its fan group,
+a read needs the `read` grant, and a connection restricted to its own session
+reaches only that session. Each refusal is `forbidden`.
+
+### tml-list
+
+List the open surfaces of a session. Params: `session`. Answers `surfaces`,
+each with `surface`, `window_id`, `title`, `owner` and `version`.
+
+### tml-validate
+
+Check a document as `tml-open` would, with no session. Params: `doc`. Answers
+`{"type": "tml_valid", "warnings": [...]}`, or fails with `invalid_tml`.
+
+The daemon sends each surface to a TUI client whose hello sets
+`tml_surfaces`, as a `MsgTMLSurface` frame: when it opens, when it changes,
+when it closes, and for every open surface right after the attach reply. A
+push carries the tree only when the client may not have it: on open, on attach
+and after a replace. A push that a patch made carries the patch and no state:
+a client one version behind applies it, and a client further behind reads the
+surface with `tml-get`. Each client has at most one push waiting per surface:
+a newer one folds into it, and the folded push goes out as the whole surface.
+A client that reads slowly costs the daemon one push per surface.
 
 ### close-window
 
@@ -3737,6 +3944,27 @@ what: `idle`, `done`, or `quiet` for `unknown` on a harness that cannot show
 idle. The harness the daemon started counts from the start, before detection
 has named the pane's harness.
 
+A fan's sessions reach each other, so joining one is never implicit. A
+`name` that is already a fan in the repository, or is being made by another
+call at that moment, is `fan_exists` for every caller, the person included,
+and nothing is made. To add attempts to a fan on purpose, pass `join` with a
+session of that fan (`name` may then be omitted): the caller must reach that
+session, which the person, a pane with `admin`, the fan's own panes and the
+pane that started it do. Without `name`, the name fan makes from the prompt
+moves on to a free one (`-2`, `-3`). A name can have only the letters A to Z
+and a to z, the digits 0 to 9, and `/ . _ -`. Any other character is refused,
+and the error names it. A refusal lists the fan's sessions only to a caller
+that reaches them.
+
+Each new fan gets a random `fan_id`. Its sessions save it, and a `join` copies
+it. A fan's sessions are the ones with the same `group`, repository and
+`fan_id`, so reach, `compare-fan`, `keep-fan` and `review-diff --against` go
+by it. A fan made under a name while a fan of that name was saved and not
+running, which `disable_auto_restore` allows, stays a fan of its own when
+the saved one comes back, in any order and across restarts. Two records
+from before the field have no `fan_id` and match by name. `list-worktrees`
+rows, the `fan` reply and `compare-fan` carry `fan_id`.
+
 An agent is one string, the way a person types it: a harness id or program
 name, or any program, with its arguments after it (`"codex --model o5"`). It
 is split into words the way a POSIX shell splits them, single and double
@@ -4358,6 +4586,24 @@ and:
   for.
 - `gone` when the worktree directory no longer exists.
 
+- `cost`: the cost the attempt's agent reported with `set-agent-meta`, when
+  it did. `started_at`: when its prompt was typed. `done_at`: when its agent
+  last finished a turn. Both are unix nanoseconds, omitted when unknown.
+- `notes`: the judge's notes on this attempt, from `set-fan-verdict`.
+- With `detail`, `file_list` (at most 8 files, most changed first: `path`,
+  `added`, `removed`) and `lines` (the first 6 changed lines: `op`, `line`,
+  `text`, the text at most 200 bytes). Two more git calls per sibling, in the
+  same 10 seconds.
+
+- With `detail`, also `ignored` (at most 200 entries, a folder git ignores
+  whole being one) and `ignored_count`: the files git ignores in the
+  worktree, which `keep-fan` deletes with it and git stash does not keep.
+  `ignored_error` says why they could not be listed. `ignored_hash` names the
+  list for `keep-fan`.
+
+The result also carries `prompt`, the task the fan gave, and `verdict` when a
+judge reported one: `pick`, `summary`, `reasons`, `by`, `judge` and `at`.
+
 A pane without `admin`, or a connection restricted to its own session, gets
 rows only for the sessions it could name itself: its own session, its fan
 group, and the sessions a fan run from it started. Over a link it needs `list`,
@@ -4440,6 +4686,16 @@ not part of a fan is `invalid_params`.
 Only the person or a caller with `admin` may call it: a pane without `admin`
 and any restricted connection are refused. Over a link it needs `write`.
 
+Files git ignores (`.env`, build output) are deleted with a worktree and are
+not stashed. `compare-fan` with `detail` lists them. `group`, `repo_root` and
+`fan_id`, when given, name the fan the caller read: a session that is no
+longer an attempt of it, after a rename, is `invalid_params` and nothing is
+removed.
+`siblings` and `ignored` name what the caller showed: the attempts to remove,
+and for each the `ignored_hash` compare-fan gave for its ignored files. When
+the other attempts differ, or one's ignored files changed in any way, the
+keep is refused whole.
+
 Params: `session` (required), `stash`, `force`, `merge`, `merge_mode`,
 `into`. With `merge`, the kept attempt's branch is first merged into its
 base, as [ship-merge](#ship-merge) does, with `merge_mode` and `into` as its
@@ -4457,6 +4713,77 @@ is refused fails the call before any sibling is removed.
    "changes": 0, "stashed": false, "discarded": false, "session_killed": true, "branch_kept": true},
   {"session": "api-fan-retry-3", "removed": false, "code": "worktree_dirty",
    "note": "/home/u/.local/share/tuios/worktrees/api/fan-retry-3 holds 1 uncommitted change. Nothing was removed."}]}}
+```
+
+### set-fan-verdict
+
+Record a judge's pick among the attempts of a fan. Name any session of the
+fan, the attempt picked as `pick`, and the verdict as `summary` (required, at
+most 400 bytes). `reasons` holds at most 6 sentences, and `notes` maps an
+attempt's session to at most 4 sentences about it. The verdict is written on
+every attempt's worktree record, each with its own notes, and reaches clients
+with the ordinary state push. A later call replaces it. Nothing is kept or
+removed.
+
+Only two callers record a verdict: the judge pane that `judge-fan` started for
+the fan, and a call from outside every pane. Any other pane, a pane of an
+attempt included, is `forbidden`, whatever its grants. The daemon records
+which of the two it was as `by` (`judge` or `you`), and for the judge its
+pane's harness as `judge`. No parameter names the judge. The judge's pane
+needs no grant beyond `read`. Any other pane needs `fan`, and is then refused
+by the rule above. Over a link it is refused: a verdict is recorded on the fan's
+own machine.
+
+A pick or a note that names a session outside the fan is `invalid_params`,
+with the attempts in the hint.
+
+```json
+{"verb": "set-fan-verdict", "params": {"session": "api-fan-retry", "pick": "api-fan-retry-2",
+ "summary": "Keep B. It is the smallest change and passes the tests.",
+ "reasons": ["A reads hits without the lock."], "notes": {"api-fan-retry": ["Adds a test for eviction."]}}}
+```
+
+```json
+{"result": {"type": "fan_verdict", "group": "fan/retry", "pick": "api-fan-retry-2", "by": "judge",
+ "attempts": ["api-fan-retry", "api-fan-retry-2"]}}
+```
+
+### judge-fan
+
+Start an agent that judges the attempts of a fan. It runs in a new session
+named after the fan with `-judge` (with `-2` to `-9` when that name is taken),
+in the repository's main checkout, as a window named `judge`, with the grant
+`read` alone: it cannot start a fan, an agent or a command anywhere. Only the
+person or a pane with `admin` starts a judge.
+
+Once start-agent made the session and the pane, every attempt's record names
+them by the session's ID and the pane's window ID (`judge_session`,
+`judge_window`), never by a name. That pane alone reaches the attempts, and
+only with these verbs: `compare-fan`, `review-diff`, `list-checkpoints`,
+`checkpoint-diff`, `capture-pane`, `list-windows`, `get-agent-state` and
+`set-fan-verdict`. So the judge reads the attempts' screens and scrollback
+as well as their diffs. It cannot type into their panes, run a command in
+their sessions or start an agent there, and it does not read their command
+history, mail, environment, stash or approvals. Another pane
+of the judge's session reaches nothing of the attempts. The record is cleared
+when the judge's session ends. A session of that name that another caller
+made first is refused: nothing is recorded, and the agent started in it is
+closed.
+
+The first prompt is typed after the record is written. It names the attempts
+by letter, asks the judge to change no file, and tells it to read them with
+`tuios fan compare`, whose rows give each attempt's folder, and `git diff` in
+each folder, and report with `tuios fan verdict`. The judge runs as a program in the main checkout with
+the person's rights to files: tuios holds what it does through tuios, not
+what it does to files.
+
+`agent` is the judge's agent, as `start-agent` takes it; omitted, it is the
+agent the first attempt ran. `env` and `ready_timeout` are `start-agent`'s.
+The call answers as `start-agent` does, with `judge_session` and `group`.
+Over a link it needs `open` and `write`.
+
+```json
+{"verb": "judge-fan", "params": {"session": "api-fan-retry"}}
 ```
 
 ### bundle-worktree
@@ -4597,7 +4924,12 @@ The five hook fields:
   is in one of them.
 - `harness_pid`: the pid of the harness process that ran the hook. Read only
   with `agent_session_id`, and held in daemon memory. It lets a new session
-  from the same harness process pass the nested-session guard below.
+  from the same harness process pass the nested-session guard below. When it
+  is the calling process or one of its ancestors, its exit also clears a
+  report's state once the pane is back at its shell.
+- `session_start`: true on the report a conversation's `SessionStart` sends.
+  It matters only for a harness whose manifest sets `shared_server`. See the
+  guard below.
 - `activity`: the hook event itself, for the pane's activity ring: `event`
   (`prompt`, `tool`, `tool_done`, `tool_failed` or `turn_end`), `tool`,
   `target`, `text`, `files`, `ok` and `model`, all optional but `event`. It is
@@ -4622,8 +4954,18 @@ Response:
 
 `state` is what the window shows after the call. `reason` is present only when
 `applied` is false: `outranked` (a higher-ranked source owns the window),
-`if_state` (the condition did not hold), `foreign_session` or
-`foreign_harness`. The last two refuse a report carrying `agent_session_id`
+`if_state` (the condition did not hold), `foreign_pane`, `foreign_session` or
+`foreign_harness`. `foreign_pane` refuses a report whose `harness_pid` is a
+local process that inherited the pane in `TUIOS_PANE_ID` but runs outside it,
+not the pane's process, not on its terminal and not descended from it, under
+a harness daemon: Claude Code's daemon or the pty host of its background
+sessions. A harness under anything else that left the pane, such as a tmux
+server or a rootless container's conmon, is taken for the pane that shows
+it. A `harness_pid` that is not
+the caller or one of its ancestors is not believed, and the caller is checked
+in its place. A report without `harness_pid`, from a link, for a pane on
+another machine, or from a harness that cannot be read (it exited, or the
+platform has no process reader) is not checked. The last two refuse a report carrying `agent_session_id`
 while the window's own harness is `working` or `needs_input` by its own report
 and the report names a different session, or comes from a different harness:
 a nested run, such as a `claude -p` a tool call started inside the pane. At rest
@@ -4632,6 +4974,19 @@ different session is also accepted when its `harness_pid` is the one the
 window's current session was reported with: that is a new conversation in the
 same process, such as `/clear` after an interrupted turn that never reported
 `Stop`.
+
+A harness whose manifest sets `shared_server = true` (Codex) runs the hooks of
+every conversation from one server process. A conversation in another
+terminal can share that process, its pid and the pane's `TUIOS_PANE_ID`. For
+such a harness, a report with `session_start` sets the conversation that owns
+the window. A report for another conversation of the same harness is refused
+with `foreign_session`, at rest and mid-turn, unless it carries
+`session_start`. The last four conversations that owned the window are the
+exception: the next report from one of them takes the window back, and the
+owner it displaces joins the list. `report-agent-activity` from one of them is
+not refused either. The daemon forgets both when the pane is back at
+its shell. Until a `session_start` arrives, the window is open to any report.
+`set-agent-session` is not guarded this way, and it clears the guard.
 
 `reason`, `activity_recorded` and the hook fields are additive. A client that
 sends none of the fields is handled exactly as before. A daemon older than them does not
@@ -4662,8 +5017,10 @@ The id is stored as the window's `agent_session_id`, the field
 `set-agent-state` writes, persisted and read back by `get-agent-state` and
 `list-agents`. `agent_session_id` in the result is the id the window holds after
 the call. A report naming the id the window already holds is applied and changes
-nothing. Two refusals keep a nested run off the pane, with `applied: false`:
+nothing. Three refusals keep another agent's id off the pane, with `applied: false`:
 
+- `foreign_pane`: the report's `harness_pid` runs outside the pane its
+  environment names, as for `set-agent-state`.
 - `foreign_harness`: the window is attributed to a different harness.
 - `foreign_session`: the window is `working` or `needs_input`, holds a different
   id, and that id was reported by a known harness process other than the
@@ -4767,8 +5124,10 @@ The pane's subagents:
 The guard: a report naming a conversation other than the one the window
 holds is refused with `reason: foreign_session`, and one naming a harness
 other than the one it is attributed to with `foreign_harness`, at rest as well
-as mid-turn. A state report from another conversation takes a pane at rest
-over; this report never takes a pane over, so another conversation's
+as mid-turn, and one whose `harness_pid` runs outside the pane with
+`foreign_pane`, as for `set-agent-state`. A state report from another
+conversation takes a pane at rest over; this report never takes a pane over,
+so another conversation's
 subagent is not the pane's, such as one a `claude -p` the agent left running
 in the background starts.
 
@@ -5717,7 +6076,7 @@ this section is the contract around them.
 | `file-read` | Up to 4 MiB of a regular file, base64, from `offset`. |
 | `file-preview` | What Quick Look in the GUI shows of one file, made on the machine the file is on. An image comes back scaled to `max_px` (default 1600, at most 4096) on its long side, a PDF page (`page`) and a film frame as an image when that machine has `pdftoppm` and `ffmpeg`, text as its first 256 KiB, and anything else as its type and size (`kind` `binary`). Without `pdftoppm` a PDF up to 8 MiB is sent as it is. A WebP or a BMP, and a picture whose decode would take more than 256 MB here (a large progressive JPEG), is sent as it is, up to 16 MiB, with its own `mime`, for the client to decode. The file is opened once, with the read rules of `file-read`, and the tools read that open file, not the path. ffmpeg and ffprobe open only the file and only the MP4, QuickTime, Matroska, WebM and AVI containers. A pipe or a device is described, not read. |
 | `file-hash` | The sha256 of a file, of a range of it (`offset`, `length`), or of a copy's part (`part`, `part_id`). |
-| `file-walk` | Every file and folder under a folder, for a folder copy, at most 20000 entries. With `stream`, up to 1000000 entries, one JSON line each after the reply, then a last line `{end, bytes, skipped, skipped_count}`, or `{end, code, error}`. Each entry has `rel` (slash separated), `size`, `dir`, `perm` and `mtime`. Links are not followed. A link, a named pipe, a socket and a device are not copied: `skipped` names the first 200 with `rel` and `kind`, and `skipped_count` counts all of them. |
+| `file-walk` | Every file and folder under a folder, for a folder copy, at most 20000 entries. With `stream`, up to 1000000 entries, one JSON line each after the reply, then a last line `{end, bytes, skipped, skipped_count, denied}`, or `{end, code, error}`. Each entry has `rel` (slash separated), `size`, `dir`, `perm` and `mtime`. Links are not followed. A link, a named pipe, a socket and a device are not copied: `skipped` names the first 200 with `rel` and `kind`, and `skipped_count` counts all of them. Over a link, an entry in the read deny list is left out and not named. `denied` counts those entries, and a denied folder counts once. |
 | `file-mkdir` | Makes a folder and its parents. With `receive`, it ignores `path` and makes the receive folder: where a copy from the caller lands when it names no folder. For a linked machine that is the first folder of its `files_roots`, else `~/Downloads/tuios`. The reply's `path` names it. |
 | `file-rename` | Moves a path on one disk. It does not replace what is at `to` unless `replace` is set. Another disk answers `cross_device`. |
 | `file-remove` | Deletes a path. A folder that holds files needs `recursive`. The home folder and `/` are refused. |
@@ -5850,8 +6209,9 @@ an `id`. A row has `id`, `name`, `src`, `dst`, `target`, `final`, `kind`,
 that crossed a link, fewer than `done` when compressed), `rate`, `eta_ms`,
 `files`, `files_done`, `current`, `current_done`, `current_size`, `error`,
 `code`, `resumed_from`, `resumes`, `sha256`, `verified`, `created`,
-`started`, `ended`, `retry_in_ms`, `skipped`, `skipped_items`, `same`,
-`conflicts_skipped`, `conflicts_left`, `conflicts`, `conflict_count`,
+`started`, `ended`, `retry_in_ms`, `skipped`, `skipped_items`, `denied` (the
+entries of a folder copy left out because a linked machine may not read them),
+`same`, `conflicts_skipped`, `conflicts_left`, `conflicts`, `conflict_count`,
 `failed_files`, and `pane` and `pane_session` for a copy started from a
 pane. `transfer-clear` removes the jobs that ended, or only `ids`, and
 answers `cleared`. Each job it removes is a `transfer` event with action
@@ -5905,17 +6265,21 @@ its drop folder.
 **Reads over a link.** A read (`file-read`, `file-preview`, `file-hash`, `file-walk`,
 `open-file-stream` read), and a look at a path's name and size (`file-stat`,
 `file-list`), from one of these is `forbidden` too, so a linked
-machine cannot read keys or credentials out: `~/.ssh` (except a `*.pub` key),
-`~/.gnupg`, `~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`,
-`~/.docker/config.json`, `~/.netrc`, `~/.git-credentials`,
-`~/.config/gh/hosts.yml`, `~/.password-store`, `~/Library/Keychains`, the
+machine cannot read keys or credentials out: every place in the write deny
+list above that can hold a secret (`~/.ssh` except a `*.pub` key, `~/.gnupg`,
+`~/.aws`, `~/.azure`, `~/.config/gcloud`, `~/.kube`, `~/.netrc`,
+`~/.git-credentials`, `~/.gitconfig`, `~/.config/git`, `~/.password-store`,
+the shell start files, `~/.config/systemd`, `~/.config/environment.d`,
+`.pam_environment`, the PowerShell profiles, and tuios's own config, state and
+data), and also `~/.docker/config.json`,
+`~/.config/gh/hosts.yml`, `~/Library/Keychains`, the
 Claude and Codex credential files, the package and database credentials
 (`.npmrc`, `.pypirc`, `.gem/credentials`, `.cargo/credentials`,
 `.vault-token`, `.pgpass`, `.my.cnf`, the Terraform credentials,
 `~/.config/rclone`, `~/.config/hub`, `~/.config/op`), `~/.local/share/keyrings`,
 the Windows credential stores and DPAPI keys,
-`/proc` (every process's environment and memory), tuios's own config, state
-and data, and the daemon's socket folder apart from its drop folder. On
+`/proc` (every process's environment and memory), and the daemon's socket
+folder apart from its drop folder. On
 Windows a linked machine must name a path with a drive letter and no other
 colon: a `\\?\` path, a UNC share and a stream name are refused. A read
 elsewhere is allowed, so a copy out works, unless the machine's
@@ -5931,8 +6295,13 @@ cannot swap a denied file in. On macOS a path through
 reads and writes. A regular file with more than one name (a hard
 link) is `forbidden` to read, hash, stream or copy over a link, because no
 check of its path shows what else it is. To share such a file, copy it to a
-new file first. `read-dir`, `wait-dir` and the binary `MsgReadDir` keep to the
-read rules too, so a machine with only `list` cannot list `~/.ssh` or `/proc`.
+new file first. `read-dir`, `wait-dir` and the binary `MsgReadDir` and
+`MsgWatchDir` keep to the read rules too, so a machine with only `list` cannot
+list or watch `~/.ssh` or `/proc`. `file-walk` over a link leaves out every
+entry in the read deny list, so a walk of the home folder, and the file list of
+a folder copy, does not name the files in `~/.ssh`. The copy still ends `done`,
+and its `denied` field counts what was left out. `tuios cp` prints the count and
+exits as a partial copy.
 
 **Copies a link starts.** `transfer-start` and `drop-files` called over a link
 read and write this machine's disk for that machine, so they keep to the same
@@ -6565,6 +6934,7 @@ Event types:
 | `transfer` | A copy the daemon runs (see [Files and transfers](#files-and-transfers)) changed. `action` is `created`, `state`, `ended` or `removed`, and `transfer` is its row as `transfer-list` returns it. `removed` says a copy that ended left the list, by `transfer-clear` or 30 minutes after it ended, and carries its last row. A state is said once per change; a folder copy going between `running` and `verifying` for each file is not a change. A copy the daemon takes back from its journal at start says `state` once. | `action`, `transfer` |
 | `transfer-progress` | A copy's row while its bytes move, at most four a second per copy. Opt-in: only a subscription whose `types` names it receives it. Not replayed on a resume. | `action` (`progress`), `transfer` |
 | `transfer-file` | One file of a copy ended. `action` and `file.state` are `done` (copied and checked), `same` (there already with the same bytes), `skipped` (there and different, left as it was), `conflict` (made there during the copy, left as it was) or `failed`. `file` has `id`, `pane`, `rel`, `state`, `sha256`, `code` and `error`. Opt-in: only a subscription whose `types` names it receives it. Not replayed on a resume. | `action`, `file` |
+| `tml-event` | What a person did on a TML surface that its owner hears: an `emit` action in the document, or the close, which is the surface's last event. `tml` has `surface`, `name` (the emit's name, or `close`), `value` (absent when null), `reason` (on a close: `closed`, `program` or `dismissed`) and `version`. `window` is the TML window. Opt-in: only a subscription whose `types` names it receives it, and a `tml-open` with `events` gets the events of its own surface. | `tml` |
 
 ### What fires when
 

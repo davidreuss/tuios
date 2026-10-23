@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"image/color"
 	"io"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -73,7 +74,7 @@ type Emulator struct {
 	reportFg, reportBg color.Color
 	guestFg, guestBg   bool
 	// reportPal answers an OSC 4 query for a slot nothing else has set. See
-	// SetReportPalette.
+	// SetReportColors.
 	reportPal [16]color.Color
 
 	// Terminal modes. Written only by the PTY reader goroutine (via setMode,
@@ -1402,6 +1403,10 @@ func (e *Emulator) TakeResponses() []byte {
 	return e.pipe.take()
 }
 
+// OnResponse sets a function called each time a reply is queued, on the
+// goroutine that queued it. It must not block. nil clears it.
+func (e *Emulator) OnResponse(fn func()) { e.pipe.setNotify(fn) }
+
 // Close closes the terminal.
 func (e *Emulator) Close() error {
 	if e.closed.Load() {
@@ -1598,20 +1603,18 @@ func (e *Emulator) SetDefaultBackgroundColor(c color.Color) {
 }
 
 // SetReportColors sets the colours an OSC 10 and OSC 11 query is answered with
-// while the guest has not set its own. A nil colour keeps the default answer.
-func (e *Emulator) SetReportColors(fg, bg color.Color) {
-	before := e.reportedBackground()
-	e.reportFg, e.reportBg = fg, bg
-	if report := colorSchemeChange(before, e.reportedBackground()); report != "" && e.isModeSet(ansi.ModeLightDark) {
-		_, _ = io.WriteString(e.pipe, report)
+// while the guest has not set its own, and the colours an OSC 4 query for one
+// of the sixteen ANSI slots is answered with while neither the guest nor a
+// theme has set the slot. A nil colour keeps the default answer.
+//
+// When any of them changes and the guest turned on mode 2031, the guest is
+// sent one colour scheme notice for the whole change. See color_scheme.go.
+func (e *Emulator) SetReportColors(fg, bg color.Color, pal [16]color.Color) {
+	changed := !sameReport(e.reportFg, e.reportBg, e.reportPal, fg, bg, pal)
+	e.reportFg, e.reportBg, e.reportPal = fg, bg, pal
+	if changed && e.isModeSet(ansi.ModeLightDark) {
+		_, _ = io.WriteString(e.pipe, colorSchemeNotice(e.reportedBackground()))
 	}
-}
-
-// SetReportPalette sets the colours an OSC 4 query for one of the sixteen
-// ANSI slots is answered with while neither the guest nor a theme has set the
-// slot. A nil entry keeps the default answer.
-func (e *Emulator) SetReportPalette(pal [16]color.Color) {
-	e.reportPal = pal
 }
 
 // reportedIndexedColor is the answer to an OSC 4 query: the guest's or the
@@ -1941,8 +1944,8 @@ func (e *Emulator) registerSixelGraphicsHandler() {
 					val /= 10
 				}
 				// Reverse digits
-				for i := len(digits) - 1; i >= 0; i-- {
-					fullData = append(fullData, digits[i])
+				for _, digit := range slices.Backward(digits) {
+					fullData = append(fullData, digit)
 				}
 			}
 		}

@@ -106,6 +106,7 @@ func (m *OS) BuildSessionState() *session.SessionState {
 			PopupPlaced: w.PopupPlaced,
 			PopupWidth:  w.PopupWidth,
 			PopupHeight: w.PopupHeight,
+			PopupDim:    w.PopupDim,
 			Scratch:     w.IsScratch,
 			ScratchName: w.ScratchName,
 			Stack:       w.Stack,
@@ -192,6 +193,12 @@ func (m *OS) BuildSessionState() *session.SessionState {
 		for ws, sp := range m.WorkspaceMasterSplits {
 			state.WorkspaceMasterSplits[ws] = sp.Clone()
 		}
+	}
+	// The layout modes travel for the same reason, and have no live value to
+	// fold in either: recording happens when a row names a layout, so the map
+	// is current by the time state is built.
+	if len(m.WorkspaceLayoutMode) > 0 {
+		state.WorkspaceLayoutModes = maps.Clone(m.WorkspaceLayoutMode)
 	}
 	// The master-stack shapes travel as ops (see master_layout.go), and the
 	// daemon keeps its own copy whatever a push holds. They are here for the
@@ -285,6 +292,10 @@ func (m *OS) RestoreFromState(state *session.SessionState) error {
 	// The dock's bell and activity marks name workspaces of the session being
 	// left. See workspace_marks.go.
 	m.workspaceMarkSet = nil
+	// A drag's order, and a move in flight, wait for the renumber of the
+	// session they were made in.
+	m.pendingWorkspaceOrder = nil
+	m.workspaceMoveInFlight = false
 	// Clamp to a valid workspace: SwitchToWorkspace rejects workspace < 1, so a
 	// state carrying 0 (legacy, or a freshly created session with no windows)
 	// would strand every subsequently created window on an unreachable workspace.
@@ -300,6 +311,10 @@ func (m *OS) RestoreFromState(state *session.SessionState) error {
 	m.adoptWorkspaceStackRatio(state)
 	m.WorkspaceMasterSplits = make(map[int]layout.MasterSplits, len(state.WorkspaceMasterSplits))
 	m.adoptWorkspaceMasterSplits(state)
+	m.WorkspaceLayoutMode = make(map[int]string, len(state.WorkspaceLayoutModes))
+	maps.Copy(m.WorkspaceLayoutMode, state.WorkspaceLayoutModes)
+	m.sessionLayoutMode = ""
+	m.adoptSessionLayoutMode(state)
 	// The shapes belong to the session too, and the seeds this client sent
 	// were sent to the session being left.
 	m.WorkspaceMasterLayout = maps.Clone(state.WorkspaceMasterLayout)
@@ -543,6 +558,9 @@ func (m *OS) ApplyStateSyncFrom(state *session.SessionState, sourceID string) er
 		return nil
 	}
 	fromPeer := sourceID != ""
+	// A renumber goes first, so everything below reads the windows and the
+	// workspace maps under the numbers the state uses.
+	m.adoptWorkspaceRenumbering(state)
 
 	// The daemon now holds what arrived here, which is not necessarily what
 	// this client last pushed, so the record of that push no longer describes
@@ -753,6 +771,7 @@ func (m *OS) ApplyStateSyncFrom(state *session.SessionState, sourceID string) er
 	m.adoptWorkspaceMasterRatio(state)
 	m.adoptWorkspaceStackRatio(state)
 	m.adoptWorkspaceMasterSplits(state)
+	m.adoptWorkspaceLayoutMode(state)
 	m.adoptWorkspaceHasCustom(state)
 	masterRetile := m.adoptWorkspaceMasterLayout(state)
 
@@ -913,6 +932,12 @@ func (m *OS) ApplyStateSyncFrom(state *session.SessionState, sourceID string) er
 		}
 		if m.UseScrollingLayout {
 			m.ScrollingOnWindowAdded(w)
+			continue
+		}
+		// Master-stack places panes by order, not by the tree, and
+		// AddWindowToBSPTree would lay them out as BSP. The peer that tiled
+		// the pane placed it, and its rectangles arrive in this sync.
+		if !m.UseBSPLayout {
 			continue
 		}
 		if tree := m.WorkspaceTrees[m.CurrentWorkspace]; tree != nil {
@@ -1161,6 +1186,21 @@ func (m *OS) adoptWorkspaceMasterSplits(state *session.SessionState) {
 	}
 }
 
+// adoptWorkspaceLayoutMode takes the session's per-workspace layout modes onto
+// this client, merged on the same terms as the ratios beside it: a state that
+// says nothing about a workspace leaves what this client holds alone, and an
+// entry that is present wins. An older peer that never sends the field changes
+// nothing, which is what makes it additive.
+func (m *OS) adoptWorkspaceLayoutMode(state *session.SessionState) {
+	if len(state.WorkspaceLayoutModes) == 0 {
+		return
+	}
+	if m.WorkspaceLayoutMode == nil {
+		m.WorkspaceLayoutMode = make(map[int]string, len(state.WorkspaceLayoutModes))
+	}
+	maps.Copy(m.WorkspaceLayoutMode, state.WorkspaceLayoutModes)
+}
+
 // adoptWorkspaceHasCustom takes the session's custom-layout flags onto this
 // client.
 //
@@ -1274,6 +1314,7 @@ func (m *OS) updateWindowFromState(w *terminal.Window, ws *session.WindowState) 
 	w.Kind, w.URI = ws.Kind, ws.URI
 	w.PopupWidth = ws.PopupWidth
 	w.PopupHeight = ws.PopupHeight
+	w.PopupDim = ws.PopupDim
 	w.PreZoomX = ws.PreZoomX
 	w.PreZoomY = ws.PreZoomY
 	w.PreZoomWidth = ws.PreZoomW
@@ -1415,6 +1456,7 @@ func adoptWindowState(window *terminal.Window, ws session.WindowState) {
 	window.Kind, window.URI = ws.Kind, ws.URI
 	window.PopupWidth = ws.PopupWidth
 	window.PopupHeight = ws.PopupHeight
+	window.PopupDim = ws.PopupDim
 	window.PreZoomX = ws.PreZoomX
 	window.PreZoomY = ws.PreZoomY
 	window.PreZoomWidth = ws.PreZoomW
@@ -1655,6 +1697,12 @@ func (m *OS) adoptSyncedWindows(created []*terminal.Window, removed []int, place
 			if w.Workspace == m.CurrentWorkspace && !w.Minimized && !w.IsFloating {
 				m.ScrollingOnWindowAdded(w)
 			}
+		}
+		// A split recorded for the BSP tree has no side in the strip: the
+		// new pane takes the column after the focused one, like any other.
+		// Clear it, or it would split some later pane after a switch to BSP.
+		if len(created) > 0 {
+			m.CancelPendingSplit()
 		}
 	} else {
 		// A pane closed on the daemon has to leave the tree here, the way the
@@ -1973,6 +2021,11 @@ func (m *OS) wireDaemonPTY(window *terminal.Window, subscribe func()) {
 	ptyID := window.PTYID
 
 	window.DaemonWriteFunc = func(data []byte) error {
+		// Keys typed while the client waits for a new daemon are dropped,
+		// and the wait note says so. See daemon_reconnect.go.
+		if m.daemonWaiting.Load() {
+			return nil
+		}
 		return m.DaemonClient.WritePTY(ptyID, data)
 	}
 	window.DaemonResizeFunc = func(width, height int) error {
@@ -2141,7 +2194,7 @@ func (m *OS) unsubscribeFromPTY(window *terminal.Window) {
 	// The pinned pane is drawn in the picture-in-picture view wherever it
 	// is, so its stream stays open. Unpinning it, or its closing, clears the
 	// pin first and lets this through. See pip.go.
-	if m.pipKeepsStream(window) {
+	if m.pipKeepsStream(window) || m.cockpitKeepsStream(window) {
 		return
 	}
 
@@ -2331,8 +2384,12 @@ func (m *OS) noteFocusGiven(state *session.SessionState) {
 // tuios from this client. The two still speak, so this is a note and not a
 // refusal, but it is the difference between "the fix does not work" and "the
 // fix is not installed on both sides", and nothing else says it out loud.
+//
+// Where this client can restart the daemon, the note is the way to do it: a
+// click on it, or prefix+j, opens the restart dialog, and esc puts it off for
+// the rest of this run. It stays until it is answered.
 func (m *OS) warnOnBuildMismatch() {
-	if m.DaemonClient == nil || !m.IsDaemonSession {
+	if m.DaemonClient == nil || !m.IsDaemonSession || m.restartLater {
 		return
 	}
 	clientBuild, daemonBuild := m.DaemonClient.BuildMismatch()
@@ -2340,9 +2397,35 @@ func (m *OS) warnOnBuildMismatch() {
 		return
 	}
 	m.LogWarn("Build mismatch: client %s, daemon %s", clientBuild, daemonBuild)
-	m.ShowNotification(fmt.Sprintf(
-		"The daemon is version %s and this window is version %s. To use one version in both, run 'tuios kill-server', then start tuios again.",
-		daemonBuild, clientBuild), "warning", 0)
+	if !m.DaemonRestartAvailable() {
+		m.ShowNotification("The daemon runs "+daemonBuild+" and this window runs "+clientBuild+
+			". Run 'tuios restart-server' on the machine that runs the daemon.", "warning", 0)
+		return
+	}
+	// Two short sentences, so the notice fits the dock of a 100-column
+	// terminal with release versions: what is wrong, then the way out. This
+	// window's version is in the dialog. The whole notice is the click
+	// target, and draws underlined for it; the key is the jump key as it is
+	// bound now.
+	how := "Click it to restart it."
+	if key := contextMenuHint(m.KeybindRegistry, "prefix_jump_notif", &m.Settings); key != "" {
+		how = key + " restarts it."
+	}
+	m.ShowNotificationFrom("The daemon runs "+daemonBuild+". "+how, "warning", 0, NotifTarget{DaemonRestart: true})
+	if n := len(m.Notifications); n > 0 && isRestartNotice(m.Notifications[n-1].Target) {
+		m.Notifications[n-1].Sticky = true
+	}
+}
+
+// announceRestart says the restart worked, on the first frame of the client
+// a restart from the app started.
+func (m *OS) announceRestart() {
+	if !m.afterRestart || m.DaemonClient == nil {
+		return
+	}
+	m.afterRestart = false
+	m.ShowNotification("The daemon restarted on "+m.DaemonClient.DaemonVersion()+". Your session is back.",
+		"success", 2*m.Settings.NotificationDuration)
 }
 
 // AnnounceLayoutReserve tells the daemon what this client keeps for its own

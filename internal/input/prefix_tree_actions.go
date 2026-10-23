@@ -56,12 +56,10 @@ func (d *ActionDispatcher) registerPrefixTreeHandlers() {
 		return o, nil
 	})
 	d.Register("move_workspace_left", func(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
-		o.MoveWorkspaceBy(-1)
-		return o, nil
+		return o, o.MoveWorkspaceBy(-1)
 	})
 	d.Register("move_workspace_right", func(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
-		o.MoveWorkspaceBy(1)
-		return o, nil
+		return o, o.MoveWorkspaceBy(1)
 	})
 	for i := 1; i <= 9; i++ {
 		d.Register("send_to_workspace_"+strconv.Itoa(i), func(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
@@ -114,7 +112,10 @@ func handleNewWorkspace(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return o, nil
 	}
 	o.SwitchToWorkspace(ws)
-	if o.CurrentWorkspace != ws || (o.UserConfig != nil && o.UserConfig.Workspaces.NewWindowWhenEmpty) {
+	// The switch can land short of ws: from an empty workspace past the last
+	// one in use, that empty workspace is the new one and the switch stays on
+	// it. The pane opens wherever it landed, as long as that is empty.
+	if o.GetWorkspaceWindowCount(o.CurrentWorkspace) > 0 || (o.UserConfig != nil && o.UserConfig.Workspaces.NewWindowWhenEmpty) {
 		return o, nil
 	}
 	return handleNewWindow(msg, o)

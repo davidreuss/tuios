@@ -20,6 +20,10 @@ type AgentSessionReport struct {
 	// HarnessPID is the pid of the harness process that ran the hook, 0 when
 	// unknown. See applyAgentSession for what it decides.
 	HarnessPID int
+	// foreignPane is AgentReport's: the harness does not run in the pane.
+	foreignPane bool
+	// HarnessIsCaller is AgentReport.HarnessIsCaller.
+	HarnessIsCaller bool
 }
 
 // errAgentSessionUnchanged tells mutateState that the report named the id the
@@ -34,7 +38,9 @@ var errAgentSessionUnchanged = errors.New("agent session is unchanged")
 // attribution: attribution is the foreground-process detector's to give, and a
 // window this report attributed would read as an agent pane with no state.
 //
-// Two guards keep a nested run off the pane, the same two set-agent-state has:
+// A report from a harness that does not run in the pane is refused with
+// foreign_pane first (harnessOutsidePane). Two guards keep a nested run off
+// the pane, the same two set-agent-state has:
 //
 //   - A window attributed to another harness refuses with foreign_harness. That
 //     is a harness a tool call started inside the pane's own agent, and its
@@ -49,6 +55,10 @@ var errAgentSessionUnchanged = errors.New("agent session is unchanged")
 // When the detector sees the agent leave the pane it forgets the pid, so a
 // harness restarted in the same pane is not refused as a nested run of the one
 // that exited.
+//
+// The shared-server guard of sessionGuard is left out on purpose. This verb is
+// the recovery path for a Codex pane whose guard holds the wrong conversation,
+// and a person running it has to win: it clears the guard instead.
 func (s *Session) applyAgentSession(target string, r AgentSessionReport) (string, bool, string, error) {
 	var stored string
 	var reason string
@@ -59,14 +69,18 @@ func (s *Session) applyAgentSession(target string, r AgentSessionReport) (string
 		}
 		w := &st.Windows[idx]
 		stored = w.AgentSessionID
+		if r.foreignPane {
+			reason = agentRefusedForeignPane
+			return errAgentReportRefused(reason)
+		}
 		if w.AgentHarness != "" && w.AgentHarness != r.Harness {
 			reason = agentRefusedForeignHarness
 			return errAgentReportRefused(reason)
 		}
-		owner := s.agentHarnessPIDs[w.ID]
+		owner := s.agentHarnessPIDs[w.ID].pid
 		if w.AgentSessionID == r.SessionID && w.AgentSessionHarness == r.Harness {
 			if r.HarnessPID > 1 && owner != r.HarnessPID {
-				s.setAgentHarnessPID(w.ID, r.HarnessPID)
+				s.setAgentHarnessPID(w.ID, r.HarnessPID, r.HarnessIsCaller)
 			}
 			return errAgentSessionUnchanged
 		}
@@ -78,7 +92,10 @@ func (s *Session) applyAgentSession(target string, r AgentSessionReport) (string
 		w.AgentSessionID = r.SessionID
 		w.AgentSessionHarness = r.Harness
 		stored = r.SessionID
-		s.setAgentHarnessPID(w.ID, r.HarnessPID)
+		s.setAgentHarnessPID(w.ID, r.HarnessPID, r.HarnessIsCaller)
+		// A person pointing the pane at a conversation clears the Codex
+		// guard, so the next SessionStart arms it afresh.
+		delete(s.agentSharedGuards, w.ID)
 		return nil
 	})
 	var refused errAgentReportRefused
@@ -94,14 +111,63 @@ func (s *Session) applyAgentSession(target string, r AgentSessionReport) (string
 }
 
 // setAgentHarnessPID records the harness pid a window's session id came from,
-// forgetting it when the pid is unknown. Called with stateMu held.
-func (s *Session) setAgentHarnessPID(windowID string, pid int) {
+// forgetting it when the pid is unknown. Its start time is read only for a
+// pid the caller runs under (isCaller), so only that pid's exit can clear the
+// pane (harnessProc). Called with stateMu held.
+func (s *Session) setAgentHarnessPID(windowID string, pid int, isCaller bool) {
 	if pid <= 1 {
 		delete(s.agentHarnessPIDs, windowID)
 		return
 	}
-	if s.agentHarnessPIDs == nil {
-		s.agentHarnessPIDs = make(map[string]int)
+	// A pid already recorded keeps its start time: a later report naming it
+	// from outside the harness would otherwise stop its exit clearing the pane.
+	if old, ok := s.agentHarnessPIDs[windowID]; ok && old.pid == pid && old.timed {
+		return
 	}
-	s.agentHarnessPIDs[windowID] = pid
+	if s.agentHarnessPIDs == nil {
+		s.agentHarnessPIDs = make(map[string]harnessProc)
+	}
+	h := harnessProc{pid: pid}
+	if isCaller {
+		h = readHarnessProc(pid)
+	}
+	s.agentHarnessPIDs[windowID] = h
+}
+
+// callerRunsHarness reports whether pid, the harness pid a report names, is
+// the process on cs or one of its ancestors.
+//
+// A harness pid is the reporter's word. A hook works it out from its own
+// ancestry, so it names a process of this machine, unless the harness runs in
+// another pid namespace, an agent in a container with the socket passed in
+// say. There the number may also name an unrelated live process here, and
+// that process exiting would clear the pane while the agent works on. The
+// kernel's record of who connected is what ties the pid to this machine.
+//
+// A call the daemon makes itself (cs nil) is herdr's, whose harness pid is
+// the peer pid the kernel gave it. A caller whose pid the kernel does not
+// give, or whose ancestry cannot be read, is not trusted: its pid is still
+// recorded for the session guard, and is never taken for exited.
+func callerRunsHarness(cs *connState, pid int) bool {
+	if pid <= 1 {
+		return false
+	}
+	if cs == nil {
+		return true
+	}
+	cur := cs.peerPID
+	for range paneOriginMaxDepth {
+		if cur <= 1 {
+			return false
+		}
+		if cur == pid {
+			return true
+		}
+		next, _, ok := readProcLineage(cur)
+		if !ok {
+			return false
+		}
+		cur = next
+	}
+	return false
 }

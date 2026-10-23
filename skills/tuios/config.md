@@ -39,7 +39,7 @@ Tables are not scalar options and are edited in config.toml:
 and value rules; `now`, `context`, `subagents` and `prompt` read what the hooks
 and status line feed, and `meta` leaves those keys out), `[dock]`, `[appearance.sidebar.custom]`, `[hooks]`, `[hosts]`, `[notify]`, `[agents.approvals]`, `[agents.checkpoints]`,
 `[agents.permissions]`, `[agents] herdr_protocol` and the keybindings. The file is watched; a hook the
-daemon runs needs `tuios kill-server` to take effect.
+daemon runs needs `tuios restart-server` to take effect.
 
 The config can be more than one file. config.toml can name more files in a
 top-level `include = [...]` list, and the `*.toml` files in `config.d` next to
@@ -343,6 +343,9 @@ cells a program coloured itself unless a theme is set.
 `appearance.dim_foreground = false` keeps the text of an unfocused pane at full
 strength and dims only its background.
 
+`appearance.popup_dim` (0 to 90, default 0/off) dims behind a focused plain
+popup; `tuios popup --dim` overrides it.
+
 `appearance.modal_dim` (0 to 90, default 30) darkens the screen behind an open
 panel such as the command palette; 0 turns it off. `appearance.motion` is
 `none`, `basic` (window slides and the copy sweep) or `full` (the default: also the panel
@@ -446,7 +449,9 @@ A hook runs a shell command on an event, with `TUIOS_*` variables carrying the
 facts. The daemon runs `after-new-window`, `after-close-window`,
 `after-focus-change`, `after-workspace-switch`, `after-agent-state` and
 `after-command-finished`, so they fire with nobody attached. `after-attach`,
-`after-detach`, `after-resize` and `after-layout-change` run in the client.
+`after-detach`, `after-resize`, `after-layout-change` and `after-theme-change`
+run in the client. `after-theme-change` gets `TUIOS_THEME`, `TUIOS_THEME_BG`
+and `TUIOS_THEME_LIGHT`.
 
 ```toml
 [hooks]

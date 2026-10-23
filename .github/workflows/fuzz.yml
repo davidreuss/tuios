@@ -94,6 +94,20 @@ jobs:
             targets: FuzzParsePaletteReply
           - pkg: swatch/termconfig
             targets: FuzzParse
+          - pkg: tml
+            targets: FuzzParseXML FuzzParseJSON FuzzExpr FuzzPatch
+          - pkg: plot
+            targets: FuzzCharts
+          - pkg: loom
+            targets: FuzzLayout FuzzIncremental
+          - pkg: sketch
+            targets: FuzzRender
+          - pkg: sketch/internal/layout
+            targets: FuzzCompoundLayout
+          - pkg: sketch/raster
+            targets: FuzzDraw FuzzMotion
+          - pkg: sketch/text
+            targets: FuzzDraw
 
     steps:
       - uses: actions/checkout@v7
@@ -143,7 +157,7 @@ jobs:
           failed=""
           for target in $TARGETS; do
             echo "::group::$target"
-            if ! go test "./$PKG/" -run '^$' -fuzz "^${target}\$" -fuzztime "$FUZZTIME" -parallel 2; then
+            if ! ./scripts/fuzz-target.sh "./$PKG/" -run '^$' -fuzz "^${target}\$" -fuzztime "$FUZZTIME" -parallel 2; then
               failed="$failed $target"
             fi
             echo "::endgroup::"
@@ -222,7 +236,7 @@ jobs:
           for target in FuzzGhosttyTerminalWrite; do
             echo "::group::$target"
             if ! PKG_CONFIG_PATH="$PWD/.ghostty-vt/native/pkgconfig" \
-              go test -tags ghostty ./vt/ -run '^$' -fuzz "^${target}\$" -fuzztime "$FUZZTIME" -parallel 2; then
+              ./scripts/fuzz-target.sh -tags ghostty ./vt/ -run '^$' -fuzz "^${target}\$" -fuzztime "$FUZZTIME" -parallel 2; then
               failed="$failed $target"
             fi
             echo "::endgroup::"

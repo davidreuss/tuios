@@ -135,7 +135,8 @@ type CommandPaletteItem struct {
 	// for a session the pane its state was rolled up from, which draws a
 	// pane at rest as waiting.
 	AgentSubagents int
-	// Keybind marks a row that names one action to rebind. Those rows are
+	// Keybind marks a row that names one action, which enter runs and
+	// PaletteRebindKey rebinds. Those rows are
 	// reached only behind the "#" token and are hidden from every other query,
 	// which is what keeps a few hundred of them out of a list of twenty
 	// commands. See splitPaletteKeybinds.
@@ -940,6 +941,13 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 			},
 		},
 		{
+			Name:     "Choose a look",
+			Category: "Session",
+			Action: func(m *OS) (*OS, tea.Cmd) {
+				return m, m.OpenLookPicker()
+			},
+		},
+		{
 			Name:     "Edit theme",
 			Category: "Session",
 			Action: func(m *OS) (*OS, tea.Cmd) {
@@ -977,6 +985,18 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 			Category: PaletteCategoryKeybind,
 			Action: func(m *OS) (*OS, tea.Cmd) {
 				m.OpenKeybindManager()
+				return m, nil
+			},
+		},
+		{
+			// The way to move the daemon to the build an update installed.
+			// Left out on a client that cannot restart its daemon.
+			Name:     paletteRestartDaemonName,
+			Shortcut: "stops programs",
+			Bind:     "restart_daemon",
+			Category: "Session",
+			Action: func(m *OS) (*OS, tea.Cmd) {
+				m.OpenDaemonRestart()
 				return m, nil
 			},
 		},
@@ -1043,7 +1063,7 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 		},
 		{
 			// The Inbox: everything waiting for the person, in every session.
-			Name:     "Agents: Inbox, what is waiting for you",
+			Name:     "Agents: what needs you",
 			Shortcut: "prefix+i",
 			Bind:     "prefix_inbox",
 			Category: paletteCategoryAgents,
@@ -1085,7 +1105,7 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 		{
 			// prefix+M had no palette row; "open mailbox" above opens a
 			// different view, every thread rather than mail for you.
-			Name:     "Agents: Inbox, mail for you",
+			Name:     "Agents: mail for you",
 			Shortcut: "prefix+M",
 			Bind:     "prefix_mail",
 			Category: paletteCategoryAgents,
@@ -1134,6 +1154,16 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 			Category: "Session",
 			Action: func(m *OS) (*OS, tea.Cmd) {
 				return m, m.OpenNavigator()
+			},
+		},
+		{
+			Name:     "Go to: an agent, session, workspace or pane",
+			Shortcut: "prefix+G",
+			Bind:     "goto_picker",
+			Category: "Session",
+			Action: func(m *OS) (*OS, tea.Cmd) {
+				m.OpenGotoPicker()
+				return m, nil
 			},
 		},
 		{

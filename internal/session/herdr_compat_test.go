@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Gaurav-Gosain/tuios/internal/config"
 )
 
 // herdrFixture is a daemon with one session and two panes, and a caller the
@@ -163,9 +165,12 @@ func TestHerdrSeqDropsStaleReportsEvenAfterRelease(t *testing.T) {
 	f.wantState(t, f.a, AgentStateIdle, "a new Crush in the same pane")
 }
 
-// TestHerdrPaneReportsOnlyForItself: the v0.8.1 rule. A report for another
-// pane, and any request from outside every pane, is refused; the caller's own
-// reports go through.
+// TestHerdrPaneReportsOnlyForItself: a pane reports only for itself. A
+// caller outside every pane (the person, or a plugin's command, which the
+// daemon starts outside every pane) reports for any pane that
+// set-agent-state would let it write, as herdr lets any client report. Under
+// strict such a caller holds no session and is refused. notification.show
+// names no pane, so it always needs one.
 func TestHerdrPaneReportsOnlyForItself(t *testing.T) {
 	f := newHerdrFixture(t)
 	f.caller = f.a
@@ -173,12 +178,36 @@ func TestHerdrPaneReportsOnlyForItself(t *testing.T) {
 		t.Fatal("a report for another pane went through")
 	}
 	f.wantState(t, f.b, AgentStateNone, "the other pane")
-	f.caller = ""
-	for _, m := range []string{"pane.report_agent", "pane.report_metadata", "notification.show"} {
-		if _, e := f.call(t, m, map[string]any{"pane_id": f.a, "source": "crush", "agent": "crush", "state": "working", "title": "x"}); e == "" {
-			t.Fatalf("%s from outside every pane went through", m)
-		}
+
+	// The person: a process outside every pane. The fixture's pid names no
+	// process, which would read as a caller that handed its socket on.
+	f.caller, f.pid = "", 0
+	if _, e := f.call(t, "pane.report_agent", map[string]any{"pane_id": herdrPaneID(f.sess.ID, f.b), "source": "mirror", "agent": "claude", "state": "working", "seq": 1}); e != "" {
+		t.Fatalf("a report from outside every pane was refused: %s", e)
 	}
+	f.wantState(t, f.b, AgentStateWorking, "a report from outside every pane")
+	if _, e := f.call(t, "pane.report_metadata", map[string]any{"pane_id": f.b, "source": "mirror", "title": "x"}); e != "" {
+		t.Fatalf("metadata from outside every pane was refused: %s", e)
+	}
+	if _, e := f.call(t, "pane.report_agent", map[string]any{"pane_id": "w0:p000000000000", "source": "mirror", "agent": "claude", "state": "working"}); !strings.HasPrefix(e, "pane_not_found") {
+		t.Fatalf("a report for no pane answered %q, want pane_not_found", e)
+	}
+	if _, e := f.call(t, "notification.show", map[string]any{"title": "x"}); e == "" {
+		t.Fatal("notification.show from outside every pane went through")
+	}
+
+	// A process the daemon placed in no pane, such as one that handed its
+	// socket on and exited, holds the strict default in no session.
+	f.pid = 1 << 30
+	f.d.onConfigReload(&config.UserConfig{Agents: config.AgentsConfig{Permissions: config.PermissionsConfig{Mode: "strict", Grants: []string{"read", "write"}}}}, nil)
+	if _, e := f.call(t, "pane.report_agent", map[string]any{"pane_id": f.a, "source": "mirror", "agent": "claude", "state": "working", "seq": 2}); !strings.HasPrefix(e, "forbidden") {
+		t.Fatalf("under strict a process outside every pane answered %q, want forbidden", e)
+	}
+	f.wantState(t, f.a, AgentStateNone, "under strict")
+	if _, e := f.call(t, "pane.report_metadata", map[string]any{"pane_id": f.a, "source": "mirror", "title": "y", "seq": 3}); !strings.HasPrefix(e, "forbidden") || !strings.Contains(e, "set-agent-meta") {
+		t.Fatalf("under strict outside metadata answered %q, want forbidden for set-agent-meta", e)
+	}
+
 	f.caller = f.a
 	if _, e := f.call(t, "layout.apply", map[string]any{"pane_id": f.a}); !strings.HasPrefix(e, "unsupported") {
 		t.Fatalf("layout.apply answered %q, want unsupported", e)

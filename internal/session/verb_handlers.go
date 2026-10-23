@@ -10,10 +10,12 @@ import (
 	"path/filepath"
 	"runtime"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
 
+	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/federation"
 	"github.com/Gaurav-Gosain/tuios/internal/harness"
 	"github.com/google/uuid"
@@ -187,7 +189,8 @@ func (d *Daemon) verbListWindows(_ *connState, params json.RawMessage) (any, *ve
 	if verr != nil {
 		return nil, verr
 	}
-	data := buildWindowListData(sess.GetState())
+	state := sess.GetState()
+	data := buildWindowListData(state)
 	data["type"] = "window_list"
 	// The shell a new pane runs, by base name, so a reader can say what a
 	// pane at its prompt is running: foreground_cmd is omitted there.
@@ -196,7 +199,20 @@ func (d *Daemon) verbListWindows(_ *connState, params json.RawMessage) (any, *ve
 	}
 	addShellFacts(sess, data)
 	addPaneMeta(sess, data)
+	addResumable(d, state, data)
 	return data, nil
+}
+
+// addResumable marks each pane whose agent conversation a restart would offer
+// back, with the harness it belongs to. restart-server lists them before it
+// asks.
+func addResumable(d *Daemon, state *SessionState, data map[string]any) {
+	windows, _ := data["windows"].([]map[string]any)
+	for i := range min(len(windows), len(state.Windows)) {
+		if o, ok := d.resumeOfferFor(state.Name, state.Windows[i]); ok {
+			windows[i]["agent_resumable"] = o.harness
+		}
+	}
 }
 
 // verbGetWindow describes one window. It is what tuios get-window calls, so
@@ -261,6 +277,9 @@ func (d *Daemon) verbNewWindow(cs *connState, params json.RawMessage) (any, *ver
 		Command   []string `json:"command"`
 		Host      string   `json:"host"`
 		Grants    []string `json:"grants"`
+		// Env is set in the new pane's process, checked as start-agent
+		// checks its env.
+		Env map[string]string `json:"env"`
 		// CloseOnExit closes the window when its process exits, also with no
 		// client attached. An attached client closes a command window on
 		// exit already. A detached session keeps it until something closes
@@ -299,6 +318,10 @@ func (d *Daemon) verbNewWindow(cs *connState, params json.RawMessage) (any, *ver
 	if verr != nil {
 		return nil, verr
 	}
+	env, _, verr := callerEnv(cs, p.Env)
+	if verr != nil {
+		return nil, verr
+	}
 	sess, verr := d.resolveVerbSession(p.Session)
 	if verr != nil {
 		return nil, verr
@@ -312,6 +335,11 @@ func (d *Daemon) verbNewWindow(cs *connState, params json.RawMessage) (any, *ver
 	// later. "local" is accepted and means this machine, which is the default.
 	if verr := checkWindowHost(d, &p.Host); verr != nil {
 		return nil, verr
+	}
+	// After checkWindowHost, so "local" and this machine's own name are
+	// this machine.
+	if len(env) > 0 && p.Host != "" {
+		return nil, invalidParam("env", "env names variables of this machine, so it cannot go to a window on another machine")
 	}
 	// A directory that cannot be entered is refused rather than quietly ignored.
 	// A window on another machine is the exception: the path is that machine's
@@ -356,17 +384,19 @@ func (d *Daemon) verbNewWindow(cs *connState, params json.RawMessage) (any, *ver
 		}
 	}
 	win, bverr, err := d.addWindowFor(cs, "new-window", sess, NewWindowOptions{
-		keepOpen:  p.KeepOpen,
-		Title:     p.Name,
-		Cwd:       p.Cwd,
-		Workspace: p.Workspace,
-		Focus:     focus,
-		Command:   p.Command,
-		Name:      p.Name,
-		Host:      p.Host,
-		Grants:    grants,
-		Kind:      p.Kind,
-		URI:       p.URI,
+		keepOpen:    p.KeepOpen,
+		closeOnExit: p.CloseOnExit,
+		Title:       p.Name,
+		Cwd:         p.Cwd,
+		Workspace:   p.Workspace,
+		Focus:       focus,
+		Command:     p.Command,
+		Name:        p.Name,
+		Host:        p.Host,
+		Grants:      grants,
+		Env:         env,
+		Kind:        p.Kind,
+		URI:         p.URI,
 	}, onExit)
 	if bverr != nil {
 		return nil, bverr
@@ -524,13 +554,14 @@ func (d *Daemon) awaitPlacement(sess *Session, windowID, ptyID string, limit tim
 // about it.
 func (d *Daemon) verbPopup(cs *connState, params json.RawMessage) (any, *verbError) {
 	var p struct {
-		Session   string   `json:"session"`
-		Name      string   `json:"name"`
-		Cwd       string   `json:"cwd"`
-		Width     string   `json:"width"`
-		Height    string   `json:"height"`
-		Command   []string `json:"command"`
-		Workspace int      `json:"workspace"`
+		Session   string           `json:"session"`
+		Name      string           `json:"name"`
+		Cwd       string           `json:"cwd"`
+		Width     string           `json:"width"`
+		Height    string           `json:"height"`
+		Dim       *config.PopupDim `json:"dim"`
+		Command   []string         `json:"command"`
+		Workspace int              `json:"workspace"`
 		// Wait keeps the call open until the command exits; CaptureStdout
 		// returns what it printed to standard output. See popup_wait.go.
 		Wait          bool `json:"wait"`
@@ -571,6 +602,9 @@ func (d *Daemon) verbPopup(cs *connState, params json.RawMessage) (any, *verbErr
 	}
 	if err := ValidatePopupSize(p.Height); err != nil {
 		return nil, invalidParam("height", err.Error())
+	}
+	if p.Dim != nil && (p.Dim.Percent < 0 || p.Dim.Percent > config.PopupDimMax) {
+		return nil, invalidParam("dim", "dim must be an integer from 0 to 90")
 	}
 	if p.Workspace < 0 {
 		return nil, invalidParam("workspace", "workspace is a workspace number, e.g. 2. Omit it for the current one")
@@ -639,6 +673,7 @@ func (d *Daemon) verbPopup(cs *connState, params json.RawMessage) (any, *verbErr
 		Popup:       true,
 		PopupWidth:  p.Width,
 		PopupHeight: p.Height,
+		PopupDim:    p.Dim,
 		Scratch:     p.Scratch,
 		ScratchName: p.ScratchName,
 	}
@@ -1044,7 +1079,11 @@ func (d *Daemon) verbSendText(cs *connState, params json.RawMessage) (any, *verb
 		} else if idx, err := findWindowStateIndex(sess.GetState().Windows, window); err == nil {
 			window = sess.GetState().Windows[idx].ID
 		}
-		if _, err := submitPrompt(d.ctx, pty, p.Text, d.inputProfileFor(sess, window)); err != nil {
+		// The pane is checked again right before the submit key: it can
+		// come to a prompt while the paste is taken in, and the Enter
+		// would answer it.
+		ctx := withSubmitGuard(d.ctx, func() *verbError { return d.recheckTyping(cs, "send-text", sess, window) })
+		if _, err := submitPrompt(ctx, pty, p.Text, d.inputProfileFor(sess, window)); err != nil {
 			return nil, ptyWriteError(err)
 		}
 		return map[string]any{"type": "ok"}, nil
@@ -1077,6 +1116,10 @@ func paneBusyError(err error) *verbError {
 // take: busy when the pane has not read the last large input, internal
 // otherwise.
 func promptWriteError(err error) *verbError {
+	if ve := (*verbError)(nil); errors.As(err, &ve) {
+		// A submit guard refused (withSubmitGuard).
+		return ve
+	}
 	if errors.Is(err, errPaneInputBusy) {
 		return paneBusyError(err)
 	}
@@ -1084,6 +1127,10 @@ func promptWriteError(err error) *verbError {
 }
 
 func ptyWriteError(err error) *verbError {
+	if ve := (*verbError)(nil); errors.As(err, &ve) {
+		// A submit guard refused (withSubmitGuard).
+		return ve
+	}
 	if errors.Is(err, errPaneInputBusy) {
 		return paneBusyError(err)
 	}
@@ -1324,16 +1371,28 @@ func (d *Daemon) verbSetWorkspaceOrder(_ *connState, params json.RawMessage) (an
 	if verr != nil {
 		return nil, verr
 	}
-	if err := sess.SetDaemonWorkspaceOrder(p.Order); err != nil {
+	moved, err := sess.RenumberWorkspaces(p.Order)
+	if err != nil {
 		return nil, invalidParam("order", err.Error())
 	}
-	// The stored order is what was kept after sanitising, which is what the
-	// caller has to see: a drag that named a workspace this session no longer
-	// has should read back without it rather than as accepted verbatim.
-	return map[string]any{"type": "workspace_order_set", "workspace_order": sess.GetState().WorkspaceOrder}, nil
+	// workspace_order stays in the answer for a caller written against the
+	// display order, and is always null: the numbering is the order.
+	// renumbered says where each workspace went, by its old number.
+	renumbered := make(map[string]int, len(moved))
+	for from, to := range moved {
+		renumbered[strconv.Itoa(from)] = to
+	}
+	return map[string]any{"type": "workspace_order_set", "workspace_order": nil, "renumbered": renumbered}, nil
 }
 
 func (d *Daemon) verbSetAgentState(cs *connState, params json.RawMessage) (any, *verbError) {
+	return d.setAgentState(cs, params, false)
+}
+
+// setAgentState is set-agent-state. ownPane says the caller is the pane the
+// report is about, for a caller with no connection to place: the herdr
+// socket's report from a pane for itself.
+func (d *Daemon) setAgentState(cs *connState, params json.RawMessage, ownPane bool) (any, *verbError) {
 	// The herdr socket calls this handler directly, past admitVerb.
 	if !d.agentsEnabled() {
 		return nil, agentsDisabledError()
@@ -1353,6 +1412,9 @@ func (d *Daemon) verbSetAgentState(cs *connState, params json.RawMessage) (any, 
 		TranscriptPath string `json:"transcript_path"`
 		IfState        string `json:"if_state"`
 		HarnessPID     int    `json:"harness_pid"`
+		// SessionStart marks a conversation's SessionStart. See
+		// AgentReport.SessionStart.
+		SessionStart bool `json:"session_start"`
 		// AgentCwd is the folder the harness reported for its session. The
 		// first one for a session is kept as the agent's start folder. See
 		// noteReportedAgentDir.
@@ -1434,7 +1496,16 @@ func (d *Daemon) verbSetAgentState(cs *connState, params json.RawMessage) (any, 
 		SessionID:  p.AgentSessionID,
 		HarnessPID: p.HarnessPID,
 		IfState:    ifState,
+
+		// Only a report with a session id records its harness pid, so only
+		// that one needs the ancestry walk.
+		HarnessIsCaller: p.AgentSessionID != "" && callerRunsHarness(cs, p.HarnessPID),
+
+		SessionStart: p.SessionStart,
+		SharedServer: d.agentMatcher.registry.SharedServer(p.Harness),
 	}
+	report.foreignPane = d.harnessOutsidePane(cs, sess, target, p.HarnessPID)
+	report.fromPane = ownPane || d.reportFromOwnPane(cs, sess, target)
 	// The identity guard is read before the report applies, because it is
 	// about the pane as the report found it, and applyAgentReport checks
 	// if_state first and so may never reach it.
@@ -1464,8 +1535,7 @@ func (d *Daemon) verbSetAgentState(cs *connState, params json.RawMessage) (any, 
 	// report the identity guard refuses is a nested run's, and its activity
 	// is not the pane's.
 	recorded := false
-	if p.Activity != nil && windowID != "" && guard == "" &&
-		reason != agentRefusedForeignSession && reason != agentRefusedForeignHarness {
+	if p.Activity != nil && windowID != "" && guard == "" && !refusedAsForeign(reason) {
 		d.recordAgentActivity(sess, windowID, p.Activity, effective)
 		recorded = true
 	} else if created {
@@ -1474,13 +1544,34 @@ func (d *Daemon) verbSetAgentState(cs *connState, params json.RawMessage) (any, 
 		// pane's agent.
 		d.activity.forgetIfEmpty(sess.ID, windowID)
 	}
-	if p.AgentCwd != "" && p.AgentSessionID != "" &&
-		reason != agentRefusedForeignSession && reason != agentRefusedForeignHarness {
+	if p.AgentCwd != "" && p.AgentSessionID != "" && !refusedAsForeign(reason) {
 		d.noteReportedAgentDir(sess, target, p.AgentSessionID, p.AgentCwd)
 	}
+	if refusedAsForeign(reason) {
+		debugLog("[DEBUG] set-agent-state: %s refused session %q of %s", reason, p.AgentSessionID, p.Harness)
+	}
 	transcriptRefused := ""
-	if applied && p.TranscriptPath != "" {
-		transcriptRefused = d.joinReportedTranscript(cs, sess, target, p.Harness, p.TranscriptPath)
+	switch {
+	case applied && p.TranscriptPath != "":
+		transcriptRefused = d.joinReportedTranscript(cs, sess, target, p.Harness, p.TranscriptPath, "")
+	case applied && cs != nil && p.TranscriptPath == "" && p.AgentSessionID != "":
+		// A harness whose hook names its session and not its file (Amp):
+		// the manifest's session_file names the file, and it is held to the
+		// same rules as a path a hook reports, joinReportedTranscript's pane
+		// checks among them. A report with no connection (herdr's socket,
+		// which any client may write to) names no file, the same as it can
+		// name no transcript_path.
+		//
+		// A by_session harness (opencode) keeps every session in one store:
+		// the session id joins the pane to that session in it, and each
+		// report raises the transcript event, since the store does not grow
+		// as a file the daemon can watch.
+		sid := strings.TrimSpace(p.AgentSessionID)
+		if path := d.storeTranscriptPath(p.Harness); path != "" {
+			transcriptRefused = d.joinReportedTranscript(cs, sess, target, p.Harness, path, sid)
+		} else if path := d.sessionTranscriptPath(p.Harness, sid); path != "" {
+			transcriptRefused = d.joinReportedTranscript(cs, sess, target, p.Harness, path, "")
+		}
 	}
 	// state is the effective state, so a report a higher-ranked source outranked
 	// reports what the pane actually shows rather than what was asked for.
@@ -1537,6 +1628,35 @@ func (d *Daemon) reportTarget(cs *connState, sessionName, window string) (*Sessi
 	return sess, target, nil
 }
 
+// reportFromOwnPane says the caller on cs runs in the pane target names: a
+// process the daemon placed there, or a call run as a pane on another
+// machine. A report from it is the pane's word about itself.
+func (d *Daemon) reportFromOwnPane(cs *connState, sess *Session, target string) bool {
+	if cs == nil {
+		return false
+	}
+	w, ok := findWindowStateByTarget(sess, target)
+	if !ok {
+		return false
+	}
+	if cs.hostedWindow != "" {
+		return cs.hostedWindow == w.ID
+	}
+	pa := d.paneAuthority(cs)
+	return pa != nil && pa.plugin == "" && !pa.hosted && pa.window == w.ID
+}
+
+// findWindowStateByTarget resolves target (an id, a short id or a name) in
+// sess.
+func findWindowStateByTarget(sess *Session, target string) (WindowState, bool) {
+	wins := sess.GetState().Windows
+	idx, err := findWindowStateIndex(wins, target)
+	if err != nil {
+		return WindowState{}, false
+	}
+	return wins[idx], true
+}
+
 // Rates of report-agent-activity. Each event it records may change what the
 // rail draws, and so push state to every attached client, and the subagent
 // cap bounds memory, not pushes. So a pane may report a burst of
@@ -1577,9 +1697,11 @@ func (d *Daemon) verbReportAgentActivity(cs *connState, params json.RawMessage) 
 		return nil, verr
 	}
 	windowID, state, reason, err := sess.activityReportGuard(target, AgentReport{
-		Harness:    p.Harness,
-		SessionID:  p.AgentSessionID,
-		HarnessPID: p.HarnessPID,
+		Harness:      p.Harness,
+		SessionID:    p.AgentSessionID,
+		HarnessPID:   p.HarnessPID,
+		SharedServer: d.agentMatcher.registry.SharedServer(p.Harness),
+		foreignPane:  d.harnessOutsidePane(cs, sess, target, p.HarnessPID),
 	})
 	if err != nil {
 		return nil, mapResolveErr(err, sess)
@@ -1609,7 +1731,7 @@ func (d *Daemon) verbReportAgentActivity(cs *connState, params json.RawMessage) 
 
 // verbSetAgentSession stores the conversation id a harness reports for a pane
 // without touching the pane's state. See applyAgentSession.
-func (d *Daemon) verbSetAgentSession(_ *connState, params json.RawMessage) (any, *verbError) {
+func (d *Daemon) verbSetAgentSession(cs *connState, params json.RawMessage) (any, *verbError) {
 	// The herdr socket calls this handler directly, past admitVerb.
 	if !d.agentsEnabled() {
 		return nil, agentsDisabledError()
@@ -1648,9 +1770,12 @@ func (d *Daemon) verbSetAgentSession(_ *connState, params json.RawMessage) (any,
 		target = id
 	}
 	stored, applied, reason, err := sess.applyAgentSession(target, AgentSessionReport{
-		Harness:    harnessID,
-		SessionID:  sid,
-		HarnessPID: p.HarnessPID,
+		Harness:     harnessID,
+		SessionID:   sid,
+		HarnessPID:  p.HarnessPID,
+		foreignPane: d.harnessOutsidePane(cs, sess, target, p.HarnessPID),
+
+		HarnessIsCaller: callerRunsHarness(cs, p.HarnessPID),
 	})
 	if err != nil {
 		return nil, mapResolveErr(err, sess)
@@ -1688,7 +1813,7 @@ var agentKindNames = []string{harness.PromptKindApproval, harness.PromptKindQues
 // for its own pane, and the file must be a regular file under the harness's
 // transcript folder. A refusal is returned for the reply, so the hook's
 // --explain shows it, and logged without the path, which is the person's.
-func (d *Daemon) joinReportedTranscript(cs *connState, sess *Session, target, harnessID, path string) string {
+func (d *Daemon) joinReportedTranscript(cs *connState, sess *Session, target, harnessID, path, session string) string {
 	state := sess.GetState()
 	idx, err := findWindowStateIndex(state.Windows, target)
 	if err != nil {
@@ -1717,8 +1842,67 @@ func (d *Daemon) joinReportedTranscript(cs *connState, sess *Session, target, ha
 		LogBasic("transcript_path refused for window %s: %s", shortWindowID(w.ID), why)
 		return why
 	}
-	_ = sess.JoinAgentTranscript(w.ID, harnessID, resolved, true)
+	tr := reg.TranscriptFor(harnessID)
+	if tr.BySession {
+		if !validReportedSession(session) {
+			return "the session id is not one a store names"
+		}
+		sess.JoinAgentSession(w.ID, harnessID, tr.Reader, resolved, session)
+		return ""
+	}
+	_ = sess.JoinAgentTranscriptAs(w.ID, harnessID, tr.Reader, resolved, true)
 	return ""
+}
+
+// validReportedSession reports a session id a by_session store may be asked
+// for: letters, digits, "_" and "-", at most 128 bytes.
+func validReportedSession(id string) bool {
+	if id == "" || len(id) > 128 {
+		return false
+	}
+	for _, r := range id {
+		if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '-') {
+			return false
+		}
+	}
+	return true
+}
+
+// storeTranscriptPath is the store file of a by_session harness, "" for any
+// other.
+func (d *Daemon) storeTranscriptPath(harnessID string) string {
+	reg := d.agentMatcher.registry
+	if reg == nil || harnessID == "" {
+		return ""
+	}
+	if tr := reg.TranscriptFor(harnessID); tr != nil {
+		return tr.StorePath()
+	}
+	return ""
+}
+
+// sessionTranscriptPath is the transcript a harness keeps for the session a
+// hook names, from the manifest's session_file, or "" when it has none.
+func (d *Daemon) sessionTranscriptPath(harnessID, sessionID string) string {
+	reg := d.agentMatcher.registry
+	if reg == nil || harnessID == "" {
+		return ""
+	}
+	tr := reg.TranscriptFor(harnessID)
+	if tr == nil {
+		return ""
+	}
+	path := tr.SessionPath(strings.TrimSpace(sessionID))
+	if path == "" {
+		return ""
+	}
+	// The file must be there already. A hook path may name a file not yet
+	// written, since the harness writes it next. A session id names a file
+	// only when the harness has made one for it.
+	if info, err := os.Lstat(path); err != nil || !info.Mode().IsRegular() {
+		return ""
+	}
+	return path
 }
 
 // paneInSession reports whether the pane pa is in sess, by ID when pa has
@@ -1752,7 +1936,7 @@ func transcriptPathAllowed(tr *harness.Transcript, path string) (string, string)
 	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
 		return "", "the transcript is not in the harness's transcript folder"
 	}
-	if ok, _ := filepath.Match(tr.Glob, filepath.Base(resolved)); !ok {
+	if !tr.MatchesGlob(realRoot, resolved) {
 		return "", "the transcript file name does not match the harness's pattern"
 	}
 	if info, err := os.Lstat(resolved); err == nil && !info.Mode().IsRegular() {

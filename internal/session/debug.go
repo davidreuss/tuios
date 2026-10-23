@@ -251,11 +251,15 @@ func logRaw(level DebugLevel, message string) {
 }
 
 // LogError logs an error message (always logged if level >= DebugErrors).
+//
+//go:noinline
 func LogError(format string, args ...any) {
 	ProtocolLog(DebugErrors, "[ERROR] "+format, args...)
 }
 
 // LogBasic logs a basic message (connections, disconnections).
+//
+//go:noinline
 func LogBasic(format string, args ...any) {
 	ProtocolLog(DebugBasic, format, args...)
 }
@@ -365,6 +369,7 @@ var messageTypeNames = [...]string{
 	MsgDirChanged:        "DirChanged",
 	MsgSessionsChanged:   "SessionsChanged",
 	MsgPaneMark:          "PaneMark",
+	MsgPluginApprovals:   "PluginApprovals",
 }
 
 // MessageTypeName returns a human-readable name for a message type.

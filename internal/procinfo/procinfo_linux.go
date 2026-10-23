@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
@@ -68,6 +69,16 @@ func EnvVar(pid int, name string) (string, bool) {
 	return EnvironVar(data, name)
 }
 
+// Environ reads the environment process pid was started with, once, and
+// false when it cannot be read.
+func Environ(pid int) (Env, bool) {
+	data, err := os.ReadFile("/proc/" + strconv.Itoa(pid) + "/environ")
+	if err != nil {
+		return Env{}, false
+	}
+	return Env{block: data}, true
+}
+
 // Stat returns the contents of /proc/<pid>/stat, for StatField.
 func Stat(pid int) (string, bool) {
 	if pid <= 0 {
@@ -105,4 +116,63 @@ func statToken(stat string, field int) (string, bool) {
 		return "", false
 	}
 	return fields[field-3], true
+}
+
+// StartedAt returns when process pid started, as a wall clock time, and
+// false when it cannot be read. Field 22 of /proc/<pid>/stat counts clock
+// ticks since boot, and /proc/stat's btime says when boot was. A tick is
+// USER_HZ, which Linux fixes at 100 for every program.
+func StartedAt(pid int) (time.Time, bool) {
+	ticks, ok := StartTime(pid)
+	if !ok {
+		return time.Time{}, false
+	}
+	data, err := os.ReadFile("/proc/stat")
+	if err != nil {
+		return time.Time{}, false
+	}
+	defer clear(data)
+	for line := range strings.SplitSeq(string(data), "\n") {
+		rest, ok := strings.CutPrefix(line, "btime ")
+		if !ok {
+			continue
+		}
+		boot, err := strconv.ParseInt(strings.TrimSpace(rest), 10, 64)
+		if err != nil {
+			return time.Time{}, false
+		}
+		const hz = 100
+		return time.Unix(boot, 0).Add(time.Duration(ticks) * time.Second / hz), true
+	}
+	return time.Time{}, false
+}
+
+// SessionID returns the id of the process session pid is in, which is the
+// pid of the session's leader, and false when the kernel does not say.
+func SessionID(pid int) (int, bool) {
+	sid, err := unix.Getsid(pid)
+	return sid, err == nil && sid > 0
+}
+
+// SessionMembers lists the pids of the processes in session sid, read from
+// /proc. A process that exits during the scan may be listed or not.
+func SessionMembers(sid int) []int {
+	if sid <= 0 {
+		return nil
+	}
+	ents, err := os.ReadDir("/proc")
+	if err != nil {
+		return nil
+	}
+	var out []int
+	for _, e := range ents {
+		pid, err := strconv.Atoi(e.Name())
+		if err != nil || pid <= 0 {
+			continue
+		}
+		if s, ok := SessionID(pid); ok && s == sid {
+			out = append(out, pid)
+		}
+	}
+	return out
 }

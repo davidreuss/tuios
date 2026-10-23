@@ -4,14 +4,14 @@
 package input
 
 import (
-	"github.com/Gaurav-Gosain/tuios/internal/listnav"
-	"github.com/charmbracelet/x/ansi"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/Gaurav-Gosain/tuios/internal/app"
 	"github.com/Gaurav-Gosain/tuios/internal/config"
+	"github.com/Gaurav-Gosain/tuios/internal/listnav"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // HandleInput is the main input coordinator that routes messages to appropriate handlers
@@ -146,13 +146,18 @@ func HandleInput(msg tea.Msg, o *app.OS) (tea.Model, tea.Cmd) {
 		// pasted on the user's behalf, or an IME such as fcitx5 wrapped a commit in
 		// paste markers. Forward it to the focused window's PTY without touching the
 		// stored clipboard and without a "Pasted" notification (matching tmux/VTM).
-		// The reply editor takes it first: an empty paste or a path can
-		// attach an image, which is read off the update loop.
+		// A draft takes it first, the mailbox's before the Inbox reply's as
+		// for keys: an empty paste or a path can attach an image, which is
+		// read off the update loop.
+		if o.ShowAgentMail && o.AgentMail.Composing {
+			return o, o.AgentMailPaste(msg.Content)
+		}
 		if o.InboxReplyOpen() {
 			return o, o.InboxReplyPaste(msg.Content)
 		}
-		if o.ShowAgentMail && o.AgentMail.Composing {
-			return o, o.AgentMailPaste(msg.Content)
+		if o.CockpitSpawnOpen() {
+			o.CockpitSpawnPaste(msg.Content)
+			return o, nil
 		}
 		if pasteTakenByOverlay(o, msg.Content) {
 			return o, nil
@@ -195,17 +200,21 @@ func HandleInput(msg tea.Msg, o *app.OS) (tea.Model, tea.Cmd) {
 		// Only handle paste in terminal mode. The reply editor's ctrl+v
 		// answer may be the path of an image file, read off the loop; an
 		// empty answer is nothing, since the clipboard was asked already.
+		if o.ShowAgentMail && o.AgentMail.Composing {
+			if msg.Content == "" {
+				return o, nil
+			}
+			return o, o.AgentMailPaste(msg.Content)
+		}
 		if o.InboxReplyOpen() {
 			if msg.Content == "" {
 				return o, nil
 			}
 			return o, o.InboxReplyPaste(msg.Content)
 		}
-		if o.ShowAgentMail && o.AgentMail.Composing {
-			if msg.Content == "" {
-				return o, nil
-			}
-			return o, o.AgentMailPaste(msg.Content)
+		if o.CockpitSpawnOpen() {
+			o.CockpitSpawnPaste(msg.Content)
+			return o, nil
 		}
 		if pasteTakenByOverlay(o, msg.Content) {
 			return o, nil
@@ -222,7 +231,10 @@ func HandleInput(msg tea.Msg, o *app.OS) (tea.Model, tea.Cmd) {
 	// The Inbox reads a plan's text when one comes under the cursor, which
 	// any input can do. It costs a comparison when nothing needs reading.
 	if o.ShowInbox {
-		cmd = tea.Batch(cmd, o.InboxApprovalFetch(), o.InboxRecapFetch(), o.InboxAgentsTick(), o.InboxThreadFetch(), o.ReplyHistoryFetch())
+		cmd = tea.Batch(cmd, o.InboxApprovalFetch(), o.InboxRecapFetch(), o.InboxAgentsTick(), o.InboxThreadFetch(), o.ReplyHistoryFetch(), o.CockpitImagePicture(), o.CockpitSideFetch())
+	} else if o.ShowAgentMail {
+		// A mail draft reads its pane's history as the Inbox reply does.
+		cmd = tea.Batch(cmd, o.ReplyHistoryFetch())
 	}
 	// Focus landing on a pane that finished turns while the person was
 	// away has the dock say what it did. A nil check when it did not.
@@ -287,6 +299,13 @@ func pasteTakenByOverlay(o *app.OS, content string) bool {
 			if text := strings.Join(strings.Fields(content), " "); text != "" {
 				o.NavigatorSetQuery(o.NavigatorQuery() + text)
 			}
+		}
+		return true
+	}
+	// The go-to picker takes a paste as query text, on one line.
+	if o.GotoPickerOpen() {
+		if text := strings.Join(strings.Fields(content), " "); text != "" {
+			o.SetGotoPickerQuery(o.GotoPickerQuery() + text)
 		}
 		return true
 	}
@@ -496,6 +515,11 @@ func routeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	if o.ShowSessionClose {
 		return handleSessionCloseInput(msg, o)
 	}
+	// The restart dialog owns the keyboard the same way: while a restart
+	// runs, no key may reach a pane the daemon is about to take away.
+	if o.DaemonRestartOpen() {
+		return handleDaemonRestartInput(msg, o)
+	}
 
 	// Hints mode owns the keyboard while it is open: a letter is part of a
 	// label, and nothing typed while the labels are up may reach the pane or
@@ -551,6 +575,12 @@ func routeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	if o.WorktreePromptOpen() {
 		return handleWorktreePromptInput(msg, o)
 	}
+	// The plugin approval dialog opens by itself and owns every key while
+	// it is up, so no key meant for a pane answers it. See
+	// app/plugin_approval.go.
+	if o.PluginApprovalOpen() {
+		return o, o.PluginApprovalKey(msg.String(), msg.Text)
+	}
 
 	// A copy's question and the Copies panel, the same way: the rail and
 	// the dock open them, and their keys must reach them. The question is
@@ -593,7 +623,7 @@ func routeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		}
 		// Keep leader chords and workspace navigation in the window manager.
 		// Every other key belongs to the pane actually visible in the rail.
-		key := msg.String()
+		key := withoutChordText(msg).String()
 		workspaceChord := strings.HasPrefix(key, "alt+") && len(key) == len("alt+1") && key[len(key)-1] >= '1' && key[len(key)-1] <= '9'
 		if !o.PrefixActive && !isLeaderKey(msg, &o.Settings, o.HostBaseCode(msg)) && !workspaceChord {
 			if w := o.SidebarSessionWindow(); w != nil {
@@ -677,8 +707,10 @@ func routeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return HandleTerminalModeKey(msg, o)
 	}
 
-	// Check for prefix key activation in window management mode
-	if isLeaderKey(msg, &o.Settings, o.HostBaseCode(msg)) {
+	// Check for prefix key activation in window management mode. A leader
+	// the prefix_mode table binds, pressed after the leader, runs that
+	// binding through HandlePrefixCommand below.
+	if isLeaderKey(msg, &o.Settings, o.HostBaseCode(msg)) && !leaderBoundInPrefix(msg, o) {
 		return handlePrefixKey(msg, o)
 	}
 
@@ -712,6 +744,11 @@ func routeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return HandleTuiosPrefixCommand(msg, o)
 	}
 
+	// A declared menu (Ctrl+B, then the key that opens it, ...)
+	if o.Menu != "" {
+		return HandleMenuCommand(msg, o)
+	}
+
 	// Handle tape prefix commands (Ctrl+B, T, ...)
 	if o.TapePrefixActive {
 		return HandleTapePrefixCommand(msg, o)
@@ -742,6 +779,17 @@ func handleRenameMode(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return o, nil
 	case "backspace":
 		o.RenameBackspace()
+		return o, nil
+	case "ctrl+u":
+		o.RenameClear()
+		return o, nil
+	case "ctrl+c":
+		// Shell-like: ctrl+c drops the line, and on an empty line it leaves.
+		if o.RenameBuffer == "" {
+			o.EndRename()
+		} else {
+			o.RenameClear()
+		}
 		return o, nil
 	case "space":
 		// A space arrives under its key name, never as a one-character string,
@@ -785,6 +833,18 @@ func isLeaderKey(msg tea.KeyPressMsg, s *config.Settings, base rune) bool {
 		}
 	}
 	return false
+}
+
+// leaderBoundInPrefix reports whether the leader, pressed with the prefix
+// already active, has a binding of its own in the prefix_mode table. That
+// binding wins over what the leader pressed two times does by default
+// (leader_twice), so leader_key = "ctrl+j" with terminal_focus_down on
+// "ctrl+j" focuses down on ctrl+j ctrl+j (issue #866). No default and no
+// preset binds the leader there, so the binding is always the user's, and
+// without one the leader pressed two times keeps its leader_twice meaning.
+func leaderBoundInPrefix(msg tea.KeyPressMsg, o *app.OS) bool {
+	return o.PrefixActive && o.KeybindRegistry != nil &&
+		lookupAction(o, msg, o.KeybindRegistry.GetPrefixAction) != ""
 }
 
 // handlePrefixKey handles Ctrl+B prefix key activation
@@ -842,7 +902,7 @@ func handleLogViewerKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 func viewerTakesKey(msg tea.KeyPressMsg, o *app.OS) bool {
 	return !isLeaderKey(msg, &o.Settings, o.HostBaseCode(msg)) && !o.PrefixActive && !o.WorkspacePrefixActive &&
 		!o.MinimizePrefixActive && !o.TilingPrefixActive && !o.DebugPrefixActive &&
-		!o.TapePrefixActive && !o.LayoutPrefixActive && !o.TuiosPrefixActive
+		!o.TapePrefixActive && !o.LayoutPrefixActive && !o.TuiosPrefixActive && o.Menu == ""
 }
 
 // handleMessageViewKey handles a key while the message view is open. Every key

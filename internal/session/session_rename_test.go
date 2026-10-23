@@ -47,7 +47,7 @@ func TestRenameSessionChangesTheNameEverywhere(t *testing.T) {
 
 	// The state file moved with the name, so a daemon restart brings back one
 	// session called work and no session called test.
-	if _, err := os.Stat(getResurrectionPath("test")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(testStatePath("test")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("the old state file is still there: %v", err)
 	}
 	loaded, err := LoadResurrectionState("work")
@@ -134,7 +134,7 @@ func TestPersistDropsASnapshotUnderTheOldName(t *testing.T) {
 	if err := sess.persist(snap); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := os.Stat(getResurrectionPath("test")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(testStatePath("test")); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("a snapshot taken before the rename brought the old state file back: %v", err)
 	}
 }
@@ -305,10 +305,34 @@ func TestRenameRefusesASavedSessionsName(t *testing.T) {
 // for rename-session, and the person is told to restart it.
 func TestStaleDaemonErrorNamesTheRestart(t *testing.T) {
 	err := StaleDaemonError("rename-session", &VerbCallError{Code: ErrVerbUnknownVerb, Message: "unknown verb"})
-	if err == nil || !strings.Contains(err.Error(), "tuios kill-server") {
-		t.Errorf("StaleDaemonError = %v, want the kill-server restart", err)
+	if err == nil || !strings.Contains(err.Error(), "tuios restart-server") {
+		t.Errorf("StaleDaemonError = %v, want the restart-server restart", err)
 	}
 	if StaleDaemonError("no-such-verb", &VerbCallError{Code: ErrVerbUnknownVerb}) != nil {
 		t.Error("a verb this tuios does not know either was blamed on the daemon")
+	}
+}
+
+// TestFollowOwnPaneLeavesKillAndNewSession holds a security boundary: a pane's
+// own call naming a session that is gone goes to the pane's session, but
+// kill-session must never be turned into a kill of the caller's own session,
+// and new-session must make the session it names. The guard case shows the
+// same call is followed for an ordinary verb.
+func TestFollowOwnPaneLeavesKillAndNewSession(t *testing.T) {
+	d := NewDaemon(&DaemonConfig{})
+	t.Cleanup(d.manager.Shutdown)
+	sess := makeSessionWithWindow(t, d, "omega")
+	win := sess.GetState().Windows[0].ID
+	cs := &connState{}
+	cs.paneBound.Store(&win)
+	params := []byte(`{"session":"alpha","window":"` + win + `"}`)
+
+	if got := string(d.followOwnPane(cs, "set-agent-state", params)); !strings.Contains(got, `"session":"omega"`) {
+		t.Fatalf("guard: set-agent-state from the pane was not followed to omega: %s", got)
+	}
+	for _, verb := range []string{"kill-session", "new-session"} {
+		if got := string(d.followOwnPane(cs, verb, params)); got != string(params) {
+			t.Errorf("%s was rewritten to %s", verb, got)
+		}
 	}
 }

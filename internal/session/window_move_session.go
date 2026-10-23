@@ -70,6 +70,8 @@ func movableRefusal(w WindowState) string {
 		return "the pane is a scratch pane, and a scratch pane stays in its session"
 	case w.Popup:
 		return "the pane is a popup, and a popup stays in its session"
+	case w.Kind == WindowKindTML:
+		return "the pane shows a TML surface, and a surface stays in the session it was opened in"
 	case w.PTYID == "":
 		return "the pane has no process"
 	}
@@ -81,14 +83,14 @@ type paneTransfer struct {
 	win WindowState
 	pty *PTY
 
-	claim      *agentClaim
-	harnessPID int
-	subagents  *paneSubagents
-	turn       *agentTurn
-	seen       *uint64
-	hold       *agentHold
-	startDir   any
-	agentDirs  map[string]string
+	claim     *agentClaim
+	harness   harnessProc
+	subagents *paneSubagents
+	turn      *agentTurn
+	seen      *uint64
+	hold      *agentHold
+	startDir  any
+	agentDirs map[string]string
 
 	// transcript is the join the window had, made again in the destination.
 	transcript *transcriptRejoin
@@ -135,9 +137,9 @@ func (state *SessionState) LastWindowMove(windowID string) (WindowMove, bool) {
 	if state == nil {
 		return WindowMove{}, false
 	}
-	for i := len(state.WindowMoves) - 1; i >= 0; i-- {
-		if state.WindowMoves[i].Window == windowID {
-			return state.WindowMoves[i], true
+	for _, v := range slices.Backward(state.WindowMoves) {
+		if v.Window == windowID {
+			return v, true
 		}
 	}
 	return WindowMove{}, false
@@ -154,8 +156,8 @@ func sessionLabel(s *Session) string {
 
 // transcriptRejoin is a transcript join to make again.
 type transcriptRejoin struct {
-	harness, path string
-	exact         bool
+	harness, format, path, session string
+	exact                          bool
 }
 
 // releaseWindow takes a window out of the session for a move: its row, its
@@ -185,10 +187,13 @@ func (s *Session) releaseWindow(windowID, to string) (*paneTransfer, error) {
 			t.claim = &c
 			delete(s.agentClaims, id)
 		}
-		if pid, ok := s.agentHarnessPIDs[id]; ok {
-			t.harnessPID = pid
+		if h, ok := s.agentHarnessPIDs[id]; ok {
+			t.harness = h
 			delete(s.agentHarnessPIDs, id)
 		}
+		// The shared-server guard stays behind and is dropped: the window
+		// fails open in its new session until the next SessionStart.
+		delete(s.agentSharedGuards, id)
 		if sa, ok := s.agentSubagents[id]; ok {
 			t.subagents = sa
 			delete(s.agentSubagents, id)
@@ -233,7 +238,7 @@ func (s *Session) releaseWindow(windowID, to string) (*paneTransfer, error) {
 
 	s.transcripts.mu.Lock()
 	if j, ok := s.transcripts.joins[id]; ok {
-		t.transcript = &transcriptRejoin{harness: j.harness, path: j.reader.Path(), exact: j.exact}
+		t.transcript = &transcriptRejoin{harness: j.harness, format: j.format, path: j.reader.Path(), session: j.session, exact: j.exact}
 		delete(s.transcripts.joins, id)
 		s.releaseJoinLocked(j)
 	}
@@ -305,12 +310,13 @@ func (s *Session) adoptWindow(t *paneTransfer, workspace int, focus bool) (Windo
 			}
 			s.agentClaims[id] = *t.claim
 		}
-		if t.harnessPID != 0 {
+		if t.harness.pid != 0 {
 			if s.agentHarnessPIDs == nil {
-				s.agentHarnessPIDs = make(map[string]int)
+				s.agentHarnessPIDs = make(map[string]harnessProc)
 			}
-			s.agentHarnessPIDs[id] = t.harnessPID
+			s.agentHarnessPIDs[id] = t.harness
 		}
+
 		if t.subagents != nil {
 			if s.agentSubagents == nil {
 				s.agentSubagents = make(map[string]*paneSubagents)
@@ -373,7 +379,11 @@ func (s *Session) adoptWindow(t *paneTransfer, workspace int, focus bool) (Windo
 		}
 	}
 	if t.transcript != nil {
-		_ = s.JoinAgentTranscript(id, t.transcript.harness, t.transcript.path, t.transcript.exact)
+		if t.transcript.session != "" {
+			s.JoinAgentSession(id, t.transcript.harness, t.transcript.format, t.transcript.path, t.transcript.session)
+		} else {
+			_ = s.JoinAgentTranscriptAs(id, t.transcript.harness, t.transcript.format, t.transcript.path, t.transcript.exact)
+		}
 	}
 	s.stateDirty.Set()
 	return win, nil
@@ -583,11 +593,17 @@ func moveWindowHistory(src, dst *Session, windowID string) {
 	}
 	src.persistMu.Lock()
 	defer src.persistMu.Unlock()
-	from := historyPath(src.Name(), windowID)
+	from, err := historyPath(src.Name(), windowID)
+	if err != nil {
+		return
+	}
 	if _, err := os.Stat(from); err != nil {
 		return
 	}
-	to := historyPath(dst.Name(), windowID)
+	to, err := historyPath(dst.Name(), windowID)
+	if err != nil {
+		return
+	}
 	if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
 		return
 	}
@@ -688,8 +704,7 @@ func (d *Daemon) moveQueuedWindow(window, session string) {
 
 // isPaneNotMovable reports whether err is a refusal to move the pane.
 func isPaneNotMovable(err error) (string, bool) {
-	var e errPaneNotMovable
-	if errors.As(err, &e) {
+	if e, ok := errors.AsType[errPaneNotMovable](err); ok {
 		return e.why, true
 	}
 	return "", false

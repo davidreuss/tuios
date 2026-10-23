@@ -185,6 +185,7 @@ var leaderSessionRows = []menuRow{
 	{parts: []menuPart{{"prefix_session_switcher", "Sessions"}}, desc: "Sessions"},
 	{parts: []menuPart{{"prefix_workspace_switcher", "Workspaces"}}, desc: "Workspaces"},
 	{parts: []menuPart{{"choose_tree", "Find a pane"}}, desc: "Find a pane"},
+	{parts: []menuPart{{"goto_picker", "Go to anything"}}, desc: "Go to anything"},
 	{parts: []menuPart{{"prefix_close_session", "Close session"}}, desc: "Close session"},
 	{parts: []menuPart{{"toggle_scratch", "Scratch session"}}, desc: "Scratch session"},
 	{parts: []menuPart{{"last_session", "Last session"}}, desc: "Last session"},
@@ -219,9 +220,9 @@ var leaderToolRows = []menuRow{
 
 // leaderAgentRows is the leader menu's Agents section.
 var leaderAgentRows = []menuRow{
-	{parts: []menuPart{{"prefix_inbox", "Inbox"}}, desc: "Inbox"},
+	{parts: []menuPart{{"prefix_inbox", "Agents view"}}, desc: "Agents view"},
 	{parts: []menuPart{{"prefix_next_attention", "Oldest waiting"}}, desc: "Oldest waiting"},
-	{parts: []menuPart{{"prefix_mail", "Inbox: mail"}}, desc: "Inbox: mail"},
+	{parts: []menuPart{{"prefix_mail", "Mail for you"}}, desc: "Mail for you"},
 	{parts: []menuPart{{"prefix_next_finished", "Newest finished"}}, desc: "Newest finished"},
 	{parts: []menuPart{{"prefix_review", "Review changes"}}, desc: "Review changes"},
 	{parts: []menuPart{{"prefix_agents_settings", "Agents settings"}}, desc: "Agents settings"},
@@ -582,8 +583,8 @@ func KeyLabel(key string) string {
 	}
 	parts := strings.Split(key, "+")
 	// "ctrl++" is ctrl and the plus key.
-	if strings.HasSuffix(key, "++") {
-		parts = append(strings.Split(strings.TrimSuffix(key, "++"), "+"), "+")
+	if before, ok := strings.CutSuffix(key, "++"); ok {
+		parts = append(strings.Split(before, "+"), "+")
 	}
 	for i, p := range parts {
 		if name, ok := keyNames[strings.ToLower(p)]; ok {

@@ -9,6 +9,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/herdrplugin"
@@ -19,31 +20,53 @@ import (
 // result shape (src/api/schema/plugins.rs at herdrTargetVersion), so a
 // plugin or a tool that drives herdr's plugins drives tuios's the same way.
 
-// herdrPluginMethods are the methods this file answers.
-var herdrPluginMethods = map[string]func(d *Daemon, cs *connState, params json.RawMessage) (any, *herdrError){
-	"plugin.list":   (*Daemon).herdrPluginList,
-	"plugin.link":   (*Daemon).herdrPluginLink,
-	"plugin.unlink": (*Daemon).herdrPluginUnlink,
-	"plugin.enable": func(d *Daemon, cs *connState, p json.RawMessage) (any, *herdrError) {
-		return d.herdrPluginSetEnabled(cs, p, true)
-	},
-	"plugin.disable": func(d *Daemon, cs *connState, p json.RawMessage) (any, *herdrError) {
-		return d.herdrPluginSetEnabled(cs, p, false)
-	},
-	"plugin.action.list":   (*Daemon).herdrPluginActionList,
-	"plugin.action.invoke": (*Daemon).herdrPluginActionInvoke,
-	"plugin.log.list":      (*Daemon).herdrPluginLogList,
-	"plugin.pane.open":     (*Daemon).herdrPluginPaneOpen,
-	"plugin.pane.focus":    (*Daemon).herdrPluginPaneFocus,
-	"plugin.pane.close":    (*Daemon).herdrPluginPaneClose,
-	"popup.close":          (*Daemon).herdrPopupClose,
+// herdrPluginMethods returns the methods this file answers. It is built on
+// first use and not at package init, for the reason verbRegistry gives.
+func herdrPluginMethods() map[string]herdrPluginMethod {
+	herdrPluginMethodsOnce.Do(func() { herdrPluginMethodsMap = buildHerdrPluginMethods() })
+	return herdrPluginMethodsMap
+}
+
+// herdrPluginMethod answers one plugin method.
+type herdrPluginMethod = func(d *Daemon, cs *connState, params json.RawMessage) (any, *herdrError)
+
+var (
+	herdrPluginMethodsOnce sync.Once
+	herdrPluginMethodsMap  map[string]herdrPluginMethod
+)
+
+// buildHerdrPluginMethods makes the table herdrPluginMethods returns.
+func buildHerdrPluginMethods() map[string]herdrPluginMethod {
+	return map[string]herdrPluginMethod{
+		"plugin.list":   (*Daemon).herdrPluginList,
+		"plugin.link":   (*Daemon).herdrPluginLink,
+		"plugin.unlink": (*Daemon).herdrPluginUnlink,
+		"plugin.enable": func(d *Daemon, cs *connState, p json.RawMessage) (any, *herdrError) {
+			return d.herdrPluginSetEnabled(cs, p, true)
+		},
+		"plugin.disable": func(d *Daemon, cs *connState, p json.RawMessage) (any, *herdrError) {
+			return d.herdrPluginSetEnabled(cs, p, false)
+		},
+		"plugin.restart":       (*Daemon).herdrPluginRestart,
+		"plugin.approve":       (*Daemon).herdrPluginApprove,
+		"plugin.action.list":   (*Daemon).herdrPluginActionList,
+		"plugin.action.invoke": (*Daemon).herdrPluginActionInvoke,
+		"plugin.log.list":      (*Daemon).herdrPluginLogList,
+		"plugin.pane.open":     (*Daemon).herdrPluginPaneOpen,
+		"plugin.pane.focus":    (*Daemon).herdrPluginPaneFocus,
+		"plugin.pane.close":    (*Daemon).herdrPluginPaneClose,
+		"popup.close":          (*Daemon).herdrPopupClose,
+	}
 }
 
 // herdrPluginCall answers a plugin method. handled is false for any other.
 func (d *Daemon) herdrPluginCall(cs *connState, method string, params json.RawMessage) (any, *herdrError, bool) {
-	fn, ok := herdrPluginMethods[method]
+	fn, ok := herdrPluginMethods()[method]
 	if !ok {
 		return nil, nil, false
+	}
+	if herr := d.herdrAllowed(cs, method); herr != nil {
+		return nil, herr, true
 	}
 	if d.plugins == nil {
 		return nil, herdrErr("unsupported", "this tuios daemon runs no plugins"), true
@@ -399,25 +422,17 @@ func (d *Daemon) findPluginAction(pluginID, actionID string) (*herdrplugin.Entry
 		return e, a, nil
 	}
 	actionID = strings.TrimSpace(actionID)
-	var found []*herdrplugin.Entry
-	var acts []herdrplugin.Action
-	entries := d.plugins.entries(true)
-	for i := range entries {
-		e := &entries[i]
-		if e.Plugin == nil || e.Err != nil {
-			continue
-		}
-		for _, a := range e.Plugin.Actions {
-			if a.ID == actionID || e.ID+"."+a.ID == actionID {
-				found, acts = append(found, e), append(acts, a)
-			}
-		}
-	}
+	// An enabled plugin wins over a disabled one with the same action id.
+	found := herdrplugin.FindAction(d.plugins.entries(true), actionID)
 	switch len(found) {
 	case 0:
 		return nil, herdrplugin.Action{}, herdrErr("plugin_action_not_found", "plugin action not found")
 	case 1:
-		return found[0], acts[0], nil
+		for _, a := range found[0].Plugin.Actions {
+			if a.ID == actionID || found[0].ID+"."+a.ID == actionID {
+				return found[0], a, nil
+			}
+		}
 	}
 	return nil, herdrplugin.Action{}, herdrErr("ambiguous_plugin_action", "plugin action id matches more than one action; include plugin_id")
 }
@@ -503,7 +518,7 @@ func (d *Daemon) herdrPluginLogList(cs *connState, params json.RawMessage) (any,
 var pluginPaneProtected = []string{
 	"HERDR_SOCKET_PATH", "HERDR_ENV", "HERDR_PLUGIN_ID", "HERDR_PLUGIN_ROOT",
 	"HERDR_PLUGIN_CONFIG_DIR", "HERDR_PLUGIN_STATE_DIR", "HERDR_PLUGIN_ENTRYPOINT_ID",
-	"HERDR_PLUGIN_CONTEXT_JSON", "HERDR_BIN_PATH",
+	"HERDR_PLUGIN_CONTEXT_JSON", "HERDR_BIN_PATH", "TUIOS_PLUGIN_ID", "TUIOS_PLUGIN_TOKEN",
 }
 
 // overlaySize is the popup size of an overlay pane: herdr draws an overlay
@@ -635,7 +650,14 @@ func (d *Daemon) herdrPluginPaneOpen(cs *connState, params json.RawMessage) (any
 		}
 	}
 	env = append(env, "PWD="+cwd)
-	env = append(env, d.plugins.baseEnv(e.Plugin, dirs)...)
+	// A plugin's pane is held by its pane grants, which are no more than
+	// the plugin's. It gets no plugin token: a tuios in it that talks to
+	// another daemon would present a token that daemon cannot prove.
+	for _, kv := range d.plugins.baseEnv(e.Plugin, dirs) {
+		if k, _, _ := strings.Cut(kv, "="); k != "TUIOS_PLUGIN_ID" && k != "TUIOS_PLUGIN_TOKEN" {
+			env = append(env, kv)
+		}
+	}
 	env = append(env, "HERDR_PLUGIN_ENTRYPOINT_ID="+pane.ID, "HERDR_PLUGIN_CONTEXT_JSON="+string(ctxJSON))
 
 	argv := slices.Clone(pane.Command)
@@ -647,6 +669,16 @@ func (d *Daemon) herdrPluginPaneOpen(cs *connState, params json.RawMessage) (any
 	grants, verr := d.launchGrants(cs, nil)
 	if verr != nil {
 		return nil, herdrFromVerb(verr, "plugin_pane_open_failed")
+	}
+	if e.Plugin.Format == herdrplugin.FormatTuios {
+		// A native plugin's pane holds no more than the plugin: what the
+		// opener could give it, cut to the plugin's grants.
+		g := d.manager.grants.defaults()
+		if grants != nil {
+			g = *grants
+		}
+		g = g.expand() & grantsFromNames(e.Plugin.Held).expand()
+		grants = &g
 	}
 	focus := in.Focus || popup || placement == herdrplugin.PlacementZoomed
 	opts := NewWindowOptions{
@@ -685,7 +717,7 @@ func (d *Daemon) herdrPluginPaneOpen(cs *connState, params json.RawMessage) (any
 	}
 	d.notePaneCreator(cs, win.ID)
 	d.plugins.mu.Lock()
-	d.plugins.panes[win.ID] = pluginPane{pluginID: e.ID, entrypoint: pane.ID}
+	d.plugins.panes[win.ID] = pluginPane{pluginID: e.ID, entrypoint: pane.ID, root: e.Plugin.PluginRoot}
 	d.plugins.mu.Unlock()
 	if win.Unplaced && d.findTUIClient(sess.ID) != nil {
 		d.awaitPlacement(sess, win.ID, win.PTYID, newWindowPlaceWait)

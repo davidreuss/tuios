@@ -290,7 +290,7 @@ func TestTheAgentStateHookObeysTheAlertPolicy(t *testing.T) {
 		// timer. suppress_focused off, because the pane under test is the
 		// focused one and this is not the test for that rule.
 		AgentAlerts: &config.AgentAlertsConfig{
-			SettleSeconds:   intPtr(0),
+			SettleSeconds:   new(0),
 			SuppressFocused: &off,
 		},
 	})
@@ -329,12 +329,13 @@ func TestTheAgentStateHookObeysTheAlertPolicy(t *testing.T) {
 }
 
 // TestTheClientOnlyEventsAreNotFiredByTheDaemon names the line. Attach, detach,
-// resize and layout describe one client's terminal, so the daemon must not
-// claim them; firing them here would mean three attaches for three clients and
+// resize, layout and theme describe one client's terminal, so the daemon must
+// not claim them; firing them here would mean three attaches for three clients and
 // a command running on the wrong machine.
 func TestTheClientOnlyEventsAreNotFiredByTheDaemon(t *testing.T) {
 	clientOnly := []hooks.Event{
 		hooks.AfterAttach, hooks.AfterDetach, hooks.AfterResize, hooks.AfterLayoutChange,
+		hooks.AfterThemeChange,
 	}
 	sessionSide := SessionSideHookEvents()
 	for _, e := range clientOnly {
@@ -351,8 +352,6 @@ func TestTheClientOnlyEventsAreNotFiredByTheDaemon(t *testing.T) {
 		}
 	}
 }
-
-func intPtr(v int) *int { return &v }
 
 // waitUntilHookTest polls until cond holds or the test fails.
 func waitUntilHookTest(t *testing.T, what string, cond func() bool) {

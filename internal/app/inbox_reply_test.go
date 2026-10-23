@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -59,9 +60,9 @@ func (q *queueFake) call(verb string, params map[string]any, _ time.Duration) (j
 
 // last is the last call of verb.
 func (q *queueFake) last(verb string) (map[string]any, bool) {
-	for i := len(q.calls) - 1; i >= 0; i-- {
-		if q.calls[i].verb == verb {
-			return q.calls[i].params, true
+	for _, v := range slices.Backward(q.calls) {
+		if v.verb == verb {
+			return v.params, true
 		}
 	}
 	return nil, false
@@ -150,7 +151,7 @@ func TestReplyOnAnOlderDaemon(t *testing.T) {
 	m.InboxReply()
 	m.InboxReplyType("more")
 	runMsg(t, m, m.InboxReplySend())
-	if !strings.Contains(lastNotice(m).Message, "tuios kill-server") {
+	if msg := lastNotice(m).Message; !strings.Contains(msg, "Restart the daemon") && !strings.Contains(msg, "tuios restart-server") {
 		t.Errorf("the dock said %q", lastNotice(m).Message)
 	}
 	m.InboxReply()
@@ -160,7 +161,7 @@ func TestReplyOnAnOlderDaemon(t *testing.T) {
 	if _, handled := m.SidebarAgentReply("here", "w-2"); handled {
 		t.Error("the rail's r did not fall through to rename")
 	}
-	for _, h := range m.inboxRowHints(done, true) {
+	for _, h := range m.cockpitHints(time.Now()) {
 		if h.Label == "reply" {
 			t.Error("the footer offers reply on a daemon with no queue")
 		}

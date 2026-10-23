@@ -25,13 +25,53 @@ import (
 // session state without coming here, so only the client that made the
 // switch opens the pane, and the session gets one.
 func (m *OS) SwitchToWorkspace(workspace int) {
+	asked := workspace
+	workspace = m.newWorkspaceSlot(workspace)
 	from := m.CurrentWorkspace
 	var fromPane *terminal.Window
 	if fw := m.GetFocusedWindow(); fw != nil && fw.Workspace == from && !fw.IsScratch {
 		fromPane = fw
 	}
 	m.switchToWorkspace(workspace, -1)
+	// A switch to a new workspace from the empty one on screen stays on it,
+	// and is still a switch to a new workspace: it opens the pane one opens.
+	if asked != from && workspace == from {
+		from = 0
+	}
 	m.openPaneOnEmptyWorkspace(from, workspace, fromPane)
+}
+
+// workspaceTabKey is the tab key of workspace ws as this client last adopted
+// the session's keys: the number itself in a session never renumbered.
+func (m *OS) workspaceTabKey(ws int) int {
+	if k, ok := m.workspaceTabKeys[ws]; ok {
+		return k
+	}
+	return ws
+}
+
+// newWorkspaceSlot is where a switch to workspace lands. A daemon session
+// numbers its workspaces from 1 (see the session's noteWorkspacesLocked), so a
+// switch to a number past the last workspace that holds a pane opens the one
+// after it instead: opt+5 with three workspaces opens workspace 4, and opt+6
+// from that empty 4 stays on it, since the empty workspace on screen is the
+// new one, unless a pane is on its way to it. Landing there at once, rather
+// than on 5 until the daemon renumbers it, keeps a pane opened right after the
+// switch on the workspace the user sees.
+func (m *OS) newWorkspaceSlot(workspace int) int {
+	if !m.IsDaemonSession || session.IsScratchWorkspace(workspace) {
+		return workspace
+	}
+	last := 0
+	for ws := 1; ws <= m.NumWorkspaces; ws++ {
+		// A pane asked for and on its way counts as there: opt+2 opt+3 with
+		// new_window_when_empty opens both.
+		at, asked := m.paneRequests[ws]
+		if m.GetWorkspaceWindowCount(ws) > 0 || (asked && time.Since(at) < paneRequestTimeout) {
+			last = ws
+		}
+	}
+	return min(workspace, last+1)
 }
 
 // NextWorkspace switches to the next workspace that holds at least one
@@ -125,7 +165,7 @@ func (m *OS) openPaneOnEmptyWorkspace(from, workspace int, fromPane *terminal.Wi
 		// does not hold back this client's pushes the way addDaemonWindow's
 		// intent does: a push that leaves the pane out is reconciled by the
 		// daemon, and holding one back would lose the next switch.
-		if err := m.DaemonClient.SendNewWindowFrom(workspace, cwdFrom, sshFrom); err != nil {
+		if err := m.DaemonClient.SendNewWindowFrom(workspace, m.workspaceTabKey(workspace), cwdFrom, sshFrom); err != nil {
 			m.LogError("Failed to ask the daemon for a pane on workspace %d: %v", workspace, err)
 			return
 		}
@@ -261,7 +301,12 @@ func (m *OS) switchToWorkspaceHeld(workspace, focusTarget int) {
 	// Looking at a workspace clears its dock marks now, not at the next pane
 	// output, which an idle workspace may never send.
 	m.clearViewedWorkspaceMarks()
+	// A switch can change the layout mode: the workspace being shown chose a
+	// different one. The change is announced once the switch has landed, beside
+	// the workspace-switch hook below.
+	layoutModeBefore := m.LayoutModeName()
 	m.RestoreWorkspaceLayout(workspace) // Restore layout after switching
+	layoutModeChanged := m.LayoutModeName() != layoutModeBefore
 
 	// A caller-supplied target wins: focus exactly it, so the switch does not fire
 	// the focus hooks for a default window the caller is about to override.
@@ -353,6 +398,9 @@ func (m *OS) switchToWorkspaceHeld(workspace, focusTarget int) {
 	// hears of a scratch workspace.
 	if session.IsScratchWorkspace(workspace) || session.IsScratchWorkspace(oldWorkspace) {
 		return
+	}
+	if layoutModeChanged {
+		m.FireLayoutChanged()
 	}
 	focusedID, focusedName := "", ""
 	if w := m.GetFocusedWindow(); w != nil {

@@ -166,6 +166,18 @@ var verbCapabilities = map[string][]string{
 	"new-window":   {config.LinkAllowOpen},
 	"split-window": {config.LinkAllowOpen},
 	"popup":        {config.LinkAllowOpen},
+	// A link needs every relay capability for the TML verbs, which the
+	// default policy does not give: a surface names its owner on its frame,
+	// and a surface opened from another machine would need that machine's
+	// name there. tml-input acts as the person on this machine.
+	"tml-open":     {capRelay},
+	"tml-close":    {capRelay},
+	"tml-input":    {capRelay},
+	"tml-patch":    {capRelay},
+	"tml-replace":  {capRelay},
+	"tml-get":      {capRelay},
+	"tml-list":     {capRelay},
+	"tml-validate": nil,
 	"open-pane":    {config.LinkAllowOpen},
 	"resize-pane":  {config.LinkAllowOpen},
 	"close-pane":   {config.LinkAllowOpen},
@@ -254,13 +266,15 @@ var verbCapabilities = map[string][]string{
 	// not, as bundle-worktree does. verify-fan opens a window and runs a
 	// command in it, so it needs open and write. mark-attention is the
 	// person's act, like dismiss-attention.
-	"compare-fan":    {config.LinkAllowList},
-	"agent-activity": {config.LinkAllowList},
-	"list-queued":    {config.LinkAllowList},
-	"get-approval":   {config.LinkAllowList},
-	"review-diff":    {config.LinkAllowWrite},
-	"review-note":    {config.LinkAllowWrite},
-	"send-review":    {config.LinkAllowWrite},
+	"compare-fan":     {config.LinkAllowList},
+	"agent-activity":  {config.LinkAllowList},
+	"list-queued":     {config.LinkAllowList},
+	"get-approval":    {config.LinkAllowList},
+	"review-diff":     {config.LinkAllowWrite},
+	"review-note":     {config.LinkAllowWrite},
+	"set-fan-verdict": {config.LinkAllowWrite},
+	"judge-fan":       {config.LinkAllowOpen, config.LinkAllowWrite},
+	"send-review":     {config.LinkAllowWrite},
 	// review-stage writes the index, as a commit does.
 	"review-stage":   {config.LinkAllowWrite},
 	"queue-prompt":   {config.LinkAllowWrite},

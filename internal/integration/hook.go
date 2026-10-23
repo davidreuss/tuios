@@ -136,10 +136,15 @@ type Report struct {
 	// State is empty, without SessionOnly, for a report that is its Activity
 	// alone, a report-agent-activity call: a subagent starting or stopping,
 	// which says nothing about what the pane's own agent is doing.
-	State          string `json:"state,omitempty"`
-	Kind           string `json:"kind,omitempty"`
-	Message        string `json:"message,omitempty"`
-	SessionID      string `json:"agent_session_id,omitempty"`
+	State     string `json:"state,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Message   string `json:"message,omitempty"`
+	SessionID string `json:"agent_session_id,omitempty"`
+	// SessionStart marks the report of a conversation starting or resuming.
+	// For a harness that runs every conversation from one server process,
+	// it is the only report that lets a different conversation take a pane
+	// over. See Manifest.SharedServer in internal/harness.
+	SessionStart   bool   `json:"session_start,omitempty"`
 	TranscriptPath string `json:"transcript_path,omitempty"`
 	// Cwd is the folder the harness names in the hook payload. The daemon
 	// keeps the first one of a session as the agent's start folder.
@@ -416,6 +421,9 @@ const maxHintSession = 64
 // type: a harness that changes a field's type costs that field, not the hook.
 type fields map[string]any
 
+// str is the string at key, or "" when it is missing or not a string.
+//
+//go:noinline
 func (f fields) str(key string) string {
 	if v, ok := f[key].(string); ok {
 		return v
@@ -441,6 +449,8 @@ func eventName(in Input, p fields) string {
 }
 
 // first is the first of keys holding a non-empty string.
+//
+//go:noinline
 func (f fields) first(keys ...string) string {
 	for _, k := range keys {
 		if v := f.str(k); v != "" {

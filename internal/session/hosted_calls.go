@@ -386,31 +386,8 @@ func (d *Daemon) callerInHostedPane(cs *connState, hp *hostedPane) bool {
 	if cs == nil || cs.peerPID <= 0 || hp.cmd == nil || hp.cmd.Process == nil {
 		return false
 	}
-	root := hp.cmd.Process.Pid
-	pid := cs.peerPID
-	if pid == root {
-		return true
-	}
-	ppid, tty, ok := readProcLineage(pid)
-	if !ok {
-		return false
-	}
-	if tty != 0 {
-		if _, rootTTY, ok := readProcLineage(root); ok && rootTTY == tty {
-			return true
-		}
-	}
-	for depth := 0; depth < paneOriginMaxDepth && ppid > 1; depth++ {
-		if ppid == root {
-			return true
-		}
-		next, _, ok := readProcLineage(ppid)
-		if !ok {
-			return false
-		}
-		ppid = next
-	}
-	return false
+	in, _ := processInPane(cs.peerPID, hp.cmd.Process.Pid)
+	return in
 }
 
 // forwardHostedCall sends a call that names a hosted pane to the machine that
@@ -616,7 +593,7 @@ func (d *Daemon) runHostedCall(s *Session, windowID, host, verb string, params j
 	if verr := d.agentsOffRefusal(verb, params); verr != nil {
 		return nil, verr
 	}
-	entry, ok := verbRegistry[verb]
+	entry, ok := verbRegistry()[verb]
 	if !ok {
 		return nil, newVerbError(ErrVerbUnknownVerb, "unknown verb "+echoName(verb))
 	}
@@ -665,7 +642,7 @@ func (d *Daemon) runHostedCall(s *Session, windowID, host, verb string, params j
 	if verr := checkParamNames(verb, entry, raw); verr != nil {
 		return nil, verr
 	}
-	cs := &connState{clientID: "hosted:" + host, done: make(chan struct{}), paneOnly: true, hostedEnded: ended}
+	cs := &connState{clientID: "hosted:" + host, done: make(chan struct{}), paneOnly: true, hostedEnded: ended, hostedWindow: windowID}
 	return entry.handler(d, cs, raw)
 }
 

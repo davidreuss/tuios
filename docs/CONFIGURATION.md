@@ -556,6 +556,18 @@ tuios does not draw kitty graphics images as block characters yet. On a
 terminal without graphics, a program that only uses kitty graphics uses its
 own text output.
 
+## Mermaid diagram colours
+
+`tuios mermaid` builds its colours from your tuios theme. `[mermaid] theme`
+picks one of the named diagram themes instead. The `--theme` flag wins over it.
+
+```toml
+[mermaid]
+theme = "flexoki"   # tuios (the default), pele, flexoki, flexoki-dark, nord,
+                    # everforest, gruvbox, rose-pine, catppuccin-mocha,
+                    # catppuccin-latte, tokyo-night, dracula, solarized-light, kanagawa
+```
+
 ## CharmTone themes
 
 tuios has two built-in themes made from
@@ -587,8 +599,9 @@ colours too.
 
 When you switch the Omarchy theme, tuios changes its colours at the same
 moment as your terminal. You do not restart tuios and you do not press a key.
-A program in a pane that turned on mode 2031 gets a light or dark report when
-the theme changes between light and dark. tuios sends no SIGWINCH.
+A program in a pane that turned on mode 2031 gets a light or dark report each
+time the theme changes. tuios sends no SIGWINCH. See
+[Programs That Follow the Theme](THEMES.md#programs-that-follow-the-theme).
 On a machine without Omarchy, tuios watches nothing.
 
 | `appearance.theme` | On a machine with Omarchy | On a machine without Omarchy |
@@ -803,6 +816,31 @@ Use only a command that takes an argv and runs it as an argv. Do not use a
 command that joins its arguments into a shell line, such as `swaymsg exec --`
 or `hyprctl dispatch exec`. With such a command, the text of a desktop entry
 becomes shell code. Any installed package can write a desktop entry.
+
+## Workspace numbers
+
+A workspace's number is its position. Moving a workspace with
+`move_workspace_left` or `move_workspace_right`, or dragging its tab in the
+dock, renumbers it. A workspace exists while it holds a pane or is on screen.
+When a workspace that held a pane stops existing, because its last pane
+closed or moved away and it is not on screen, it loses its name.
+
+The numbers close up only when you change something: close a pane, move a
+pane to another workspace, close a workspace or move one. Then every
+workspace above an empty place moves down one: closing workspace 2 of 1, 2
+and 3 leaves 1 and 2. A pane whose program exits on its own (a command
+window with `close_on_exit`, a `tuios xpanes` run, an agent finishing)
+leaves the numbers alone, so a script or agent that holds a workspace number
+still names the same workspace. Its place stays empty until your next close
+or move closes it up. Typing `exit` in a pane's shell is a close. An empty workspace you only looked at goes without
+moving anything.
+
+`Alt+N` with a number past the last workspace that holds a pane opens the
+next one: with three workspaces, `Alt+5` opens workspace 4. When the
+workspace on screen is empty, it is the new one, and `Alt+N` to an unused
+number stays on it. A pane put directly on a higher number, with
+`tuios new-window --workspace 7` or `send_to_workspace_7`, keeps that number
+until the numbers below it close up.
 
 ## When a workspace becomes empty
 
@@ -1020,7 +1058,10 @@ dock_mode_icon_tiling = ""
 - The pill adds one space on each side of the icon. You do not need to add
   spaces.
 - While tiling is on, the pill also shows the next split direction, `V` or
-  `H`.
+  `H`. Set `appearance.dock_mode_split_letter = false` to show the tiling icon
+  alone. With the default icons, the pill then has the same width as the pill
+  of the leader key, so the workspace tabs do not move when you press the
+  leader key.
 
 To remove the whole mode pill, remove `"mode"` from the `left` list in the
 `[dock]` table. See [The dock's components](#the-docks-components).
@@ -1065,6 +1106,20 @@ A dock too narrow for even one pill keeps the current workspace's tab, cut to
 whatever room is left, so the workspaces always have something to click. You
 can also set it on the settings page, in the Appearance section. The change
 applies at once.
+
+## Workspace name on hover
+
+`appearance.dock_workspace_tooltip` shows the workspace name above a pill
+when you hover it. The name shows when the pill cuts the name short. It also
+shows when `appearance.dock_workspace_tab_format` has no `{name}`, for
+example with number-only tabs. A workspace with no name shows its number,
+but only when the tab format has no `{index}`. The option is on by default.
+
+```toml
+[appearance]
+dock_workspace_tab_format = "{index}"
+dock_workspace_tooltip = true
+```
 
 ## Compact dock
 
@@ -1337,6 +1392,9 @@ bold, and draws the others in dim text on the bar's own ground, so it still
 shows where you are. A value that is not a colour is ignored, with a
 warning, as if it were unset.
 Besides `{index}` and `{name}`, the tab format takes `{icon}` and `{zoom}`.
+`{index}` is the workspace's number, which is its position: dragging a tab to
+another place, or moving the workspace with `move_workspace_left` and
+`move_workspace_right`, renumbers it, and `Alt+N` goes to it by its new number.
 The flat style shows even a lone workspace and drops the `+` tab unless
 `show_add` is on. With no `[dock.tabs]` table the strip is unchanged.
 
@@ -1729,7 +1787,7 @@ token_env = "TUIOS_HOOK_TOKEN"              # optional, sent as a bearer token
 | Key | Default | What it does |
 | --- | --- | --- |
 | `enabled` | `true` | Turns every notification off when `false`. Nothing is sent without a provider. |
-| `web_url` | empty | The address of tuios-web. Each notification links to `web_url/inbox?item=ID`, which opens the Inbox on the item. See [WEB.md](WEB.md#open-the-inbox-from-a-notification). |
+| `web_url` | empty | The address of tuios-web. Each notification links to `web_url/inbox?item=ID`, which opens the agents view on the item. See [WEB.md](WEB.md#open-the-agents-view-from-a-notification). |
 | `content` | `summary` | `summary` sends the kind, the pane name and the one line the Inbox shows. `title` sends only the kind and the session. |
 | `quiet_active_seconds` | `120` | Holds a notification while you typed into a pane at an attached client in this many seconds. When you stay away that long and the item is still open, tuios sends it. `0` sends at once. |
 | `cooldown_seconds` | `60` | The shortest time between two notifications for the same pane and kind. |
@@ -1906,9 +1964,13 @@ enabled = ["example.notes"]          # the ids of the plugins that run
 dirs = ["~/src/my-herdr-plugin"]     # more plugin folders, or manifests
 ```
 
-tuios also finds plugins in `$XDG_CONFIG_HOME/tuios/plugins/<folder>/` and in
-herdr's own `plugins.json` and managed checkouts. To find a plugin runs
-nothing. A plugin runs only when its id is in `enabled`.
+tuios also finds plugins in `$XDG_CONFIG_HOME/tuios/plugins/<folder>/`, in
+`plugins.lock`, and in herdr's own `plugins.json` and managed checkouts. To
+find a plugin runs nothing. A plugin runs only when its id is in `enabled`.
+
+`tuios plugins install SOURCE` writes `plugins.lock` beside `config.toml`.
+It pins each installed plugin to one commit. Keep the file with your config,
+and run `tuios plugins install` on a new machine to get the same commits.
 
 An enabled plugin runs its commands with your rights, outside every pane.
 Enable only plugins that you trust.
@@ -1920,6 +1982,7 @@ Use the commands to change the table. They change only the `enabled` or
 tuios plugins enable example.notes
 tuios plugins disable example.notes
 tuios plugins link ~/src/my-herdr-plugin
+tuios plugins install owner/repo        # also adds the id to enabled
 ```
 
 You must run them from a terminal outside tuios. A change to the file that
@@ -1983,7 +2046,12 @@ max_untracked_mb = 50
   the rules. `panes_may_allow` lets a pane holding the `respond` grant allow a
   risky call; it is off, so only you can. The shipped rules are listed under
   [Risk rules](AGENT_STATE.md#risk-rules). They are a speed bump, not a
-  sandbox.
+  sandbox. The daemon reads the risk rules again when the file changes. A
+  change that adds a rule applies at once. A change that removes a rule, or
+  sets `panes_may_allow`, waits, because a process in a pane can write
+  config.toml. The rules in force stay, and panes may not allow a risky call.
+  Run `tuios config apply` from a terminal outside tuios to apply the change,
+  or restart the daemon. Until then the Inbox shows that a change waits.
 - `[agents.recap]` is the summary of what an agent did while you were away:
   `mode` says where it is shown (`toast` in the dock when you come back to the
   pane, and in the Inbox; `inbox` only in the Inbox; `off` only in
@@ -2210,7 +2278,8 @@ widens `allow`, waits for `tuios config apply`.
 
 **Where a link may read: `files_read_roots`.** Unset, a machine with `files`
 reads any file you can read, apart from the read deny list: keys, credentials,
-keyrings, shell histories, browser profiles, `/proc` and tuios's own state. A
+shell start files, `~/.gitconfig`, keyrings, shell histories, browser profiles,
+`/proc` and tuios's own state. A
 deny list can never name every secret on a machine. Set `files_read_roots` to
 hold reads to the folders you name, plus the folders the machine may write.
 That is the stronger choice:

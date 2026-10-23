@@ -7,6 +7,27 @@ below. Two of them are **not** caught here; that is written down rather than
 papered over, because a suite whose real coverage is unknown is worse than no
 suite.
 
+## Sidebar-created worktrees apply startup tiling
+
+`TestRailRightClickMakesAWorktree` drives the repository row's real right-click
+menu and worktree dialog. It checks the newly named session, not the session
+left behind: its tiling flag, configured layout mode, first pane's height,
+and a second daemon-created pane joining the layout without overlap. BSP,
+master-stack and scrolling are covered; an explicit `startup.tiled = false`
+case must remain floating.
+
+Before adding the `applyStartupToUnarranged` call to `handleWorktreeCreated`,
+the BSP case was run against a binary built from `50972f48`. It failed with
+`custom is "floating" with 1 windows, want "tiling" from [startup] tiled`.
+With the call wired in, all four cases pass, including three repeated runs.
+The related worktree-refusal, session-switcher create, and fresh/detached
+startup-tiling tests pass too.
+
+Repeat with `TUIOS_E2E=1 TUIOS_E2E_BIN=/path/to/tuios go test -count=1
+-run '^TestRailRightClickMakesAWorktree$' -v .` from `e2e/tui`. Setting
+`TUIOS_E2E_FRAMES` to an existing directory saves plain and styled frames
+of the created session and its two tiled panes for each layout.
+
 ## PR #626: a rail must not resize a shared session
 
 `TestSidebarSessionDoesNotShrinkAnotherViewer` attaches a 120x40 ordinary
@@ -630,7 +651,7 @@ a working negative control look like a broken one for half an hour.
 | The rail learned about another session's agent from the 3 second listing poll while the dock said it at once | n/a, injected | `foreignAgentRefreshCmd` in `internal/app/inbox.go` returns nil | `TestRailMarksAForeignAgentWhenTheDockDoes` ("the rail did not mark e2e-ask-a within 1.2s of its agent asking"), 3 of 3 runs | **caught** |
 | A straight box-drawing line in a capture was two arms meeting mid-cell, so every row of a border had a notch | n/a, the build before the fix | `drawArms` in `shot/boxdraw.go` without the one-rect case for two equal arms on one axis | `TestScreenshotDrawsAStraightBorderWithoutNotches` ("the stroke at x=8 loses ink at y=16: 417 against 556") | **caught** |
 | On a light theme the rail and the dock wrote the dark ramp's near-white inks on the theme's near-white ground | n/a, injected | `GroundUI` in `internal/theme/ui.go` returns `UI()` unchanged | `TestLightThemeRailAndDockAreReadable` (session names and the dock notice at 1.09:1 against a 4.5:1 floor) | **caught** |
-| An Inbox that opened empty and then filled kept the empty state's top, so the full list sat on the bottom edge | n/a, injected | `overlayAnchorY` in `internal/app/overlay_hit.go` returns the held top whenever the screen height is unchanged | `TestInboxThatFillsAfterOpeningIsCentred` ("13 rows above it and 1 below") | **caught** |
+| An Inbox that opened empty and then filled kept the empty state's top, so the full list sat on the bottom edge | n/a, injected | `overlayAnchorY` in `internal/app/overlay_hit.go` returns the held top whenever the screen height is unchanged | `TestInboxThatFillsAfterOpeningIsCentred` ("13 rows above it and 1 below") | **caught**. Retired with the panel: the agents view fills the screen and has no anchor |
 | The review footer kept a margin on its left only, so a key strip that fitted to the cell ran into the frame | n/a, injected | `reviewHints` in `internal/app/render_review.go` fits against `width-1` | `TestReviewFooterKeepsItsRightMargin` (footer ends "esc close│") | **caught** |
 | The review's "too narrow for two columns" line stayed over the unified view it had recommended | n/a, injected | the `statusID` reset in `ReviewToggleSplit` disabled | `TestReviewNarrowSplitNoticeGoesWithTheSplit` (still on screen 2s after the second s) | **caught** |
 | A panel wider than the panes' columns covered all of the rail but a column or two, leaving fragments of its rows down the panel's edge | n/a, injected | `panelCenterX` in `internal/app/overlay_hit.go` centres on the screen alone | `TestAPanelWiderThanThePanesCoversTheWholeRail` (row 2 ends in the rail's ground) | **caught** |
@@ -761,6 +782,7 @@ a working negative control look like a broken one for half an hour.
 | `pane resize` never reaches the client that owns the layout | n/a, injected, cuts the wiring | rename `case "resize_window":` in `internal/app/update.go` | `TestHerdrFrontResize` ("pane resize --direction left exited 1") | **caught** |
 | A read-only pane moves a border | n/a, injected | the `herdrAdmit(cs, "set-layout", ...)` check in `herdrPaneResize` passes every caller | `TestHerdrFrontResize` ("pane resize from a read-only pane: exit 0") | **caught** |
 | `pane move` unanswered | n/a, injected, cuts the wiring | drop `pane.move` from `herdrMethods` | `TestHerdrFrontReloadMoveRename` ("pane move --new-tab exited 1") | **caught** |
+| A herdr plugin's command, outside every pane, could not report for a pane (clauth, herdr-mirror) | n/a, the base build | `herdr_compat.go` as on main, where `herdrPane` refuses a caller in no pane | `TestHerdrSocketAPI` ("pane.report_agent: forbidden: the caller runs in no pane of this tuios") | **caught** |
 | Workspace metadata is taken and never shown | n/a, injected, cuts the call site | `Tokens: nil` in place of `d.herdrWorkspaceMeta.tokens(...)` in `addHerdrSession` | `TestHerdrFrontReloadMoveRename` ("the workspace's topic token is <nil>") | **caught** |
 | An older `seq` overwrites a workspace token | n/a, injected | the seq check in `herdrWorkspaceReportMetadata` never drops a report | `TestHerdrFrontReloadMoveRename` ("the workspace's topic token is older") | **caught** |
 | `terminal title set` never reaches the client | n/a, injected, cuts the wiring | rename `case "set_client_title":` in `internal/app/update.go` | `TestHerdrFrontReloadMoveRename` ("terminal title set exited 1") | **caught** |
@@ -1086,7 +1108,7 @@ switch, and against this branch with one call site cut at a time.
 | Typing into a pane the caller opened | `typingRefusal`: the `offTypingAllowed` term cut | `TestAgentsOffTmuxShimTypesIntoItsOwnPane` (the shim's send-keys is refused) | **caught** |
 | The switch is the person's | `verbSetOption`: the pane check made `if false` | `TestAgentsSwitchIsThePersons` (the pane's set-config exits 0) | **caught** |
 | This machine's switch on a call to another | `VerbClient.CallWithTimeout`: the `HostCallGuard` check made `if false` | `TestAgentsOffHereRefusesACallToAnotherMachine` (list-agents on build:far succeeds) | **caught** |
-| Agent keys in the help | `HelpCategories`: the `withoutAgentHelp` call cut | `TestAgentsOffShowsNoAgentRow/off` (the help search finds "Open the Inbox on its mail") | **caught** |
+| Agent keys in the help | `HelpCategories`: the `withoutAgentHelp` call cut | `TestAgentsOffShowsNoAgentRow/off` (the help search finds "Open the agents view on the mail for you") | **caught** |
 | Another machine's agent marks | `withHostGroups`: the `clearAgentMarks` call cut | `TestAgentsOffHidesAnotherMachinesAgentMarks` (the mark stays on build's row) | **caught** |
 | get-config reads the switch | `verbGetOption`: the `agents.enabled` branch cut | `TestAgentsOffGetConfigSaysOff` (prints `true` with source `default` while every agent verb is refused) | **caught** |
 
@@ -1531,6 +1553,12 @@ person enables it.
 | The plugin rows in the palette | `rebuildPaletteItems`: the `pluginPaletteItems` call cut | `TestHerdrPluginPalette` ("the palette never listed the plugin action") | **caught** |
 | A plugin that is off has no palette row | `pluginPaletteItems`: `!e.Runnable()` made `e.Plugin == nil` | `TestHerdrPluginPalette` ("the palette offers an action of a plugin that is off") | **caught** |
 | The grant check on the plugin log | `herdrPluginLogList`: the admin check never refuses | `TestHerdrPluginActions` ("plugin log from a read-only pane: exit 0" with the action's output) | **caught** |
+| A command key of type `plugin_action` | `RunCommandBinding`: the `runPluginActionKey` call cut | `TestHerdrPluginPalette` (run-1.env never holds the key's run) | **caught** |
+| A manifest that starts with a UTF-8 byte order mark | `Parse`: the `bytes.TrimPrefix` call cut | `TestHerdrPluginTrustAndHooks` (actions listed as `plugin_manifest_parse_failed`) | **caught** |
+| `env` on `tab.create` and `pane.split` | `verbNewWindow`: `Env: env` cut from the window options | `TestHerdrSocketAPI` (the new pane never shows env-from-tab) | **caught** |
+| `env` on `workspace.create` | `verbNewSession`: `Env: env` cut from the window options | `TestHerdrSocketAPI` (the new pane never shows env-from-workspace) | **caught** |
+| The warning for a `plugin_action` key that no plugin has | `validateCommands`: the `validatePluginActionKeys` call cut | `TestHerdrPluginPalette` (never shows "1 config problem") | **caught** |
+| A bare action id prefers the enabled plugin | `FindAction`: the enabled-only return cut | `TestHerdrPluginPalette` (run-1.env never holds the key's run: the id is ambiguous) | **caught** |
 
 ## send-keys in the pane's keyboard mode
 
@@ -7090,3 +7118,1710 @@ Run on 2026-10-17.
 
 The fixed build passes both, `TestKittyImageSurvivesCaptureMode`, every
 `TestLauncher*`, every `TestScreenshot*` and `TestRichRowReplyAndRecap`.
+
+## The mail editor has the image previews and the @ list
+
+`TestMailNewMessageFromThePersonReachesTheAgent` opens a new message to an
+agent. Before it types the message, it pastes the path of a 64x48 PNG. The
+strip must show a thumbnail box labelled `#1`, not a line of words. The host
+stream must hold a kitty placement at that box: the label's column, three rows
+above the label. Then it types ` @`, and the list must show
+`e2e-ctrlp/WORKER`. It empties the draft and goes on as before.
+## Another Codex conversation stays off the pane (#852)
+
+`TestCodexSharedServerKeepsAnotherConversationOffThePane` runs two Codex
+conversations through the real `tuios agent-hook codex` from one process, so
+both carry the same harness pid, as they do under one Codex app-server. A
+stand-in `codex` holds the pane's foreground. The test checks, in order:
+
+- The other conversation's approval and prompt leave the pane's state and
+  conversation alone, mid-turn and at rest. Nothing reaches `list-attention`
+  or the dock.
+- Its `SessionStart` after a compaction is refused too.
+- Its `SessionStart` with source `resume` takes the pane over.
+- The pane's own approval then takes the pane back and shows in
+  `list-attention` and the dock.
+- After two `SessionStart`s from two other conversations in a row, the pane's
+  own approval still takes the pane back.
+- The other conversation takes the pane, `/new` in the pane starts a new
+  conversation, and the other conversation's approval takes the pane back.
+  The new conversation's approval must still take the pane and reach
+  `list-attention`.
+- A conversation that never sent a `SessionStart` is refused.
+- After codex exits, a third conversation's prompt is taken.
+
+Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The mail draft got no previewer and no @ list | yes | `newMailDraft` without `wireDraft` | `TestMailNewMessageFromThePersonReachesTheAgent` ("the mail draft placed no picture on the thumbnail box") | **caught** |
+| Pictures were placed for the Inbox reply only | yes | `flushReplyPreviewForFrame` with `d.kind == "inbox"` added to its condition | `TestMailNewMessageFromThePersonReachesTheAgent` ("the mail draft placed no picture on the thumbnail box") | **caught** |
+| The mail draft got no @ list | yes | `newMailDraft` with `comp.SetCompleter(nil)` after `wireDraft` | `TestMailNewMessageFromThePersonReachesTheAgent` ("waiting for the @ list of agents") | **caught** |
+
+The fixed build passes it, every other `TestMail*` and `TestAgentMail*`,
+`TestARoutedKeyReplyIsAClaim`, `TestRichRowReplyAndRecap`, every
+`TestReplyWith*`, `TestReplyToAnAgentOnAHost`,
+`TestReplyPreviewInScreenCapture` and every `TestInbox*`.
+| Another conversation's approval took the pane over | yes | `shared_server = false` in the codex manifest | `TestCodexSharedServerKeepsAnotherConversationOffThePane` ("other PermissionRequest mid-turn: the pane is {State:needs_input ... AgentSession:cx-quick}, want state working in conversation cx-pane") | **caught** |
+| The daemon never read the manifest flag | yes | `verbSetAgentState` sets `SharedServer: false` | same test, same message | **caught** |
+| The hook never marked a `SessionStart` | yes | `reportHook` does not send `session_start`, so the guard never arms | same test, same message | **caught** |
+| A takeover hid the pane's own approval | yes | `sessionGuard` without the reclaim from the guard's history | same test ("pane PermissionRequest reclaims: the pane is {State:idle ... AgentSession:cx-quick}, want state needs_input") | **caught** |
+| Two takeovers in a row hid the pane's own approval | yes | `sharedGuardHistory = 1` | same test ("pane PermissionRequest reclaims again: the pane is {State:idle ... AgentSession:cx-third}, want state needs_input") | **caught** |
+| A reclaim dropped the owner it displaced, so `/new` in the pane was locked out | yes | the reclaim pushes the displaced owner only on a `SessionStart` | same test ("new conversation PermissionRequest: the approval did not take the pane: {... AgentSession:cx-quick ...}") | **caught** |
+| The guard outlived codex | yes | the detector's shell sweep disabled | same test ("the guard still held the pane after codex exited") | **caught** |
+| A compaction counted as a new conversation | yes | `translateCodex` sets `SessionStart` for source `compact` | same test ("other SessionStart after a compaction: the pane is {State:idle ... AgentSession:cx-quick}, want state done") | **caught** |
+
+The fixed build passes it, `TestHookIntegrationsReportTheTurn` and
+`TestCodexPaneNotificationsArrive`. The Claude Code `/clear` and `/resume`
+rules keep their tests in `internal/session`
+(`TestSetAgentStateNewSessionInTheSameHarnessTakesOver`,
+`TestSetAgentStateRefusesANestedSession`), which pass unchanged.
+
+## The mode 2031 notice on every theme change
+
+`TestOmarchyThemeSwitchIsFollowed` now switches Omarchy from Tokyo Night to
+Gruvbox, another dark theme, before Catppuccin Latte. The scheme listener in
+the pane turns on mode 2031 and counts the notices for a second after the
+first. After Gruvbox it must get exactly one `CSI ? 997 ; 1 n`, and OSC 11 and
+OSC 4 slot 4 must answer Gruvbox's colours. The fixed build passes it,
+`TestThemedDaemonPaneReportsTheTheme`, `TestHostColorsReachPanesAndChrome` and
+`TestHostColorsSilentTerminal`.
+
+The controls were run on 2026-10-18 on branch `feat/theme-change-997`.
+
+| Control | How | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| The notice only on a dark and light flip, which is `main` before the change | `Emulator.SetReportColors`: `changed` is a change of `isLightBackground` | `TestOmarchyThemeSwitchIsFollowed` ("after the switch to Gruvbox the program that turned on mode 2031 was not told dark") | **caught** |
+| Two notices for one theme push, one for the pair and one for the sixteen | `Emulator.SetReportColors`: a write for a changed pair and another for a changed palette | `TestOmarchyThemeSwitchIsFollowed` ("the switch to Gruvbox did not send the program exactly one notice"), `TestConform_ColorSchemeNotice` | **caught** |
+| DSR 996 unanswered | the `case 996` in the private DSR handler cut | `TestConform_ColorSchemeDSR` (every case), `TestStatusReportFormPerBackend` (unit tests in `vt/`, not e2e) | **caught** |
+
+After review, two storms were fixed on the same branch. `TestOmarchyThemeSwitchIsFollowed`
+then moves through the theme picker on the way to Dracula: the pane program must
+get no notice while the picker is open, and one dark notice for the pick.
+`TestThemedDaemonPaneReportsTheTheme` attaches a second client with
+`--theme catppuccin_latte` after input at the first: a pane must keep answering
+Dracula's background, and Nord's after the second client picks Nord. Run on
+2026-10-18.
+
+| Control | How | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| The report follows each previewed theme | `reportedToPanes`: the hold while the picker or editor is open cut | `TestOmarchyThemeSwitchIsFollowed` ("moving through the theme picker sent the program a notice", "picking Dracula did not send the program exactly one notice") | **caught** |
+| Every client's push sets the report colours | the push handler: the `ownsReportColors` check cut | `TestThemedDaemonPaneReportsTheTheme` ("after a second client on Latte attached, a pane's OSC 11 was answered \"rgb:efef/f1f1/f5f5\", want the first client's Dracula \"rgb:1e1e/1f1f/2828\"") | **caught** |
+## The after-theme-change hook
+
+`TestAfterThemeChangeHookFiresOncePerPick` starts on `tokyonight` with an
+`after-theme-change` hook that appends `$TUIOS_EVENT $TUIOS_THEME
+$TUIOS_THEME_BG $TUIOS_THEME_LIGHT` to a file. The file must stay empty after
+startup, hold one line for a Dracula pick typed through the picker, stay at one
+line after a cancelled Latte pick, and hold a second line for a Latte pick,
+with a new background and the light flag `1`. The fixed build passes it and
+the other theme picker and theme editor tests.
+
+The controls were run on 2026-10-18 on branch `feat/after-theme-change-hook`.
+
+| Control | How | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| The hook fires while the picker shows themes | `noteThemeChange`: the theme picker and editor check cut | `TestAfterThemeChangeHookFiresOncePerPick` ("after one pick the hook ran 2 times, want 1") | **caught** |
+| The hook fires at startup | `noteThemeChange`: the first frame no longer only records | `TestAfterThemeChangeHookFiresOncePerPick` ("the hook fired at startup") | **caught** |
+| Nothing checks for a theme change | `composeFrameOnce`: the `noteThemeChange` call cut | `TestAfterThemeChangeHookFiresOncePerPick` ("after one pick the hook ran 0 times, want 1") | **caught** |
+
+After review, the hook runs only in a local client and takes its light flag
+from `vt.IsLightBackground`, the rule of the mode 2031 notice. The served half
+is a boundary, so it is held by the unit test
+`TestServedClientsDoNotRunTheThemeHook` in `internal/app`: an ssh and a web
+client run no hook for a theme change, and a local client runs it once with
+light `1` for Latte. Run on 2026-10-18.
+
+| Control | How | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| A served client runs the operator's hook | `noteThemeChange`: the `m.Client != ClientLocal` check cut | `TestServedClientsDoNotRunTheThemeHook` ssh and web rows ("the hook ran 1 times for a theme change in a ssh client, want 0") | **caught** |
+| The light flag uses another rule | `noteThemeChange`: the `vt.IsLightBackground` result inverted | `TestServedClientsDoNotRunTheThemeHook` local row (light "0" for Latte) | **caught** |
+
+## The agents cockpit: grouped fleet and rich rows
+
+`TestCockpitGroupsTheFleet` builds twelve fake agents in four sessions, one
+of them on an approval the hook holds. It opens `ctrl+b i` at 200x55 and
+checks the group order, the approval row's verb and command, that a click
+selects a row and leaves the view open, that `a` answers the approval from
+its card, and that a double-click goes to the pane.
+`TestAgentsViewOpenAddsNoIdleCost` holds two 10 s idle windows over three
+agents at rest, the view closed and then open, and counts the view's own
+ticks and fresh frames.
+
+Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The groups come in another order than what each needs from you | n/a, injected | `buildCockpitRows` walks the groups as Working, Needs you, Ready for review, Idle | `TestCockpitGroupsTheFleet` ("\"Working\" is on row 6, not below the group before it (row 24)") | **caught** |
+| A click on a row goes to the pane, the agents view's old rule | n/a, injected | `CockpitClick` treats every click as the second of a double-click | `TestCockpitGroupsTheFleet` ("a click did not put bench-idle in the focus") | **caught** |
+| `a` does not answer the held approval | n/a, injected | `CockpitKey` without `inbox_allow` among the approval actions | `TestCockpitGroupsTheFleet` ("a never answered the held approval") | **caught** |
+| The open view wakes the client while nothing changes | n/a, injected | `inboxAgentsTick` at one second | `TestAgentsViewOpenAddsNoIdleCost` ("10 ticks of the view") | **caught** |
+| A held row's move waits for a message that never comes | `armCockpitHold`, the one timer for a hold | The hold set with no timer armed | `TestAgentsViewOpenAddsNoIdleCost` ("the held row never moved to Working") | **caught** |
+
+The fixed build passes them, every `TestInbox*`, `TestAskHuman*`,
+`TestChromeLooksAndFooters`, `TestEveryOverlayOwnsItsGround` and the other
+tests that open the Inbox (137 tests).
+
+### Marks and cut approvals
+
+`TestCockpitBulkActsOnlyOnSeenMarks` marks the agent that holds the approval,
+checks the mark on its row and the count in the title, folds its group with a
+click on the heading, and presses `3`. `TestCockpitCutApprovalIsNotAnswered`
+holds an approval on a 100x12 screen, where its card cannot show the command
+and where it runs. It checks the card says so inside the body, and that `a`
+and `1` leave the approval held. `TestCockpitApprovalCardOnEveryTab` holds
+an approval at 100x30, steps to the Checkpoints and Live tabs, checks the
+card on each, and answers it with `a` from the Live tab. Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A mark is invisible | The mark column in `drawFleetRow` | The mark drawn only when `false` | `TestCockpitBulkActsOnlyOnSeenMarks` ("the mark is not on api-auth's row, or the title does not count it") | **caught** |
+| A bulk key acts on a mark the list does not show | `markedAgents` over `cockpitShownAgents` | `markedAgents` reads the whole agents list | `TestCockpitBulkActsOnlyOnSeenMarks` ("3 did not say no marked agent it can see waits": it rejected the folded agent's approval) | **caught** |
+| A cut command counts as read | The `cut` rule in `drawItemCard` | `noteInboxShown` told the card showed the approval whole, and no cut recorded | `TestCockpitCutApprovalIsNotAnswered` ("a answered an approval whose command was cut: 0 held") | **caught** |
+| The Checkpoints or Live tab hides a held approval's card | The card drawn before the tab's body in `drawFocus` | The card drawn on Thread and Changes only | `TestCockpitApprovalCardOnEveryTab` ("the Checkpoints tab hides the approval's card") | **caught** |
+## The agents cockpit: thread cards
+
+`TestCockpitThreadCards` joins a pane to a Claude Code transcript fixture
+(`testdata/transcript/cockpit-auth.jsonl`: three reads and a search, a todo
+list, an Edit with a structured patch, a failing Bash call) with the real
+hook, and reads it in the cockpit at 200x55 and 100x30.
+
+Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The changed words of a diff line are not lit | n/a, injected | `ckDiffCard` passes no changed range to `diffview.Theme.Code` | `TestCockpitThreadCards` ("the changed words of the diff are not lit") | **caught** |
+| The newest todo list folds to its count like the older ones | n/a, injected | `ckPlanCard` called with `whole` false | `TestCockpitThreadCards` ("the thread has no plan card or diff card") | **caught** |
+| A click on a card's header does nothing | n/a, injected | the diff card's header line has no `fold:` hit | `TestCockpitThreadCards` ("a click on the header did not fold the diff") | **caught** |
+| A tool result between two reads breaks the run | n/a, injected | the run stops at a `tool_result` entry | `TestCockpitThreadCards` ("the reads did not fold to one line") | **caught** |
+| The changed words are lit three cells early per tab | `ckCodeOffset`: the word offsets mapped on the raw text | the offsets taken on the text after the tab became four spaces | `TestCockpitThreadCards` ("the cell before the changed words is lit too") | **caught** |
+
+## The agents cockpit: reply area and image view
+
+`TestCockpitReplyAreaAndImageView` opens the reply area by a click, types,
+drops a PNG's path in, opens the image view from the chip, closes it with esc
+and with a click outside the picture, and sends with the Send button. The
+picture is drawn as cells (`TUIOS_KITTY_GRAPHICS=0`), so the test reads it off
+the screen.
+
+Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| An image chip is not a click target | n/a, injected | the chip's `image:` hit left out of `drawReplyArea` | `TestCockpitReplyAreaAndImageView` ("a click on the chip did not open the image view") | **caught** |
+| A click outside the picture leaves the view up | n/a, injected | `cockpitImageClick` never closes | `TestCockpitReplyAreaAndImageView` ("a click outside the picture did not close the view") | **caught** |
+| The Send button does nothing | n/a, injected | `cockpitAction` has no `send` case | `TestCockpitReplyAreaAndImageView` ("waiting for the closed area after Send") | **caught** |
+
+## The agents cockpit: side column
+
+`TestCockpitSideColumn` puts an agent's pane in a git work tree, ends two
+turns (two checkpoints), joins it to the transcript fixture, and opens the
+agents view at 200x55. The side column must hold the pane's first marker,
+the last turn's file and both checkpoints, and then the marker the pane
+prints while the view is open. `TestCockpitSideTabs` reads the Checkpoints
+and Pane tabs at 100x30.
+
+Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The live box does not follow the pane's output | n/a, injected | `cockpitNoteOutput` never marks the live pane | `TestCockpitSideColumn` ("the live box did not follow the pane's output") | **caught** |
+| The checkpoints are not shown | n/a, injected | `applyCheckpoints` drops the list | `TestCockpitSideColumn` ("the side column lacks the live pane, the last turn or the checkpoints") | **caught** |
+
+## #649: the host cursor sits where typing goes
+
+An input method opens its candidate window at the host terminal's cursor,
+hidden or not. `TestHiddenCursorParksAtGuestCursor` has a guest in the right
+of two tiled panes hide its cursor and put it on an empty cell away from the
+text it wrote. The host cursor has to be on that cell, hidden, within the 5
+seconds before the guest shows it. Then the guest shows its cursor and hides
+it again, both without drawing, so no frame is written for either: the host
+cursor has to be on the same cell, visible, then hidden.
+`TestRichRowReplyAndRecap` checks that the host cursor is on the Inbox reply
+editor's caret, hidden, after the person types. Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The hidden cursor is left where the frame ended | Parking in `viewCursor` (cursor_park.go) | Returns no cursor when none is shown | `TestHiddenCursorParksAtGuestCursor` ("with the guest cursor hidden: the host cursor is at (102,38)"), `TestRichRowReplyAndRecap` ("in the reply editor: the host cursor is at (80,39)") | **caught** |
+| The renderer shows the parked cursor | The frame hook's handling, `cursorPark.frame` | Passes every frame through unchanged | `TestHiddenCursorParksAtGuestCursor` ("at (90,10) visible=true"), `TestRichRowReplyAndRecap` ("at (17,33) visible=true") | **caught** |
+| A visibility change without a frame never reaches the host | The write in `cursorPark.set` | Not written | `TestHiddenCursorParksAtGuestCursor` ("after the guest hid its cursor again without drawing: ... visible=true") | **caught** |
+| A draft's caret does not take the cursor | The open draft in `imeCaret` (now `draftCaret`) | Branch skipped | `TestRichRowReplyAndRecap` ("in the reply editor: the host cursor is at (80,39)") | **caught** (first version of the fix) |
+
+The exit path, where the frame that leaves the alternate screen must show the
+cursor again, is not checked here. The local client writes its own reset with
+a show after the program ends (`terminal.ResetTerminal`), so the PTY stream
+ends with the cursor shown whether or not the hook did it. The unit test
+`TestParkedFrameWire` (internal/app) checks it on the renderer's real exit
+frame, without and with mode 2026, along with the wire rules: no show in a
+parked frame, the hide written at once when the cursor parks where it is, and
+a show after the move, never before it. Each of those four fails with its part
+of the fix removed.
+
+The fixed build passes both, and every test matching `Cursor`, `PiP`,
+`Inbox`, `Reply`, `Cockpit`, `Sixel`, `Kitty`, `Composer`, `Draft`, `Mail`,
+`Spotlight` and `Zoom` (142 tests). `TestKittyVirtualPlacementLeavesThePaneToTheGuest`
+was left out: under a 6 GB address cap its host recorder runs out of memory,
+on main's build as well.
+
+Two first versions of the pane test passed on a build without the fix. One put
+the hidden cursor on the first cell of the word the guest wrote, where the
+frame had ended by chance. The other waited past the moment the guest showed
+and hid its cursor again on the same cell, which left a build without the fix
+there too. The cursor now goes to a cell no frame writes to, and the first
+wait ends before the guest shows it.
+
+## Agent thread for every harness with a transcript reader
+
+`TestCockpitThreadOtherHarnesses` reads a Codex rollout and a Gemini CLI chat
+in the agent thread. The real hook of each harness names the file. Each thread
+must show the answer, a failed command's output, a diff card with its added
+line, and the harness's error. Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The cockpit reads Claude Code transcripts only | The harness set in `threadTranscriptHarness` (inbox_thread.go) | Only `claude-code` | `TestCockpitThreadOtherHarnesses/codex` and `/gemini` ("never showed the answer and the failed command") | **caught** |
+| A Gemini message written again shows twice | The key drop in `dropKeyed` (transcriptview/format.go) | Returns at once | `TestFormatFixtures/gemini-chat.jsonl` (unit). The e2e test passes: the client replaces an entry by its id, so the screen is right | **caught by the unit test only** |
+
+The hostile decoder test was checked the same way: with a tool call's target
+passed out without `Clean`, `TestFormatHostile` fails for every format.
+
+### After review
+
+The hookless search for these formats now gives a file to a pane by the
+session's start against the agent's process start (`viewCandidates`,
+transcript_search.go). `TestViewSearchSiblings` (internal/session) covers
+agents of one harness in one folder, with every file's modification time
+after every agent started. Gemini messages written again keep their first
+place, and a `$rewindTo` after a reader's cursor resets its page
+(`TestGeminiRewrites`, internal/transcriptview). Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A file near two agents' starts goes to one of them | The `n != 1` check in `viewCandidates` | `n == 0` | `TestViewSearchSiblings/two_agents_started_together` (B got b, want none) | **caught** |
+| A pane takes a sibling's file | The start window in `viewCandidates` | Every file is every pane's candidate | `TestViewSearchSiblings/each_agent_its_own_session`, `/the_second_agent_has_not_written_yet` | **caught** |
+| A finished tool call moves its message to the end | The first place kept in `decode` | Appended at the record's own place | `TestGeminiRewrites` | **caught** |
+| A rewind leaves gone messages in the reader's thread | The reset in `forward` | Not reset | `TestGeminiRewrites` ("a rewind after the cursor did not reset the page") | **caught** |
+| The cockpit reads Claude Code transcripts only (rerun on the fixed build) | `threadTranscriptHarness` | Only `claude-code` | `TestCockpitThreadOtherHarnesses/codex` and `/gemini` | **caught** |
+
+The e2e test also found a bug in the first version of the Gemini glob
+excludes: `[!l]` is not a negation in Go's `filepath.Match` (it is `[^l]`),
+so every `.jsonl` chat was refused. The hook's `transcript_refused` check in
+the test failed on it.
+The Copilot CLI and Amp cases were added in the next change. Amp's plugin
+reports the thread id and not the file, so the manifest's `session_file`
+names it. Run on 2026-10-18.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A hook that names only its session joins no file | The `session_file` join in `verbSetAgentState` (verb_handlers.go) | Condition never true | `TestCockpitThreadOtherHarnesses/amp` ("never showed the answer and the failed command") | **caught** |
+
+`TestSessionFileJoin` (internal/session) checks the rules of the session-id
+join after review: a report with no connection (herdr's socket) names no
+file, a session id names a file only when the file exists, and a refused
+report joins nothing. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A herdr client joins any thread by its id | `cs != nil` in the session-id join | Condition dropped | `TestSessionFileJoin` ("a report with no connection joined ...") | **caught** |
+| A session id joins a file that is not there | The `os.Lstat` in `sessionTranscriptPath` | Removed | `TestSessionFileJoin` ("session id \"T-missing\" joined ...") | **caught** |
+| A refused report joins a file | `applied` in the session-id join | Condition dropped | `TestSessionFileJoin` ("a refused report joined ...") | **caught** |
+
+## opencode thread
+
+`TestCockpitThreadOtherHarnesses/opencode` runs a service at 127.0.0.1 that
+answers as opencode 2.0.32 does, writes its service.json, and reports the
+session through the real plugin hook. `TestOpenCodeService`
+(internal/transcriptview) holds the rules of reading that service: the file
+must be this user's and writable by no one else, the address must be
+127.0.0.1, the service must name the file's process, the session id must be
+one, and the password must stay out of every error and page. Run on
+2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The cockpit does not read opencode | `threadTranscriptHarness` | `opencode` taken out | `TestCockpitThreadOtherHarnesses/opencode` | **caught** |
+| A service.json others can write sends the password where they choose | The mode and owner check in `readServiceFile` | Removed | `TestOpenCodeService/a_file_others_can_write` | **caught** |
+| The password goes to an address other than 127.0.0.1 | The host check in `readServiceFile` and the dial guard | Both removed | `TestOpenCodeService/an_address_other_than_127.0.0.1` | **caught** |
+| A service of this user that is not the file's process is trusted | The pid check against `/api/info` | Never true | `TestOpenCodeService/another_process_on_the_port` | **caught** (the check runs after the password is sent, so it stops only a process of this user; the connection owner check below is what keeps the password from another user) |
+| A reported session id goes into a URL or an argument unchecked | `validOpenCodeSession` | Any id but "" | `TestOpenCodeService/a_session_id_that_is_not_one` | **caught** |
+
+After review (F1, F2): the password goes out only to a port this user is
+shown to hold (`portOwnedByMe`, the uid column of /proc/net/tcp; on other
+systems it is never sent, and the export is read). The export runs only
+when no service is there, under the read's 4 s budget, killed with its
+process group when the budget ends, and one fetch serves a session's reads
+for 2 s. `TestOpenCodeServiceRules` (internal/transcriptview, Linux). Run
+on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The password goes to a port another user holds | `portOwnedByMe` in `openCodeFromService` | Never refuses | `TestOpenCodeServiceRules/a_port_another_user_holds` | **caught** |
+| A slow or failing service starts an opencode process | The `errNoService` gate in `openCodeFetch` | Export on any error | `TestOpenCodeServiceRules/a_service_that_is_there_but_fails` | **caught** |
+| Each event of a streaming session starts a fetch | `openCodeShared` | No sharing | `TestOpenCodeServiceRules/reads_of_one_session_share_a_fetch` | **caught** |
+| A timed-out export leaves its processes running | `killTreeOnCancel` | Not called | `TestOpenCodeServiceRules/an_export_that_runs_too_long` (the read took 30 s) | **caught** |
+
+After re-review (R1 to R4): the owner check moved into the dial. It reads
+the socket table for the server side of the connection itself, after the
+connect and before the first byte, so no gap is left between the check and
+the request (R1). It now runs on macOS (the so_uid of the socket in the
+sysctl net.inet.tcp.pcblist_n) and on Windows (the owning pid in
+GetExtendedTcpTable, which must be the pid in service.json and run as this
+user), where the export ran on every read before (R3). An export is used
+again while opencode's database files are unchanged. A shared fetch is
+finished in a defer (R2). `TestOpenCodeConnOwner` runs against the real
+kernel table of each system: the go-test workflow runs it on Linux, macOS
+and Windows. The parser fixtures under `testdata/pcblist_n` are written by
+`gen.c` from the XNU structs. Run on Linux on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The password goes on a connection whose server side is another user's | `connOwnedByMe` in the dial | Never refuses | `TestOpenCodeConnOwner/no_request_to_a_service_of_another_user` (`err <nil>`), `TestOpenCodeServiceRules/a_port_another_user_holds` (2 requests) | **caught** |
+| The macOS parser reads the uid at the wrong offset | `xsoUID` | 64 changed to 60 | `TestPcblistOwner` (mine.bin and old.bin) | **caught** |
+| A fetch that panics blocks every later read of the session | The defer in `openCodeShared` | Finished after `fetch` returns only | `TestOpenCodeSharedPanic` (blocked) | **caught** |
+| Each read with no service starts an export | `openCodeExportCached` | `openCodeFromExport` called directly | `TestOpenCodeServiceRules/an_export_is_used_again_while_the_database_is_unchanged` (2 exports) | **caught** |
+
+## Answer keys bound to their labels (Kimi Code CLI)
+
+`TestScreenAnswersFromSource` (internal/harness) draws Kimi's approval panel
+as kimi-cli 1.52.0 does, then with the session option left out, then
+reordered. Each approve must press the number its label has, and an approve
+whose label is gone must not be offered. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| Approve presses a number whatever option it is | The `option` binding in kimi.toml | `keys = ["1"]` and `keys = ["2"]` | `TestScreenAnswersFromSource/kimi#01`, `/kimi#02` | **caught** |
+| Kimi's `[N] label` options are not read | The bracket form in `optionLine` | Removed | `TestScreenAnswersFromSource/kimi`, `/kimi#01`, `/kimi#02` | **caught** |
+## Cursor Agent thread
+
+`TestCockpitThreadOtherHarnesses/cursor` writes a Cursor Agent transcript
+under the fake home and joins it through the real `tuios agent-hook
+cursor-agent` sessionStart with transcript_path. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The cockpit does not read Cursor Agent | `threadTranscriptHarness` | `cursor-agent` taken out | `TestCockpitThreadOtherHarnesses/cursor` | **caught** |
+
+After review (C1): Cursor's own argument names are read, `target_file`,
+`relative_workspace_path`, `search_term`, and `edit_file`'s `code_edit`,
+which shows as the text it writes. `TestFormatFixtures/cursor-agent.jsonl`
+holds them. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A Cursor read or edit card names no file | `target_file` in `fileOf` | Removed | `TestFormatFixtures/cursor-agent.jsonl` | **caught** |
+| A Cursor edit shows an empty diff | The `code_edit` write in `cursorLine` | Never taken | `TestFormatFixtures/cursor-agent.jsonl` | **caught** |
+### A plain right-click in window mode over a program tracking the mouse
+
+`TestPlainRightClickOpensMenuOverAMouseApp` turns on mouse tracking in a pane, checks that a terminal-mode right-click reaches the program and opens no menu, then checks that a window-mode right-click opens the pane menu and reaches the program as no report. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A window-mode right-click over a program tracking the mouse opens nothing | The menu opening for every sub-threshold right-click in `handleMouseRelease` | The build before the fix, which skipped the menu when the pane's program tracked the mouse | `TestPlainRightClickOpensMenuOverAMouseApp` ("in window-management mode a plain right-click over a program tracking the mouse opened no pane menu") | **caught** |
+
+A first version counted the program's reports while the menu was open and failed on the fixed build: the menu covers the echoed reports. They are counted once the menu is closed.
+
+### A seen done pane of another session in the navigator (issue #902)
+
+`TestNavigatorKeepsADonePaneSeen` finishes an agent in work, opens the
+navigator from home and reads ■ on the logs row, goes to the pane, comes back
+to home, and reads ○ on the row. Each read waits for the load to bring the
+pane's screen into the preview first. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The cached row drops the seen bit | `DoneSeen` in `navigatorSessions` | The field cut from the row | `TestNavigatorKeepsADonePaneSeen` ("the logs row never showed ○ (seen) after the load") | **caught** |
+| The load puts the unread mark back | `keepAgentMarks` in `ApplyNavigatorLoaded` | The call cut | `TestNavigatorKeepsADonePaneSeen` ("the logs row never showed ○ (seen) after the load") | **caught** |
+### A prefix binding on the leader key (issue #866)
+
+`TestLeaderBoundInPrefixRunsItsAction` binds `prefix_new_window` to the
+leader, `ctrl+a`, and presses the leader two times in terminal mode.
+`TestLeaderTwiceSendsTheLeaderToThePane` keeps the default with no such
+binding. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The leader two times sends the leader over a prefix binding | `leaderBoundInPrefix` in `HandleTerminalModeKey` | The check cut | `TestLeaderBoundInPrefixRunsItsAction` ("the leader two times did not run prefix_new_window, bound to ctrl+a") | **caught** |
+## Markdown in the agent thread
+
+`TestCockpitThreadCards` reads an agent message in `cockpit-auth.jsonl` that
+holds strong text, a code span, a list, a Go code block, a table, a task
+list, a quote and a link. `cockpitMarkdown` checks that no markup is left,
+that the strong words are bold, that the code block is highlighted on a
+ground of its own, and that the link is underlined and sent as OSC 8. Run on
+2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The thread shows an agent's Markdown raw | `ckMarkdown` in `threadCardLines` | The text drawn through `threadWrap`, as before | `TestCockpitThreadCards` ("the Markdown message is not drawn") | **caught** |
+| A link opens nothing | The cell's `Link` in `ckCanvas.text` | Never set | `TestCockpitThreadCards` ("no frame carries the link as OSC 8") | **caught** |
+
+After review (F1, F3, missing controls). `FuzzParse` seeds hold a table one
+column past `maxTableCols` and one past `maxTableCells`, and assert both
+bounds. `TestCockpitThreadOtherHarnesses/gemini` appends a line that writes
+the last Gemini message again with new text while the thread is open.
+`TestCockpitThreadCards` reads a message with an OSC title, an SGR colour
+and a `javascript:` link, and asserts on the raw output. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A table pads short rows to millions of cells | The cell cap in `parseBlocks` | Removed | `FuzzParse/seed#9` ("a table of 64 columns and 70 rows is past the bounds") | **caught** |
+| A table may have thousands of columns | The column cap in `parseBlocks` and `delimiterRow` | Removed | `FuzzParse/seed#8` ("a table of 65 columns and 1 rows is past the bounds") | **caught** |
+| A message written again keeps its old card | `sum` in `ckCardKey` | Left out of the key | `TestCockpitThreadOtherHarnesses/gemini` ("kept the old text of a message written again") | **caught** |
+| A `javascript:` link is sent as OSC 8 | The scheme check in `ckLinkTarget` | Never taken | `TestCockpitThreadCards` ("an escape sequence or a javascript: link in the message reached the host terminal") | **caught** |
+
+## tuios restart-server
+
+`TestRestartServerMovesTheDaemonToTheNewBuild` starts a daemon of this build
+with a pane that runs `sleep`, and restarts it with a second build stamped
+`e2e-sync-next`. The plan must name the program and both versions, and the
+restart must say the new version and the session that came back.
+`TestRestartOffersToResumeTheConversation` now restarts through
+`restart-server`, whose plan must name the agent that can resume.
+`TestRestartServerFromAPaneLeavesADaemon` runs `restart-server --yes` in a
+pane of the daemon it restarts: the pane's terminal closes under it, and a
+daemon must hold the session again, restored.
+
+The controls were run on 2026-10-18 on branch `feat/restart-server`.
+
+| Control | How | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| The plan lists no program | `restartplan.Lines`: the line for each busy pane cut | `TestRestartServerMovesTheDaemonToTheNewBuild` ("the plan does not name the program the restart stops") | **caught** |
+| The steps run in the command itself | `runRestartServer`: `runRestart` instead of `runDetachedRestart` | `TestRestartServerFromAPaneLeavesADaemon` ("no daemon holds the session after restart-server ran in its pane") | **caught** |
+| The version after the restart is the old daemon's | `runRestart`: `rep.After` from the plan's daemon, not the new daemon's hello | `TestRestartServerMovesTheDaemonToTheNewBuild` ("the restart does not say \"The daemon restarted on e2e-sync-next.\"") | **caught** |
+| The sessions after the restart are not read | `runRestart`: `rep.Back = nil` | `TestRestartServerMovesTheDaemonToTheNewBuild` ("the restart does not say \"This session came back: e2e-restart.\"") | **caught** |
+| list-windows marks no agent | `verbListWindows`: the `addResumable` call cut | `TestRestartOffersToResumeTheConversation` ("restart-server --dry-run does not list the agent that can resume") | **caught** |
+
+## The restart from the app
+
+`TestRestartTheDaemonFromTheVersionNotice` (in `daemon_persistence_test.go`)
+starts a daemon of this build with a pane that printed history and a pane
+that runs `sleep`. A client of a second build attaches from a path of its own,
+and a third build is renamed onto that path, as an update does. A click on the
+version notice must open the dialog with the program that stops and the three
+versions. The client starts with `--debug new`, and must start again with
+`--debug`. `r` must bring the same client process back, attached to the same
+session, on a daemon of the third build, with both panes, their names and the
+restored history.
+
+The controls were run on 2026-10-18 on branch `feat/restart-daemon-in-app`.
+
+| Control | How | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| The restart runs the client's old file | `release.NewestInstalled`: `/proc/self/exe` instead of `os.Executable` | `TestRestartTheDaemonFromTheVersionNotice` ("the dialog does not say \"After restart   e2e-sync-next   (from \"") | **caught** |
+| A click on the notice does nothing | `jumpToNotifTarget`: the `DaemonRestart` case cut | `TestRestartTheDaemonFromTheVersionNotice` ("a click on the notice did not open the dialog") | **caught** |
+| The lost connection ends the client | the `DaemonDisconnectedMsg` case: the `noteRestartDisconnect` check cut | `TestRestartTheDaemonFromTheVersionNotice` ("child exited (code 1) before" the success line) | **caught** |
+| The client does not start again | `runDaemonSessionOn`: the `reattachAfterRestart` call cut | `TestRestartTheDaemonFromTheVersionNotice` ("child exited (code 0) before" the success line) | **caught** |
+| The root's flags are not carried | `carriedFlags`: the root's persistent flags not read | `TestRestartTheDaemonFromTheVersionNotice` ("the client started again without its flags", no `--debug=true`) | **caught** |
+| The plan is not checked | `runRestartServer`: the `--expect` check cut | `TestRestartServerMovesTheDaemonToTheNewBuild` ("a restart with another plan's digest was not refused", "the refused restart restarted the daemon anyway") | **caught** |
+
+A second client of the daemon's own build now attaches beside the first. It
+must reattach by itself, in the same process, with both panes and the restore
+divider, and say "The daemon restarted on e2e-sync-next. tuios reattached."
+`TestPlainKillServerEndsClientsAtOnce` stops the daemon with a plain
+kill-server and starts a new one at once: the client must quit within 1 s and
+not reattach. Run on 2026-10-18 on branch `feat/reattach-after-daemon-restart`.
+
+| Control | How | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| A lost connection ends the client, as before | the `DaemonDisconnectedMsg` case: the `beginDaemonReconnect` call cut | `TestRestartTheDaemonFromTheVersionNotice` ("the second client did not reattach", "the second client quit (code 1)") | **caught** |
+| The client attaches and keeps its old panes | `resumeOnNewDaemon`: the `rebuildForSessionOn` call cut | `TestRestartTheDaemonFromTheVersionNotice` ("the second client did not reattach with the panes") | **caught** |
+| The restart does not say "restart" | `runRestart`: `kill-server` without `--restart` | `TestRestartTheDaemonFromTheVersionNotice` ("the second client quit (code 1) instead of reattaching") | **caught** |
+| The client is deaf to "stop" | `beginDaemonReconnect`: the goodbye check cut | `TestPlainKillServerEndsClientsAtOnce` ("the client did not quit within 1 s of a plain kill-server") | **caught** |
+
+## Git's timeout test measured from after its own deadline
+
+`TestGitTimeoutHoldsWithAHungChild` in `internal/review` failed on CI with "Git returned after 499.38ms". The test made the 500 ms context first and read the clock after it. The deadline counts from inside `WithTimeout`, so a pause between the two lines made a Git that returned on time read as early. The test now reads the clock before it makes the context. Run on 2026-10-22.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The clock starts after the context, so a descheduled test reads the deadline as early | n/a, injected: a scheduling gap made deterministic | the old order, with a 5 ms sleep between `WithTimeout` and `time.Now()` | `TestGitTimeoutHoldsWithAHungChild`, 10 of 10 runs ("Git returned after 495.3ms") | **caught** |
+
+The same 5 ms sleep between the clock and the context in the fixed test passes 10 of 10 runs. The fixed test passes 30 of 30 runs.
+
+## Restart follow-ups
+
+`TestHostsSyncRestartWithYes` now attaches a client on the fake host before
+the sync restarts its daemon. The client must reattach in the same process.
+`TestCockpitLiveBoxAfterDaemonRestart` opens the agents view on an agent
+whose pane is on workspace 2, restarts the daemon with `restart-server
+--yes`, and prints in the pane. The live box must show the new output with no
+key pressed. `TestAttachDeadlineBoundsTheReply` (in `internal/session`) is a
+daemon that reads the attach and never answers. Run on 2026-10-20 on branch
+`fix/daemon-restart-followups`.
+
+| Control | How | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| hosts sync stops the daemon with a plain kill-server | `syncStopFunc`: `--restart` left out | `TestHostsSyncRestartWithYes` ("the client attached on old quit (code 1) instead of reattaching") | **caught** |
+| The live box keeps its pane across the reattach, and nothing follows again | `rebuildForSession`: the `cockpitLiveForget` call cut, and `resumeOnNewDaemon` returns nil | `TestCockpitLiveBoxAfterDaemonRestart` ("the live box did not follow the pane after the daemon restart") | **caught** |
+| Only the `cockpitLiveForget` call cut | as above, the follow kept | none: the follow after the reattach also picks the pane | not caught |
+| Only the follow after the reattach cut | as above, the forget kept | none: a frame that wants the side column runs the follow | not caught |
+| The attach reply waits 30 s | `AttachSession`: `recv` instead of `recvUntil(deadline)` | `TestAttachDeadlineBoundsTheReply` ("still waiting 5 s later, past its 300 ms deadline") | **caught** |
+
+The two halves of the live box fix each cover the bug alone in this test, so
+the test guards the pair. Both stay: the forget drops a pane id that can
+match again after a restore, and the follow does not wait for a key.
+
+## xpanes -ss interval, measured from the fork
+
+`TestXpanesDefaultModeWithoutAClient` checks that `--interval 0.3` spaces the `-ss` panes. It read the time each pane's `date` ran, which adds however long the scheduler took to exec it, and a CI runner measured 210 ms. The panes now write the start time of their own process from `/proc/PID/stat`. The daemon forks a pane before `new-window` answers, and xpanes sleeps the interval after that answer, so the forks are at least the interval apart. Off Linux the test still reads `date`. Run on 2026-10-22.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The exec of pane x is late, which the old test read as a short interval | n/a, injected: a scheduling delay made deterministic | the command sleeps 100 ms before it stamps, in pane x only, with the old `date` stamp | `TestXpanesDefaultModeWithoutAClient`, 5 of 5 runs ("started 199.9ms apart") | **caught**, the flake |
+| xpanes does not wait between `-ss` panes | the `time.Sleep(interval)` in the `-ss` loop of `cmd/tuios/xpanes_command.go` | branch cut | `TestXpanesDefaultModeWithoutAClient` with the fix, 3 of 3 runs ("started 0s apart") | **caught** |
+
+The fixed test with the same 100 ms delay in pane x passes 5 of 5 runs, and passes 25 of 25 runs without it.
+
+## The cockpit's spawn sheet
+
+`TestCockpitSpawnSheet` opens the cockpit with `ctrl+b i`, presses `n`, types
+a task and presses `enter`. A fake claude must read the task in a new worktree
+on `agent/lru-cache-safe`. Then the mouse picks This folder and clicks Start,
+and a second fake claude must read its task in the session. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| `n` and New agent do not open the sheet | `CockpitNewAgent` opens the sheet | Returns at once | `TestCockpitSpawnSheet` ("waiting for the spawn sheet") | **caught** |
+| The worktree is not on the branch the sheet shows | `name` in the fan call | Left out | `TestCockpitSpawnSheet` ("the sheet never made a worktree on agent/lru-cache-safe") | **caught** |
+
+After review: `TestCockpitSpawnSheet` also checks that esc keeps the draft,
+that a branch the person typed stops following the task, that a base which
+starts with `-` is refused, and that a start the daemon refuses keeps the
+draft. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| esc loses the draft | `spawnClose` keeps the sheet as the draft | The draft set to nil | `TestCockpitSpawnSheet` ("the kept draft after esc") | **caught** |
+| A typed branch follows the task again | The `cur != s.branchAuto` check in `spawnFollowTask` | Always false | `TestCockpitSpawnSheet` ("waiting for the typed branch") | **caught** |
+### tuios mermaid --watch and --demo give the terminal back
+
+`TestMermaidLiveGivesTheTerminalBack` runs `tuios mermaid --demo` on a fake terminal with kitty graphics and ends it with q, Ctrl+C, SIGTERM, SIGHUP, a panic in the frame encoder (a build with `-tags mermaidpanic`, which the case makes from source), and SIGTERM while the terminal has stopped reading. Each time termios must equal what it was before the program started, and after the last frame the picture must be deleted, the cursor shown and the alternate screen left. Its positive half is the first kitty frame, which every case waits for. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The terminal stays in raw mode after the view ends | `term.Restore` in the cleanup | Replaced with `_ = orig` | all six cases ("termios after exit is ...") | **caught** |
+| A signal other than SIGINT and SIGTERM leaves raw mode, and a stalled terminal keeps it raw until the blocked write returns | The cleanup that restores termios first, on every signal and panic | The build before the fix (3bdff3a2c) | `/SIGHUP` (exit 129, termios, no reset), `/SIGTERM_while_stalled` (termios while stalled) | **caught** |
+
+The build before the fix has no panic hook, so its `/panic` case times out instead of failing on termios. That case was checked with the `term.Restore` control above. The panic case builds its own binary with `-tags mermaidpanic` from the checkout and ignores `TUIOS_E2E_BIN`, so its control edits the source: with `term.Restore` removed it fails on termios (run again on 2026-10-19 after the hook moved from an environment variable to the build tag).
+
+### tuios mermaid --watch writes no terminal controls from the file
+
+`TestMermaidLiveWritesNoTerminalControls` watches a diagram with `--split` whose labels and source lines hold ESC (as `#27;` and as raw bytes), OSC 2, OSC 52 and BEL, in a kitty terminal and a text one, and a source with a parse error that quotes them. None of `ESC ]2;`, `ESC ]52;` or BEL may reach the terminal, and U+FFFD must show in their place. Its positive half is the source pane, which every case waits for. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The source pane writes the file's controls to the terminal | `mermaid.TermSafe` in `paneText` | Returned the line as it is | `/kitty` and `/text` (OSC 2, OSC 52, BEL), `/parse_error` (BEL) | **caught** |
+
+### A picture cropped past its pane edge keeps its own scale
+
+A guest that scales a PNG into a cell box and places it past the pane's bottom right corner is cropped to the cells that show. `TestKittyOverflowCropKeepsThePicturesScale` sends a 2000x400 picture into 100x10 cells, twice the pinned 10x20 cell on both axes, by every medium a PNG can travel in, and checks that the source rectangle is 20 of its pixels a column and 40 a row. Without its size the crop was measured in the host's cell: a slice of the picture at its own size. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A PNG sent by name has no known size | The header read in `mediumPixels` | Branch skipped | `/file`, `/file-zlib`, `/file-at`, `/temp` ("41x4 cells show the source rectangle x=0,y=0,w=410,h=80, want ... w=820,h=160") | **caught** |
+| The header is read at the start of the file, not at the medium's offset | `O=` and `S=` passed to `kittyMediumPNGSize` | Passed as 0 | `/file-at` | **caught** |
+| A PNG compressed again is read as it is | `o=z` passed to `kittyMediumPNGSize` | Passed as false | `/file-zlib` | **caught** |
+| A file transmit that only stores the picture leaves a placement, drawn unscaled beside the real one | The `!andPlace` return before `putPlacement` in `forwardFileTransmit` | Removed | `/file-later`, `/temp-later` ("118x20 cells show the source rectangle x=0,y=0,w=1180,h=400, want ... w=2360,h=800") | **caught** |
+
+The `-later` cases store the picture with a=t and place it with a=p, as snacks.nvim does. The check is on the last command for each placement id. The real placement still goes out unclipped for one command before the refresh pass clips it under the same id; that is older than this fix, happens inline too, and is not covered here.
+
+`/direct` passes on every build: an inline PNG's size was already read from its first chunk, and it is the case that shows the test's arithmetic is right.
+
+### A pane in a detached session takes a measured cell
+
+`TestDetachedPaneTakesTheCellOfAClientElsewhere` attaches a client with an 8x16 cell to one session, opens a detached session from the command line, and has its first pane print every pixel size a program can read. Each must be in 8x16 cells, not the 10x20 fallback. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A pane made by a verb takes no cell when it is made | The `CellSize` call in `AddDaemonWindowWith` | Branch skipped | `TestDetachedPaneTakesTheCellOfAClientElsewhere` ("TIOCGWINSZ is 780x440 pixels, want 624;352") | **caught** |
+| A session nobody measures has no cell | The fallback to a client elsewhere in `newPaneCellSize` | Branch skipped | `TestDetachedPaneTakesTheCellOfAClientElsewhere` (same) | **caught** |
+
+`TestDetachedPaneReportsAPixelSize`, where no client is attached anywhere and the fallback cell is right, passes with the fix.
+
+### A session's panes keep their cell with nobody attached
+
+`TestDetachLeavesThePaneCellAlone` runs the pixel guest in a session with a client with an 8x16 cell attached, attaches a client with a 12x24 cell to another session, closes the first client, waits until list-clients shows nobody on the session, and has the daemon recalculate the session's size with a set-option of `daemon.window_size`. Every 2048 report the guest gets must stay in 8x16 cells. The fallback to a client elsewhere is for a new pane only. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The panes of a session nobody is attached to switch to the cell of a client elsewhere | `newPaneCellSize` split out of `sessionCellSize` | The build before the fix, where `sessionCellSize` itself falls back to a client elsewhere | `TestDetachLeavesThePaneCellAlone` ("the guest was told a 12x24 cell"), twice | **caught** |
+
+A plain leave recalculates nothing once no client is left (`notifyClientLeft` only recalculates while `clientCount > 0`), so without the set-option the same build passes: the test needs something that recalculates the size of a session nobody is attached to. A latest hold timer firing after the leave is the other such path. With `newPaneCellSize` returning `sessionCellSize` alone, `TestDetachedPaneTakesTheCellOfAClientElsewhere` fails and this test passes, so the two tests pin the two halves.
+
+### A picture that names no cell box, and an a=t re-send of a placed picture
+
+`TestKittyOverflowCropKeepsThePicturesScale` has two more kinds of case. `-natural` names no cell box, as kitty icat can, so the picture is 200x20 cells at its own size and the host must be left showing fewer cells, cropped 10 of its pixels a column and 20 a row. `-resend` places the picture in its 100x10 box and then sends other pixels under the same id with a=t. Run on 2026-10-19.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A file a=t under a placed id rewrites the placement's cell box and crop | The `!andPlace` return in `forwardFileTransmit`'s refresh of an existing placement | The build before the fix | `/file-resend`, `/temp-resend` ("the placement is 118x20 cells, want it clipped to fewer than 100x10") | **caught** |
+| A PNG sent by name with no cell box is never placed | The header read in `mediumPixels` | Branch skipped | `/file-natural`, `/temp-natural` ("the image was never left placed") | **caught** |
+
+`/direct-natural` and `/direct-resend` pass on every build: an inline PNG's size was already read from its first chunk, and an inline a=t passes through without touching the placement.
+
+Real kitty icat (0.49.2) through a pane of this build and of main sends `s=`, `v=`, `c=` and `r=` itself: a 2000x400 PNG comes as a 1180x236 bitmap in 118x12 cells, and a 600x200 one as a file in 60x10 cells, the same commands on both builds. So icat at the left of a pane wide enough is not clipped; the `-natural` cases cover a guest that names no box.
+
+### An a=t that re-sends a placed picture's frame, or whose PNG header does not read
+
+`TestKittyOverflowCropKeepsThePicturesScale` has two more kinds of case, both file media only. `-same` places the picture, moves the cursor to the top left, where the whole 100x10 box fits, and sends the same bytes again with a=t, so the frame is dropped as unchanged; a placement moved to the cursor there is not clipped. `-badhead` places the picture and then sends other pixels with a=t from a file whose PNG signature is broken, so the picture's size has to stay what it was. Each control is a text replacement in the branch's checkout, built to a separate binary and put back byte for byte (`shasum -c`) before the next. The build before both fixes fails all four cases the same way. Run on 2026-10-20 on macOS.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| An a=t whose frame the host already holds moves the placement to the cursor | `&& andPlace` on the unchanged-frame branch of `forwardFileTransmit` | Removed | `/file-same`, `/temp-same` ("the placement is 100x10 cells, want it clipped to fewer than 100x10") | **caught** |
+| An a=t whose PNG header does not read zeroes the placement's pixel size | The `sized.Width > 0 && sized.Height > 0` guard on the existing placement's pixel size | Removed, the size assigned as it comes | `/file-badhead`, `/temp-badhead` ("41x4 cells show the source rectangle x=0,y=0,w=410,h=80, want x=0,y=0,w=820,h=160") | **caught** |
+
+Each control fails only its own two cases; `/file-resend` and `/temp-resend` pass under both.
+
+An a=t of a file under i=0 is held by a kept unit test, not here: `TestUnnamedTransmitIsNotKept` in `internal/app/kitty_keep_test.go`. No verb reports what is kept for a screenshot, and such an entry never reaches a screenshot, which is the only thing that reads the store.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| Every file a=t under i=0 keeps an entry the byte bound never evicts | The `andPlace \|\| cmd.ImageID != 0` guard on `keepFileMedium` | Replaced with `true` | `TestUnnamedTransmitIsNotKept` ("100 a=t under i=0 left 100 kept entries, want none") | **caught** |
+| A fix that keeps nothing for any a=t | Same guard | Replaced with `andPlace` | `TestUnnamedTransmitIsNotKept` ("an a=t under i=7 left 0 kept entries, want 1") | **caught** |
+| A fix that keeps nothing under i=0 | Same guard | Replaced with `cmd.ImageID != 0` | `TestUnnamedTransmitIsNotKept` ("an a=T under i=0 left 1 kept entries, want 2") | **caught** |
+
+## The risk test's cut, independent of the temp folder name
+
+`TestRiskInWorktree` needs the Inbox line to cut the Edit's path inside the worktree's path. The line shows 91 runes of the path. The isolation root was `t.TempDir()`, whose random part has 1 to 10 digits. With 7 digits the cut fell just after the worktree's path, and the precondition failed on CI. The root is now padded to 45 runes, so the cut falls 10 runes before the end of the worktree's path. A longer temp folder makes the worktree's path longer than the line, and the cut still falls inside it. Run on 2026-10-22.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A temp folder with a 7-digit random part moves the cut past the worktree's path | n/a, injected: the CI failure's folder | the root forced to `/tmp/TestRiskInWorktree3910109/001`, the folder of the CI failure, in the old test | `TestRiskInWorktree`, 5 of 5 runs ("precondition: ... does not stop inside") | **caught**, the flake |
+
+The fixed test with the same forced folder passes 5 of 5 runs. `TestRiskInWorktreeRedacted` fails with the forced folder on both builds, as it must: the forced name has no run for the redaction to hide. Both tests pass 25 of 25 runs with the fix.
+
+## Agent row after exit
+
+The test is `TestHookClaimLapsesWithTheHarness` in `harness_integrations_test.go`. A program named `claude` (`testdata/fakeclaude`) runs the stand-in script, which replays a Claude Code session with tool calls through the real `tuios agent-hook claude-code`, ends the turn with `Stop`, and then leaves the pane at its shell. The `unreadable-pid` case runs no stand-in: it reports for the pane from outside it with `tuios call set-agent-state` and a `harness_pid` of 2000000000, which no pid namespace on Linux or macOS reaches, as an agent in a container with the socket passed in would, and holds the pane at its shell for three detection ticks. Each control is a text replacement in the branch's checkout, built to a separate binary and put back before the next. Run on 2026-10-18 on macOS against upstream main at 55590f29. The fixed build passes all six cases.
+
+Upstream main, which has no fix, passes every case but `crash`: with no `SessionEnd` the daemon kept the pane `done` with harness `claude-code` and source `report`, and the row (`○ pilot`) stayed with the shell running until the pane closed. The first version of the fix, which took a harness pid that did not read for exited, fails `unreadable-pid`: the pane went to `none` at the first detection pass, to be set again by the agent's next report.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| The lapse not wired: the detector's `exited` check on a report claim at the shell replaced with `false` | `crash` ("the agents section still lists the pane after its agent left it, with the shell running") | **caught** |
+| The harness pid kept past `none`: `applyAgentReport` no longer forgets it on a `none` report | `note-after-exit` ("a person's note on the pane was cleared as if the harness had said it") | **caught** |
+| A pid recorded without its start time: `readHarnessProc` marks every pid timed, so one that does not read is taken for exited | `unreadable-pid` ("a harness pid this machine cannot read was taken for exited: the pane is {State:none ...}") | **caught** |
+
+Not covered end to end: a pid given to another process between the harness exiting and the detector looking, which the start time comparison in `harnessProc.exited` tells apart. A test cannot make the system hand a chosen pid to a new process. Nor Windows and other platforms that read no processes, where no start time is recorded and a report claim stays until it is cleared.
+
+### Follow-ups: a harness pid the caller runs under, and a busy protocol pane
+
+Two cases join the test for the maintainer's follow-ups to #873. `host-pid` reports from outside the pane with `tuios call set-agent-state` and a `harness_pid` naming a `sleep` the test started, a live process here that the reporter does not descend from, as a container's own pid can happen to be. It ends the `sleep` and holds the pane at its shell for three detection ticks. `protocol-pane` starts a `start-agent --protocol acp` pane on `testdata/fakeacp`, whose pane process is the protocol program and so reads as at its shell while it runs. A harness for it is `sh` handing its pid to the `tuios call set-agent-state` it execs, which reports with that pid and exits, as a harness child that restarts does. The pane is held for three ticks. Run on 2026-10-20 on macOS against upstream main at 0f62e38f. The fixed build passes all eight cases.
+
+Upstream main fails both new cases with the pane at `none`: `host-pid` ("a host process the reporter does not descend from was taken for its harness, and its exit for the harness's") and `protocol-pane` ("a protocol pane lost its state when a harness under it exited, with the pane program still running").
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| Every harness pid timed: `setAgentHarnessPID` reads the start time whether or not `callerRunsHarness` placed the pid under the caller | `host-pid` ("a host process the reporter does not descend from was taken for its harness, and its exit for the harness's: the pane is {State:none ...}") | **caught** |
+| No harness pid timed: `callerRunsHarness` returns false, so a hook's own harness is never taken for exited | `crash` ("the agents section still lists the pane after its agent left it, with the shell running") | **caught** |
+| The shell test dropped from the exit lapse: `&& fg == ""` removed, leaving `info.atShell()` alone | `protocol-pane` ("a protocol pane lost its state when a harness under it exited, with the pane program still running: the pane is {State:none ...}") | **caught** |
+
+Not covered end to end: an agent actually in another pid namespace. `host-pid` stands in for it with a pid the reporter does not descend from, which is what the daemon sees of one. Nor a platform that does not give the peer's pid, where no harness pid is timed and a report claim stays until it is cleared.
+
+## Two paste tests that pressed Enter before the paste landed
+
+`TestPasteBuffersKeepYanksAndPasteThem` sent Enter once the buffer chooser closed. The chooser closes before the paste lands, because the client reads the buffer from the daemon first. On CI the Enter ran `echo CHOSEN-` alone, and the buffer went to the next prompt. The test now waits for `echo CHOSEN-pbalpha42` on the line before it sends Enter.
+
+`TestAnImagePastedIntoAnSSHShellGoesToThatMachine/tmux_over_ssh_with_a_tty` sent Enter once `tuios-paste-` was on the screen. A remote paste first shows the file's name in the dock, in "Copied tuios-paste-...", so the Enter ran `wc -c` with no argument, and the path went to its input. The test now reads only the rows with a pane border, and waits for the path to its `.png`. Run on 2026-10-22.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The chooser's paste is late, and the test's Enter overtakes it | n/a, injected: a slow daemon | `pasteBufferNamed` sleeps 1 s before `show-buffer`, with the old test | `TestPasteBuffersKeepYanksAndPasteThem`, 3 of 3 runs ("the chooser did not paste the older buffer") | **caught**, the flake |
+| The image path is late, and the test reads the dock's "Copied tuios-paste-..." as the path | n/a, injected: a slow drop | `deliverImageCmd` sleeps 1.5 s after `paste-image` answers, with the old test | `TestAnImagePastedIntoAnSSHShellGoesToThatMachine`, 3 of 3 runs, in the five subtests that paste on the far machine ("the shell never printed the image's size") | **caught**, the flake |
+
+The fixed tests pass 3 of 3 runs on the delayed build, and 25 of 25 runs on main.
+
+## TML surfaces in popups and panes
+
+The tests are `TestTMLShowPopup` and `TestTMLShowPaneAndClose` in `tml_test.go`, and the `tml surface` case of `TestIdleCostStaysLow`. Each control is a text replacement in the branch's checkout, built and put back before the next. Run on 2026-10-20 on Linux.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| The render hook: `renderTerminal` no longer hands a TML window to `renderTML` | `TestTMLShowPopup` ("the popup never drew the surface"; the box shows the placeholder line) | **caught** |
+| The key routing: terminal mode sends the keys of a TML window to its PTY | `TestTMLShowPopup` ("the keys never picked the second row") | **caught** |
+| The mouse routing: `sendMouseToWindow` sends a TML window's clicks to its PTY | `TestTMLShowPopup` ("a click on the Log tab never showed the log") | **caught** |
+| The attach push: the daemon sends no open surface after the attach reply | `TestTMLShowPopup` ("the reattached client did not draw the surface with its state") | **caught** |
+| The early-push backlog: a push that arrives before the client wires its handler is dropped | `TestTMLShowPopup`, the same reattach step | **caught** |
+| Idle: the client draws every surface again every 100 ms | `TestIdleCostStaysLow/tml_surface` (25 ticks, budget 2; 4182 context switches, budget 400) | **caught** |
+
+A control that sets a TML window's output flag on each render does not fail the idle case: the flag is read only on a pass that something else woke, so it starts no loop. It is not kept.
+
+### After the review of #944
+
+`TestTMLProgramCloseIsNotThePersons` and `TestTMLSurfaceThroughAHostShowsThePlaceholder` in `tml_test.go`. Run on 2026-10-20, the same way.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| `movableRefusal` lets a TML pane move to another session | `TestTMLProgramCloseIsNotThePersons` ("a TML pane moved to another session") | **caught** |
+| `tml-close` reports its value as the person's (`closed`) | `TestTMLProgramCloseIsNotThePersons` ("ended with <nil> after a program's close, want exit status 2") | **caught** |
+| `--name` stored with its control characters | `TestTMLProgramCloseIsNotThePersons` ("the window name kept its control characters") | **caught** |
+| A client attached through a host draws TML windows itself | `TestTMLSurfaceThroughAHostShowsThePlaceholder` ("the far surface did not show its placeholder line") | **caught** |
+| A client attached through a host claims `tml_surfaces` in its hello | none: the client still does not draw the window, so the pushes it gets go unused | not caught |
+| The placeholder ends on any byte after an esc, not only on a lone esc | `TestTMLSurfaceThroughAHostShowsThePlaceholder` ("a click closed the far surface") | **caught** |
+
+The hello claim is kept off through a host anyway: it spares the link the pushes. The cap of open surfaces per caller (8 per pane, 32 per session outside the panes) has no e2e case. Reaching it opens 32 windows.
+
+### The owner of a TML surface
+
+`TestTMLOwnerScriptAnswersEvents` in `tml_owner_test.go`. Run on 2026-10-20, the same way.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| The client sends no emit to the daemon | "the owner's patch never reached the frame" (the script never heard rerun) | **caught** |
+| `tml-open` with events opens no stream on its connection | the same step | **caught** |
+| `tml-patch` changes the state and pushes nothing | the same step | **caught** |
+| `tml-replace` ignores `keep_state` | "the replaced tree never drew with the kept state" | **caught** |
+| A client one version behind applies only the patch's first operation | "the owner's patch never reached the frame" (Runs: 2 came, the note did not) | **caught** |
+
+The last control shows that the patch path, not a full state replace, draws the owner's answer.
+
+### TML pushes to a slow client, and reads in scope
+
+`TestTMLStalledClientKeepsDaemonMemoryBounded`, `TestTMLSurfaceReadsStayInScope` and `TestTMLEmitOverTheLimitIsShown` in `tml_bounds_test.go`. Run on 2026-10-20, the same way.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| Every push queued on its own, each with the whole state (the build before the outbox) | `TestTMLStalledClientKeepsDaemonMemoryBounded` ("the daemon's peak memory grew by 634312 kB") | **caught** |
+| tml-get without the session check | `TestTMLSurfaceReadsStayInScope` ("a read pane in alpha was not refused a surface in beta") | **caught** |
+| The client only logs a refused input | `TestTMLEmitOverTheLimitIsShown` ("the refused emit left no message") | **caught** |
+
+The test reads the daemon's peak memory (VmHWM), not its resident set at the end: the garbage collector gives back what the burst held, and a first version that read VmRSS passed the control once.
+### What a TML surface may do
+
+`TestTMLPaneActionsRunWithTheOwnersGrants` in `tml_grants_test.go`. Run on 2026-10-20, the same way.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| A pane() action runs with the person's rights, not the opening pane's | "the refusal was not shown" (the agent's surface typed into build) | **caught** |
+| The owner check of tml-patch, tml-replace and tml-close | "the agent's patch of the person's surface was not refused" | **caught** |
+| The rate limit of 100 patches a second | "250 patches back to back were all taken" | **caught** |
+| The question before a surface first types into a pane | "no question before the surface typed" | **caught** |
+
+### The owner label, the focus of a pane's surface, and new-window
+
+`TestTMLOwnerComesFirstAndCannotBeForged` and `TestTMLNewWindowAsksFirst` in `tml_label_test.go`, and the own-read step of `TestTMLPaneActionsRunWithTheOwnersGrants`. Run on 2026-10-20, the same way.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| The label with the title first ("TITLE · from OWNER") | "the window name does not start with its real owner" | **caught** |
+| The owner named from the pane's OSC title | "the owner came from the pane's own title" ("from pane tuios d02f72cd · Approve") | **caught** |
+| A pane's popup takes the focus | "the person's typing did not reach the pane they were in" | **caught** |
+| new-window runs without the question | "no question before a new window" | **caught** |
+| The pane that opened a surface may not read it without read | "the pane that opened a surface could not read it" | **caught** |
+
+### The owner by window id, one command per yes, focus on the first click
+
+`TestTMLOwnerIsNotWhatTheProgramCallsItself` and `TestTMLNewWindowYesCoversOneCommand` in `tml_label_test.go`, and the click step of `TestTMLOwnerComesFirstAndCannotBeForged`. Run on 2026-10-20, the same way.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| The owner named by the program in the pane (argv[0]) | "the owner is not the opening pane's id" ("from pane eac063df (prod c3c92458) · Approve deploy") | **caught** |
+| The new-window yes keyed on the command cut to 40 cells | "b asked no question" (the second command ran on the first yes) | **caught** |
+| The first click on a pane's popup presses its button | "the first click on a pane's popup pressed its button" | **caught** |
+
+### The owner first on the popup's frame, and a name that is not unique
+
+The frame step of `TestTMLOwnerComesFirstAndCannotBeForged` and `TestTMLOwnerNameMustBeUnique` in `tml_label_test.go`. Run on 2026-10-21 on Linux, each control built and put back before the next.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| The popup's frame draws the title before the owner | "the frame does not read the owner first" ("╭─ Deploy prod? - from tuios… · from agent ╮") | **caught** |
+| `tmlNameIsOwnersAlone` always true, so a copied name stands alone | "IdLike: want from pane 8bc5c232 (pane 0123abcd) · IdLike" | **caught** |
+
+### The question whole or not at all, and the window name in the yes
+
+`TestTMLQuestionWaitsForRoom` and the name step of `TestTMLNewWindowYesCoversOneCommand` in `tml_label_test.go`. Run on 2026-10-20, the same way.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| y and n answer while the question does not fit | "y ran a command whose question the person could not see whole" | **caught** |
+| The fit checked only at the press, drawing a cut question | "a smaller surface did not hide the cut question" | **caught** |
+| The window name left out of the new-window yes | "d asked no question showing \"with the window name prod\"" | **caught** |
+
+## The multi-client rigs drop the layout generation
+
+`TestFloatedPaneStaysFloatedEverywhere` failed on CI with the peer holding the floated pane at 118x38 while the local client drew it at 58x36. The rigs in `internal/app` route a session resize into `SessionResizeMsg` without its `Generation`, which `WireDaemonClient` passes. The local client then pushed the generation it attached with, the daemon read every later push as tiled in a stale layout and kept its own rectangles (`keepRectsOfStaleLayout`), and the peer adopted the daemon's nominal 120x40 for the floated pane. A trace of the failing run shows the local client's push arriving at the peer with `fl=true 0,0 120x40` while the local client drew 60x38. Whether it failed depended on whether the local client's first push landed before the peer's join moved the generation on. The four rigs now read the generation on the read loop and pass it. The product passes it already. Run on 2026-10-22.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The rig's resize carries no generation | the `Generation` field in `routeSide`, as on main | four copies at once on two cores | `TestFloatedPaneStaysFloatedEverywhere`, 3 of 240 runs, and 3 of 800 in a second batch ("the pair never settled on one arithmetic"), with the CI numbers | **caught**, statistically |
+
+With the fix the same load passes 800 of 800 runs in two batches, and the other multi-client rig tests pass. The race needs the daemon to move the generation between two of the local client's pushes, which a test cannot schedule from outside, so the control is statistical.
+
+## Snapping left with a pixel-mouse pane on screen
+
+`TestFloatingSnapLeftWithPixelMousePastTheEdge` in `snap_pixel_edge_test.go` runs a pane that shows a kitty image and turns on SGR-pixel mouse reports (1016), as disktree does. It drags the other floating pane to the left edge in host pixels, holds the pointer past the edge at a negative x, and lets go there. A terminal in 1016 reports such a pointer at a negative position, and ghostty does. The test asserts that the pane lands on the left half at full height, and that the client draws no frame and sends no image command in the 3s after the snap lands. `standalone` and `daemon` run the same steps.
+
+Run on 2026-10-20 on Linux. The control is the build of `origin/main` at e5334a8c, which has no `rejoinSplitMouse`. Both cases fail with "the pane never landed on the left half at full height". The release came in as the keys `6;410m` and the `m` minimized a pane: the frame shows the dragged pane parked off the left edge and the other pane in the dock. With the fix both cases pass, with 0 renders and 0 image commands in the 3s after the snap.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| The rejoin removed: `FilterMouseMotion` without its `rejoinSplitMouse` call (`origin/main`) | `standalone`, `daemon` ("the pane never landed on the left half at full height") | **caught** |
+
+Not covered end to end: the keys typed while the pointer is held past the edge. A drag ignores them in this fixture, and a check that the screen held still passed on both builds, so it was removed. The release is what this fixture catches. Not covered either: negative y, the wheel, a report split between two reads, and a report too long for the hold. A throwaway probe checked them: each is rejoined or dropped whole, and keys held for a report that never ends are typed in order.
+## The touch suite read the board on fixed timers
+
+`touch.spec.mjs:397` (a long press opens the pane menu), `:448` (drag a floating pane) and `:480` (drag a tiled pane) failed on CI with no menu, an unmoved pane, or panes not yet tiled. The board helpers waited a fixed 1.4 s after a close, 2.5 s after a new pane and 1.5 s after the tiling chord, and read the screen once. A CI run of the suite 25 times with the screen dumped at each step failed once: the first new pane came up tiled, the tiling chord had not been drawn when the board was read, and the second pane came up tiled too. In the failures of #733, #955 and #987 the reset had left two panes, and the gestures reached the one the test did not read. The helpers now wait for the board: a close waits for a pane to go, a new pane waits until it is drawn, every reading waits until the buffer stops changing, and the reset checks there is exactly one pane. The gestures wait for the menu, the move or the tiles instead of a fixed time. Run on 2026-10-22.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A slow runner draws a new pane after the fixed wait ends | n/a, injected: a slow runner | a `tuios-web` whose new-pane handlers sleep 3 s, with the old spec | `:361` (the tap test), `:448` ("the drag did not move the pane down") and `:480` ("two tiled panes should draw two corners on the box edge"), the CI messages | **caught**, the flake |
+
+The final spec passes 2 of 2 runs on the slow build and 25 of 25 runs of the whole suite on a plain build, with no browser or `tuios-web` left running. A build whose every third new pane opens two drives the recovery path: 3 of 3 runs pass, each after 3 page reloads. On the plain build the reset met the desync below in 3 of the 25 runs and recovered each time.
+
+The desync is not settled. About one run in 20, the client drew the splash while the daemon still held a pane on the same workspace: `list-windows` listed two panes after one new pane. Closing panes does not clear it, because the client does not know the pane is there. The reset now reloads the page, which attaches again and reads every pane from the daemon, and logs the screen. The original CI frames, where a pane from the previous test survived the reset, look the same.
+
+## tuios plugins install
+
+`TestPluginsInstallFromGit` installs a probe plugin from a bare repository
+under the test's temp folder, over `file://`, with a daemon running. Each
+install builds into a new folder. The machine-local state file
+`%state.toml` names the folder that runs, and the folder before it.
+`plugins.lock` holds only the source, the ref, the commit, the tree and the
+approved hash. The `main` branch writes its folder to `dist/where` and
+`built-by-install` to `dist/out`. Its startup writes its folder to
+`startup.log` and sleeps, its action prints `dist/out`, and its pane
+sleeps. `next` is `main` with one more commit. The `broken` branch has a
+build command that exits 3. On `escape`, `herdr-plugin.toml` is a link to a
+manifest outside the repository. On `linkdir`, the folder `plug` is a link
+to a folder outside it. The outside manifest's build writes a marker file.
+While the file `slow` exists, the build sleeps.
+
+The test runs, in order:
+
+1. The two links: refused, with no folder, no marker and no lock entry.
+2. A kill at the prompt while the install lock is held.
+3. `main`: pinned, built in the folder the state file names, listed and
+   running, with its startup run from that folder. A plugin pane opens from
+   it.
+4. A failed build of `broken`: the lock file, the state file and the
+   running plugin are unchanged, and the failed folder is gone.
+5. A kill during the build of `next`: the lock file, the state file and the
+   running plugin are unchanged.
+6. `next`: a new folder, the startup restarted from it, `config.toml` still
+   enabled, `main` kept as the previous folder, and the killed folder gone.
+7. The lock file is set back to `main`'s commit, as after a kill between
+   the state write and the lock write: the plugin runs from `main`'s
+   folder.
+8. `main` again, in a third folder: the live folder and the one before it
+   stay, and the first folder stays because the plugin pane runs from it.
+
+Each failing half has its positive half in the same fixture. The artifacts
+are `install.txt`, `plugins.lock`, `state.toml` and `list.json` in the
+test's artifact folder.
+
+`TestManifestRefusesTerminalControls` in `internal/herdrplugin` is a
+security boundary test. It checks that `Parse` refuses ESC, OSC, CR, C1,
+bidi and DEL characters in argv, versions, events and placements, and that
+it takes a clean manifest with a tab in an argument.
+
+Each control cut the wiring in the branch, built the binary, and ran the
+one test. Run on 2026-10-18, after the fourth review of #877.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| A failed build stops the install | the `runPluginBuild` check in `installer.finish` never sees the error | `TestPluginsInstallFromGit` ("install of the broken branch: <nil>") | **caught** |
+| A failed build removes its new folder | the build failure returns without `fail` | `TestPluginsInstallFromGit` (".../plugins/e2e.probe holds [two folders], want [the live one]") | **caught** |
+| The daemon finds an installed plugin | the `add(OriginManaged, ...)` call in `Discover` | `TestPluginsInstallFromGit` ("the install output lacks \"is enabled\"": the daemon answers `plugin_not_found`) | **caught** |
+| A manifest that links out of the checkout is refused | the `Inside` check in `loadInside` | `TestPluginsInstallFromGit` ("install of escape: <nil>, want \"outside the repository\"") | **caught** |
+| A subdir that is a link is not a folder | the `cat-file -t` check in `fetchInto` | `TestPluginsInstallFromGit` ("install of linkdir: exit status 1, want \"has no folder plug\""). The `Inside` check still refuses the install, so the cut changes only the message | **caught** |
+| A manifest argv with a terminal control is refused | the `hasControl` check in `argvOf` | `TestManifestRefusesTerminalControls` ("Parse took \"\\u001b[2J\" in %ARG%" and five more) | **caught** |
+| A kill at the prompt does not block the next install | the kernel lock `HoldLock` in `newInstaller` becomes a guard file made with `O_EXCL` and removed on return | `TestPluginsInstallFromGit` ("install of main after a kill at the prompt: exit status 1") | **caught** |
+| The build runs in the folder the state file names | the build runs in the fetch folder, which moves into place after it | `TestPluginsInstallFromGit` ("the build ran in \".../plugins/%fetch-N\", want the folder the state file names") | **caught** |
+| The state write comes after the build | the state file is written before the build | `TestPluginsInstallFromGit` ("the state file does not name the build of main": it says `built = false`) | **caught** |
+| Old build folders go after the switch | the `collect` call in `restart` | `TestPluginsInstallFromGit` (".../plugins/e2e.probe holds [three folders], want [two]") | **caught** |
+| A failed or killed reinstall leaves the old plugin running | the plugin is stopped before the build | `TestPluginsInstallFromGit` ("plugins run ping after a failed build: exit status 1") | **caught** |
+| Discover uses the state's folder only for the lock's commit | `State.Live` takes the state's folder whatever its commit | `TestPluginsInstallFromGit` ("with the state ahead of plugins.lock, the plugin does not run from the folder of main") | **caught** |
+| `plugin.restart` restarts the plugin | the daemon's restart reports no restart and stops nothing | `TestPluginsInstallFromGit` ("the startup did not run from .../<next folder>") | **caught** |
+| The previous folder stays | `collect` keeps only the live folder | `TestPluginsInstallFromGit` (".../plugins/e2e.probe holds [two folders], want [three]" after the second install of `main`) | **caught** |
+| A folder a plugin pane runs from stays | `collect` ignores the pane folders from `plugin.restart` | `TestPluginsInstallFromGit` (".../plugins/e2e.probe holds [two folders], want [three]": the first folder of `main` is gone) | **caught** |
+
+That a restart leaves `config.toml` alone is checked only on the success
+path ("config.toml lost the plugin after the restart"). The old disable and
+enable pair ended with the plugin enabled too, so no cut makes that check
+fail without a kill in the middle of a restart.
+
+The fixed build passes `TestPluginsInstallFromGit` 3 of 3, and every
+`TestHerdrPlugin*` 3 of 3.
+
+### After the rebase onto main of 2026-10-21
+
+`TestHerdrPluginTrustAndHooks` now also sends `plugin.restart` for an
+enabled plugin from a pane, on the herdr socket. herdr's CLI has no restart
+command, so the step writes the request with python3. The pane variables
+stay set, as for the other herdr steps.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| `plugin.restart` is for the person | the `herdrPluginTrust` check in `herdrPluginRestart` | `TestHerdrPluginTrustAndHooks` ("plugin.restart from a pane was not refused: exit 0", with `restarted: true`) | **caught** |
+
+The fixed build passes `TestHerdrPluginTrustAndHooks` and
+`TestPluginsInstallFromGit` 3 of 3.
+
+## Native plugins
+
+`TestNativePluginGrants` runs one probe script as three plugins on a daemon
+under mode `open`. `e2e.native` is a native plugin that asks for `read`,
+installed from a bare repository over `file://`. `e2e.herdrprobe` is a herdr
+plugin installed from a folder. `e2e.linked` is a native plugin that is
+linked and enabled, not installed. The startup script reads with
+`list-sessions` and with herdr's `workspace list`, lists the plugins with
+herdr's `plugin list`, subscribes to window events, types with `send-text`,
+makes a session over the client protocol with `tuios new`, and leaves a
+process behind whose parent exits, whose `TUIOS_*` variables are cut and
+which holds none of the script's output open. Then the script ends. One
+second later that process types, and tries to disable its own plugin. The
+native plugin's pane records its grants. Before that, five manifests are
+refused at install: `[[wasm]]`, `admin` without `--grant admin`, `respond`,
+an unknown key, and a `[herdr]` manifest with another id. After it, a
+native plugin that asks for `admin` is installed from a folder with
+`--grant admin`: it holds admin, and without the approval file it is
+refused. A folder plugin whose `plugins.lock` entry is given `admin` by hand
+is refused as changed.
+
+The test wants: `e2e.native` reads, lists and gets events from every
+session, and does nothing else. `e2e.herdrprobe` reads and types, as the
+default grants allow, and cannot disable a plugin. `e2e.linked` sees no
+session, cannot list plugins or subscribe, and does nothing. Only the herdr
+plugin's text and session exist. The native plugin's pane holds `read`,
+though the person opened it. The artifacts are `install.txt`, `info.txt`,
+`pane.txt`, the forged `plugins.lock` and each plugin's `.out` files.
+
+Each control cut the wiring in the branch, built the binary, and ran the
+one test. Run on 2026-10-21, after the review of #956.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| A native plugin's process is placed in its plugin | `pluginAuthority` returns nil | `TestNativePluginGrants` ("e2e.native: write exited 0", "binary exited 0", "e2e.linked: pluginlist exited 0") | **caught** |
+| Verbs are checked while a native plugin runs, also under `open` | the `nativePluginsRun` term in the early return of `checkGrants` | `TestNativePluginGrants` ("e2e.linked: read exited 0") | **caught** |
+| The client protocol is checked while a native plugin runs | the `nativePluginsRun` term in the early return of `checkGrantMessage` (review F1) | `TestNativePluginGrants` ("e2e.native: binary exited 0", "the sessions the plugins made over the client protocol") | **caught** |
+| The runner enters the owner before the command can call | the `setOwner` call in `Runner.Start` | `TestNativePluginGrants` ("e2e.linked: read exited 0", "binary exited 0") | **caught** |
+| The owner stays while what the leader left is in its group | `setOwner` drops the entry when the leader exits | `TestNativePluginGrants` ("e2e.native: orphan-write exited 0", "orphan-trust exited 0", "e2e.herdrprobe: orphan-trust exited 0") | **caught** |
+| No plugin process acts as the person | the `pluginOfPeer` check in `connFromPane` | `TestNativePluginGrants` (each plugin's "orphan-trust exited 0": the orphan disabled its own plugin) | **caught** |
+| A native plugin's pane holds no more than the plugin | the cut in `herdrPluginPaneOpen` | `TestNativePluginGrants` ("the plugin's pane holds {Pane:true Grants:[admin]}") | **caught** |
+| A native plugin holds the approved grants, or none | `Discover` gives every native plugin the grants its manifest asks for | `TestNativePluginGrants` ("e2e.linked: read exited 0", "pluginlist exited 0") | **caught** |
+| `admin` needs a machine-local approval (review F2) | the `adminApproved` check in `Discover` | `TestNativePluginGrants` ("an admin plugin with no approval on this machine") | **caught** |
+| A `path:` plugin is held to its approved manifest (review F2) | `checkManaged` skips the hash and grants check for a local entry | `TestNativePluginGrants` ("a local plugin whose lock entry was given admin by hand") | **caught** |
+| herdr read methods need `read` (review F3) | the `herdrRead` check in `herdrAllowed` | `TestNativePluginGrants` ("e2e.linked: pluginlist exited 0") | **caught** |
+| A plugin with `read` gets events from every session (review M1) | `eventInScope` holds a plugin to its empty session | `TestNativePluginGrants` ("events.code of e2e.native never held") | **caught** |
+| `[[wasm]]` is refused | the `len(n.Wasm)` case in `parseNative` | `TestNativePluginGrants` ("install of the wasm manifest: <nil>") | **caught** |
+| `admin` needs `--grant admin` | the admin check in `checkNativeAsks` | `TestNativePluginGrants` ("install of the admin manifest: <nil>") | **caught** |
+
+Two controls show a hole on main that this change closes for herdr plugins
+too: a process a plugin leaves behind, with its parent gone and its
+`TUIOS_*` variables cut, was taken for the person and could disable a
+plugin.
+
+### After the second review of #956, and the review of #959
+
+`TestNativePluginGrants` now also changes `probe.sh` of an approved `admin`
+plugin and changes it back, makes the approval folder writable by the group
+and private again, and runs `tuios plugins install --grant admin` from a
+pane with `TUIOS_PANE_ID` and `TUIOS_WINDOW_ID` cut, once plain and once
+with `--server zz`. Its plugins run under the reaper. Three unit tests come
+with it:
+
+- `TestOwnerForgetsAnEmptiedGroup` (`internal/herdrplugin`, Linux) runs
+  itself as pid 1 of a new pid namespace. Under CI it fails instead of
+  skipping, and it needs the inner run's `--- PASS`. The workflow allows
+  user namespaces first.
+- `TestGitTimeoutHoldsWithAHungChild` (`internal/review`).
+- `TestHerdrVerbMethodsRefuseAPluginWithNoGrants` (`internal/session`)
+  calls every `herdrVerbs` method from a real process of a native plugin
+  with no grants, against a workspace the person made.
+
+Run on 2026-10-21.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| Every running daemon confirms the person, and none is started for it | `liveDaemonSockets` starts a daemon and returns only the one `--server` names (the review's 959-1) | `TestNativePluginGrants` ("a pane approved admin with its pane variables cut --server zz", "a pane wrote the admin approval (--server zz)") | **caught** |
+| The daemon confirms the person before an approval | `confirmPerson` returns nil | `TestNativePluginGrants` ("a pane approved admin with its pane variables cut", "a pane wrote the admin approval") | **caught** |
+| The approval covers the files the commands name | `adminApproved` ignores the code hash | `TestNativePluginGrants` ("after probe.sh changed: plugins info lacks plugin_admin_not_approved") | **caught** |
+| The approval folder must be private | `readApprovals` checks only the file | `TestNativePluginGrants` ("with the approval folder writable by the group") | **caught** |
+| The owner entry goes when the reaper exits | the `dropOwner` call before the reaper is reaped | `TestOwnerForgetsAnEmptiedGroup` ("the entry of session 7 outlived the reaper", "a stranger's daemon (pid 8, session 7) is counted as plugin e2e.admin") | **caught** |
+| git's children are killed with it | no `Cancel` in `review.git` | `TestGitTimeoutHoldsWithAHungChild` ("git's child ... still runs after Git returned") | **caught** |
+| A git child cannot hold the timeout | no `WaitDelay` and no `Cancel` in `review.git` | `TestGitTimeoutHoldsWithAHungChild` ("Git returned after 20.0s") | **caught** |
+| The plugin command gets its own GODEBUG, not the reaper's `disablethp=1` | the reaper starts the command with its own environment | `TestReaperKeepsTheCommandsGodebug` ("the command saw GODEBUG \"set:disablethp=1\", want \"unset\"", and the same for each case) | **caught** |
+| A herdrVerbs method runs the grant check | `herdrPaneRename` answers without calling `set-window` (the review's control C) | `TestHerdrVerbMethodsRefuseAPluginWithNoGrants` ("pane.rename from a plugin with no grants answered {\"type\":\"pane_info\"}, want forbidden") | **caught** |
+
+The review's control B, the `set-window` call removed and the rest kept, is
+refused by the pane lookup that follows, so the plugin is told forbidden and
+nothing changes. The test passes there, which is right: no check was
+skipped on the path the call takes.
+
+`TestHerdrMethodsNameTheirCheck` in `internal/session` is a security
+boundary test: every herdr socket method names its check in `herdrChecks`,
+and a method with none is refused at run time.
+
+Not covered end to end: the pid reuse check in `leftBehind` (it needs pid
+wraparound), the git timeout, and Windows and the BSDs, where the runner
+refuses a native plugin's commands (`plugin_unsupported_platform`). The
+cross builds compile that path. The fixed build passes
+`TestNativePluginGrants`, `TestPluginsInstallFromGit` and every
+`TestHerdrPlugin*` 3 of 3.
+### Follow-up: an outside report keeps the harness pid's start time
+
+A case joins the test for the maintainer's note on #929. `outside-same-pid` runs the stand-in claude to rest through the real hook, so its pid is recorded timed. Then the test process, which is no ancestor of it, reports `working` for the pane with `tuios call set-agent-state`, naming the same `harness_pid` and conversation. The stand-in then leaves with no `SessionEnd`, and the shell has the pane again. Run on 2026-10-21 on macOS against upstream main at 25245bdb. The fixed build passes all nine cases.
+
+Upstream main fails the new case: "the agents section still lists the pane after its agent left it, with the shell running". The outside report recorded the pid again without its start time, so its exit was never taken for the harness's.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| A recorded pid re-recorded: the `old.pid == pid && old.timed` early return in `setAgentHarnessPID` disabled | `outside-same-pid` ("the agents section still lists the pane after its agent left it, with the shell running") | **caught** |
+
+The early returns in `callerRunsHarness` and in `verbSetAgentState` change no outcome, only skip an ancestry walk whose answer is not used, so they have no control.
+
+## Workspace name on hover with no {name} in the tab format (#927)
+
+`TestDockIndexTabShowsTheNameOnHover` sets
+`dock_workspace_tab_format = "{index}"`, names workspace 1, opens a pane on
+workspace 2 and hovers the "1" pill. It runs with `dock_workspace_tooltip` on
+and off.
+
+Run on 2026-10-21 against `origin/main`: the `tooltip on` case fails with
+"hovering an index-only pill never showed the workspace name". The
+`tooltip off` case passes there, which is right. A review run repeated the
+control with the same result, at truecolor and at 16 colours.
+## The split letter in the mode pill (#931)
+
+`TestDockModeIconsFollowTheConfig/split-letter` turns tiling on and presses the
+leader key, with and without `dock_mode_split_letter = false`. It reads the
+column of the workspace readout before and after the leader.
+
+Run on 2026-10-21 against `origin/main`, which has no option: the `off` case
+fails with "the mode pill shows a split letter: true, want false". The
+`default` case passes on both builds, and it shows the two-cell move that the
+`off` case must not have.
+## Scrolling layout: a new column in a daemon session (#952)
+
+`TestScrollingNewColumnOpensBesideFocus` starts a daemon session in the
+scrolling layout with three columns, steps the focus to the first with alt+p,
+and runs `NewWindow`. It reads the strip order from `list-windows --json`. It
+then splits the new pane and closes the split, and checks the order and the
+focus after each step. Last, it focuses the first column, switches to BSP and opens
+a pane, which must split the focused pane and not the target of the old split.
+
+Run on 2026-10-21.
+
+| Cut | Result |
+| --- | --- |
+| The fix removed (`scrollColumnsFromState` appends an unnamed pane at the end) | **caught**: "the new pane is not in the column after the focused one", the new pane last of four |
+| Only the closed-pane pass in `adoptScrollColumns` removed | **caught**: "after the focused column closed: the focus is on" the column to the right, want the one to the left |
+| Only the `CancelPendingSplit` call in the scrolling branch of `adoptSyncedWindows` removed | **caught**: "the pane after the switch to BSP split NEW, the target of the old split, not the focused ONE" |
+| The fix in place | passes, 3 of 3 |
+
+`TUIOS_E2E_FRAMES` saves `new-pane` and `after-close` frames.
+## A fan joined from outside
+
+`TestFanRefusesJoiningAnotherGroup` and `TestFanNameIsHeldWhileItIsMade` in
+`internal/session` (security boundary tests). A taken fan name is refused
+for every caller unless the call names a session of the fan with `join` and
+reaches it. An outsider that makes a name first does not catch the person's
+later fan. Two calls with one new name at the same time make one fan. Run
+on 2026-10-21.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| Joining a fan is explicit: a taken name is refused for every caller, the person included | the `fan_exists` refusal removed | `TestFanRefusesJoiningAnotherGroup` (the taken name is not refused) | **caught** |
+| A new name is held from the check until its sessions exist | the reservation left out of `taken` | `TestFanNameIsHeldWhileItIsMade` ("fan/raceb: the outsider's repo-fan-raceb-2 joined the person's repo-fan-raceb") | **caught** |
+| A name with a character that does not print is refused | the `fanStemPrintable` check skipped | `TestFanRefusesJoiningAnotherGroup` (a name with a zero-width space makes a fan) | **caught** |
+
+### Plain fan names, refusals and restored fans
+
+The follow-up to the review of #972. `TestFanRefusesJoiningAnotherGroup`
+now also checks the name characters and what a refusal lists, and
+`TestRestoredFanStaysItsOwnFan`, `TestReview984RestoreAcrossRestart` and
+`TestReview984RestoreSquatFirst` (security boundary tests) check that a fan
+is told by its saved fan ID. `TestCockpitSpawnSheet` checks the new-agent
+form. Run on 2026-10-21 and 2026-10-22.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| A fan name keeps to A-Z, a-z, 0-9 and / . _ - | `FanNameChar` takes every character above ASCII but the three the old check refused | `TestFanRefusesJoiningAnotherGroup` (the name with a Hangul filler makes a fan) | **caught** |
+| A refusal lists the fan's sessions only to a caller that reaches them | `reachedNames` keeps every name | `TestFanRefusesJoiningAnotherGroup` ("the fan_exists refusal listed the fan's sessions to an outsider") | **caught** |
+| A fan's sessions are the ones with its fan ID | `sameFan` compares the group and repository alone | `TestRestoredFanStaysItsOwnFan`, `TestReview984RestoreAcrossRestart` and `TestReview984RestoreSquatFirst` ("the pane's fan reaches the person's restored repo-fan-saved") | **caught** |
+| A join copies the fan ID | join gives the new session a new ID | `TestFanRefusesJoiningAnotherGroup` ("the group has 2 sessions, want 5"), `TestRestoredFanStaysItsOwnFan` | **caught** |
+| The fan ID is saved | `fan_id` left out of the saved JSON | `TestReview984RestoreAcrossRestart`, `TestReview984RestoreSquatFirst` (the pane's fan reaches the person's restored sessions) | **caught**. The tests pass the saved state through JSON, as the state file holds it. Without that step the cut passed |
+| The new-agent form refuses a name a fan does not take | the `FanNameChar` check in `spawnStart` skipped | `TestCockpitSpawnSheet` (waiting for the refused branch) | **caught** |
+
+### Fan follow-ups: one name check, and a load that was not read
+
+Review round 4 of #984 and #986. Run on 2026-10-22.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| The form and the daemon check a name by git's branch rules, HEAD and a leading / too | the `HEAD` and leading `/` rules taken out of `FanNameRefOK` | `TestFanNameRefOKAnswersAsGit` (`FanNameRefOK("HEAD") = true, git says false`, and the same for `/x`) | **caught** |
+| A load the daemon could not read ranks as unknown | the sheet's local row takes `loadOK` true for any load with cores | `TestSpawnRankTakesOnlyALoadTheDaemonRead` ("a load the daemon could not read ranks as known") | **caught** |
+
+## A fan's lead by its session ID
+
+`TestFanLeadIsHeldByID` in `internal/session` (a security boundary test): the
+session that ran `fan` reaches its attempts by that session's ID. After a
+restart without it, and after it ends, a session that takes its name reaches
+none of them. Run on 2026-10-21.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| Reach checks the lead's session ID | the ID check skipped, so the name decides | `TestFanLeadIsHeldByID` ("compare-fan from a new session of the lead's name after a restart": expected error) | **caught** |
+| The attempts stop naming a lead that ended | the `forgetLauncher` call removed | `TestFanLeadIsHeldByID` ("the attempt still names its ended lead") | **caught** |
+| A record from before the ID reaches nothing by name | `sessionInScope` passes a record with no ID whose name matches | `TestReview978LegacyRecord` ("a session named like the lead of an older record does compare-fan") | **caught** |
+| A restore drops a lead named without an ID | the clearing in `restoredWorktree` removed | `TestReview978LegacyRecord` ("a restored record from before the ID still names its lead") | **caught** |
+| Both of the above | both cuts together, the review's repro | `TestReview978LegacyRecord` (after the restart, a session of the dead lead's name does compare-fan and send-text) | **caught** |
+
+## The cockpit of frame (a)
+
+`TestCockpitFrameA` builds frame (a) of the cockpit design: twelve agents on
+three machines, a held approval, three branches with pull requests, a fan of
+three and two subagents. Run on 2026-10-21.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| A host's session listing carries its agent panes | the build before this change, where a remote session carries its rolled-up state alone | `TestCockpitFrameA` ("the cockpit never showed the agents of all three machines") | **caught** |
+| The attempts of a fan sit under one row for the fan | `buildCockpitRows` uses the group's rows without `ckGatherFans` | `TestCockpitFrameA` ("the fleet lacks the pull requests, the fan or the machines") | **caught** |
+
+## Machine load in the link heartbeat
+
+The hello a link's heartbeat sends carries the far machine's load, and
+`list-hosts` reports it. Run on 2026-10-21.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| The daemon's hello carries its load | `verbHello` sends the load under another name | `TestHostsCommandReportsALinkEndToEnd` ("the listing does not show the host's load", "build reports cores 0"), `TestCockpitFrameA` ("the machines block does not show build's load and round trip") | **caught** |
+
+## Fan comparison and judge
+
+`TestCockpitFanCompare` opens the comparison of frame (g) on the fan of frame
+(a), runs one check with `tuios fan verify`, starts the judge stub with `j`,
+and keeps its pick with `k` twice. `TestFanJudgeReach` in `internal/session`
+holds the judge's reach (a security boundary test). Run on 2026-10-21.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| Only the judge's pane reaches the attempts | `judgeReaches` compares the session ID alone, so any pane of the judge's session reaches them | `TestFanJudgeReach` ("compare-fan from another pane of the judge's session": expected error) | **caught** |
+| Only the judge pane or the person records a verdict | the handler's `judgeReaches` check removed | `TestFanJudgeReach` ("set-fan-verdict from an attempt": expected error) | **caught** |
+| judge-fan records the judge only once start-agent made it | the record written before start-agent | `TestFanJudgeReach` ("a failed judge-fan left a judge on repo-fan-retry") | **caught** |
+| The record goes when the judge's session ends | the `forgetFanJudge` call removed from `onSessionDeleted` | `TestFanJudgeReach` ("repo-fan-retry still names the ended judge") | **caught** |
+| The first k names the ignored files a keep deletes | compare-fan sends no `ignored` list | `TestCockpitFanCompare` ("the first k did not name the ignored file a keep deletes") | **caught** |
+| The judge holds read alone | `fanJudgeGrants` back to `read,fan` | `TestFanJudgeReach` ("fan into the attempts' group from the judge": the judge joins the fan by its stem) | **caught** |
+| A restart clears the judge record | the clearing in `restoreSessionOffers` removed | `TestFanJudgeReach` ("repo-fan-retry names a judge after a restart") | **caught** |
+| The second k reads the attempts again | the second k keeps at once | `TestCockpitFanCompare` ("a second k after a new ignored file did not warn again") | **caught** |
+| A list git could not read keeps nothing | the view ignores `ignored_error` | `TestCockpitFanCompare` ("a list git could not read did not stop the keep") | **caught** |
+| Keep stashes the other attempts' changes | the view sends keep-fan with `stash` false | `TestCockpitFanCompare` ("k k did not keep B alone": A and C stay, dirty) | **caught** |
+| The click on an attempt waits for the fan's final row (a flake fix) | the click goes where `cache-2` was before the done reports moved the fan, which is what a slow runner did | `TestCockpitFanCompare` ("an attempt's row does not offer c to compare", the failure seen in CI). Before the done reports, the wait's condition is false; 20 runs with the wait pass | **caught** |
+| The judge reads only the verbs judging needs | `judgeReadVerbs` dropped from the read reach in `paneAuthority`, so the judge reaches every read verb | `TestFanJudgeReach` ("command-history on an attempt from the judge": the judge reads the attempt's history) | **caught** |
+| keep-fan holds the ignored files to the names shown | the `IgnoredHash` compare in `checkKeepAsShown` removed | `TestCockpitFanCompare` ("keep-fan went ahead over an ignored file swapped for another": a count would match too) | **caught** |
+
+A session that takes the judge's old name after its session ended reaches
+nothing: the record names a session ID, which no new session has. The test
+keeps that case as a regression.
+
+## Plugin approval
+
+`TestNativePluginApproval` links a native plugin that asks for `write` and
+enables it. It must wait and run nothing. A pane runs `tuios plugins approve`
+with its pane variables cut and must be refused. A client attaches at
+truecolor, the dialog shows, and esc keeps the plugin waiting. A second
+client at 16 colours allows it. The plugin's startup then types into an
+ordinary shell pane (it must work), types into a pane on `needs_input`, and
+calls `respond`, `set-pane-grants`, `list-sessions` and `plugin.approve`
+(each must be refused). A changed grant in the manifest must ask again.
+
+Run on 2026-10-22, each control against the PR head with one change, one
+run each:
+
+| Claim | Control | Test that failed | Result |
+|---|---|---|---|
+| A plugin with `write` types into an ordinary pane that holds more | the plugin branch in `typingRefusal` cut, so the pane rule holds it | `TestNativePluginApproval` ("ordinary exited 1, want 0"; "the shell pane does not show what the plugin typed") | **caught** |
+| The prompt rule holds a plugin | the `needs_input` check skipped for plugins | `TestNativePluginApproval` ("prompt exited 0, want x") | **caught** |
+| A plugin with no approval does not run | `applyApproval` lets a plugin with no approval through | `TestNativePluginApproval` ("plugins list does not say the plugin waits") | **caught** |
+| Only the person answers | `herdrPluginTrust` cut from `plugin.approve` | `TestNativePluginApproval` ("a pane answered for the person (exit 0)") | **caught** |
+
+### After the review of #1006
+
+The review found that the plugin token never bound, that Tab then Enter in
+the dialog allowed a plugin, that `approve` asked one daemon only, and that
+the submit key of `send-text` was not checked. New tests:
+`TestPluginTokenHoldsTheCaller`, `TestPluginApprovalAsksEveryDaemon`,
+`TestPluginApprovalDialogFits`, the unit test
+`TestPluginApprovalTakesOnlyTheTypedWord` (internal/app) and
+`TestThePluginTokenHoldsTheCaller` (internal/session), and new cases in
+`TestNativePluginApproval`: Up, Up, Enter, Tab, Enter in the dialog,
+`send-keys`, `run`, `send-text` with submit into a pane that comes to a
+prompt during the paste, `queue-prompt`, an answer for an old trust hash,
+and an Allow without admin.
+
+Run on 2026-10-22, one change each, one run each:
+
+| Claim | Control | Test that failed | Result |
+|---|---|---|---|
+| A process with a plugin's token is the plugin on the herdr socket | `bindPeerPluginToken` returns at once | `TestPluginTokenHoldsTheCaller` ("disable over the herdr socket with the token: <nil>") | **caught** |
+| `pane-grants` takes the plugin token | `plugin_id` and `plugin_token` dropped from the verb's parameters | `TestPluginTokenHoldsTheCaller` ("read, which the plugin holds ... exit status 1") | **caught** |
+| No key on a row allows | Enter on the Allow row allows | `TestNativePluginApproval` ("Enter on Allow did not ask for the word") | **caught** |
+| Keys as the dialog opens answer nothing | `pluginApprovalSettled` always true | `TestPluginApprovalTakesOnlyTheTypedWord` ("keys in the first half second answered the dialog") | **caught** |
+| `approve` asks every daemon first | `confirmPerson` cut from `approve` | `TestPluginApprovalAsksEveryDaemon` ("a pane approved a plugin", "a pane wrote an approval") | **caught** |
+| The submit key is checked again | the submit guard of `send-text` returns nil | `TestNativePluginApproval` ("submit exited 0", "the submit key answered the prompt") | **caught** |
+| A long name cannot push the answers off | `ShownName` keeps the name whole and the title line wraps | `TestPluginApprovalDialogFits` ("the dialog lost \"Not now\" on a 24-row screen") | **caught** |
+| A shadowed copy is not asked about | the shadow filter in `pluginAsksOf` cut | `TestPluginApprovalDialogFits` ("the dialog asks about the shadowed copy") | **caught** |
+| A plugin cannot queue | the queue refusal in `checkPluginGrants` cut | `TestNativePluginApproval` ("queue.out lacks \"a plugin cannot queue\"") | **caught** |
+
+The title-wrap control alone, with `ShownName` still cutting the name, was
+not caught: the cut to 64 characters already keeps the dialog on screen.
+
+
+### After the second review of #1006
+
+New test `TestPluginStopHoldsItsProcesses`: a plugin starts two children
+with its token cut from their environment. Each connects, then one calls
+`setpgid` and the other `setsid`. After a disable, the `setpgid` child must
+be gone, and the `setsid` child's open connection must still be refused as
+the plugin. New cases: `ask-agent` and `run` at panes that come to a prompt
+during the paste, Up then Enter in the dialog, keys sent through the client,
+and a token caller with no `TUIOS_SOCKET`.
+
+Run on 2026-10-22, one change each, one run each:
+
+| Claim | Control | Test that failed | Result |
+|---|---|---|---|
+| A connection the kernel placed in a plugin stays the plugin's | the bind at accept in `pinPeer` cut | `TestPluginStopHoldsItsProcesses` ("a connection of the stopped plugin was not held to it") | **caught** |
+| Stopping a plugin kills its whole session | `procGroup.kill` kills the group only | `TestPluginStopHoldsItsProcesses` ("the child that called setpgid outlived the disable") | **caught** |
+| Deny takes a second Enter or click | Deny answers at once | `TestPluginApprovalTakesOnlyTheTypedWord` ("one click on Deny answered") | **caught** |
+| Keys sent through the client do not reach the dialog | the `ProcessingRemoteKeys` check cut | `TestPluginApprovalTakesOnlyTheTypedWord` ("keys sent through the client allowed the plugin") | **caught** |
+| `ask-agent` checks the target before its submit key | the ask-agent submit guard returns nil | `TestNativePluginApproval` ("askrace exited 0"; "the submit key of ask-agent answered the prompt") | **caught** |
+| `run` checks the target before its submit key | the run submit guard returns nil | `TestNativePluginApproval` ("the submit key of run answered the prompt") | **caught** |
+| A plugin's connection is never the person | `pluginBound` cut from `mayActAsHuman` | `TestPluginTokenHoldsTheCaller` ("disable over the herdr socket with the token and no TUIOS_SOCKET: <nil>") | **caught** |
+
+The last control passed at first: the test's token caller also carried
+`TUIOS_SOCKET`, which places it as automation by itself. The case with the
+socket variable cut was added, and the control then failed it.
+
+### Keys a tape presses (re-review of #1006)
+
+`TestNativePluginApproval` now runs `tuios tape exec` with
+`Press a l l o w Enter`, and `tuios send-keys` with the same keys, while
+the dialog is open. Neither may allow the plugin, and the dialog must stay
+open. The other ways keys reach the input handler without the person:
+`send-keys` (RemoteKeyMsg, held by `ProcessingRemoteKeys`) and a tape's
+`Press` (PressKeys, held by `pressingTapeKeys`). A tape's `Type` and
+`send-text` write to a pane, and `Action` runs an action by name, which the
+dialog does not take.
+
+| Claim | Control | Test that failed | Result |
+|---|---|---|---|
+| Keys a tape presses do not answer the dialog | the `pressingTapeKeys` check cut | `TestNativePluginApproval` ("a tape's Press of allow and Enter let the plugin run") | **caught** |
+## An agent whose last word was a progress clear
+
+Run on 2026-10-22 on macOS. The test is `TestAgentStateClearsWhenTheLastWordWasAProgressClear` in `agent_osc_exit_test.go`. A program named `claude` (`testdata/fakeclaude`) runs in a pane whose state an OSC-tier source holds (`set-agent-state working --source osc --harness claude-code`), so the detector does not own the claim and clears it at the shell only because it saw the agent process. The agent then exits to the shell, in `exit-without-a-report` with nothing more, and in `progress-cleared-on-exit` after clearing its progress bar with OSC 9;4;0, which is how Claude Code leaves a pane. Each read of `get-agent-state` is saved as `agent-state-trace.json`, with the pane as `pane.txt`, under the test's artifact directory (`TUIOS_E2E_FRAMES` when set).
+
+`exit-without-a-report` is the positive half: it passes before and after the fix, so the detector did see the process. With the fix both cases pass three runs in a row; the trace of `progress-cleared-on-exit` reads `idle`, source `osc`, for a quarter second after the clear and then `none`.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| `applyAgentReport` rebuilds the claim without `sawProcess` (the build of `upstream/main` the fix sits on) | `progress-cleared-on-exit`, three runs of three ("the pane kept agent state idle (source osc, harness claude-code) with the agent gone and its shell in the foreground") | **caught** |
+
+Not covered: a `none` report ending `sawProcess` (no case sends one before a later inferred state at the shell), and the other two places a claim is rebuilt or dropped, the end of a screen blocker and a tier yielding its claim, which can lose `sawProcess` the same way in the moment before an exit.
+## Agent signals on an exited agent's pane
+
+The test is `TestAgentSignalsOnAnExitedAgentsPane` in `agent_progress_exited_test.go`. A pane whose agent has left keeps the harness it was attributed to; a program that is not an agent then runs in it: `mise`, a script that draws an OSC 9;4 progress bar and clears it, or `spin`, a script that puts a braille spinner in the window title, the shape of Claude Code's working title. The pane has to stay at `none` through the run and four seconds after, read every 200ms; each case saves `agent-state-trace.json`, `pane.txt` and the hook log. The agent leaves either through the real `tuios agent-hook claude-code` (a stand-in `claude` from `testdata/fakeclaude` ends a turn, sends `SessionEnd` and exits) or through a reporter at the OSC tier that says `working` and then `none`, naming `claude-code`. The positive cases run a stand-in `claude` with no hooks, found by the foreground-process detector, that clears its own bar (`idle` from `osc`) or sets its own spinner title (`working` from `osc`), in a fresh pane and in a pane an earlier agent left. Each control is a text replacement in the branch's checkout, built to a separate binary and put back. Run on 2026-10-22 on macOS against upstream main at 585f6778.
+
+Upstream main, which has no fix, fails `osc-tier-exit-bar` and `osc-tier-exit-title` three runs of three, both with the pane at `working`, source `osc`, harness `claude-code`. `hook-exit` passes on upstream: the claim the hook's `SessionEnd` leaves ranks above the OSC tier and refuses the bar, so it is a guard, not the case that shows the bug. A pane with the harness and no such claim (a claim at the OSC tier or below, or none at all) has no such guard. The fixed build passes all six cases three runs of three.
+
+| Control: what was cut | Tests that fail | Verdict |
+| --- | --- | --- |
+| The fix removed (upstream main) | `osc-tier-exit-bar` ("mise, a program that is not an agent, made the pane an agent: state working (source osc, harness claude-code)"), `osc-tier-exit-title` (the same for spin) | **caught** |
+| The OSC 9;4 gate back to its old test: `progressTarget` takes a harness named on the pane, a claim, or a harness pid for an agent | `osc-tier-exit-bar` ("mise, a program that is not an agent, made the pane an agent: state working (source osc, harness claude-code)") | **caught** |
+| The harness of a pane with no agent in it still read: `agentHarnessOf` returns the remembered harness whatever `agentInPane` says | `osc-tier-exit-title` ("spin, a program that is not an agent, made the pane an agent: state working (source osc, harness claude-code)") | **caught** |
+
+Not covered end to end: a notification (OSC 9 or 777) sent by a program that is not an agent in such a pane, which goes through the same `agentHarnessOf` gate as the title, and a harness pid recorded by `report-agent-session` on a pane at `none`, which `agentInPane` still counts while the process runs.
+
+## Clearing the rename dialog
+
+`TestRenameDialogClears` attaches a real client to a daemon session whose window is named `oldname`, opens the rename dialog with `r`, and reads every rename back from `tuios list-windows --json`. It clears with `ctrl+u`, with `ctrl+c` on text, closes with `ctrl+c` on an empty field (the name must stay), clicks the `clear` hint, and clears the help search with `ctrl+u`. Each control cut the wiring in a build of this branch and ran only this test. Run on 2026-10-21 on macOS against upstream main at b0c27a48.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| ctrl+u does nothing in the rename dialog | The `ctrl+u` case in `handleRenameMode` | Removed | `TestRenameDialogClears`: `ctrl+u left the dialog open with an empty field: field never read ""` | **caught** |
+| ctrl+c always cancels the rename | The empty-buffer branch of the `ctrl+c` case | Always `EndRename` | `TestRenameDialogClears`: `ctrl+c with text left the dialog open with an empty field: field never read ""` | **caught** |
+| ctrl+c never cancels the rename | The same branch | Always `RenameClear` | `TestRenameDialogClears`: `ctrl+c on an empty field did not close the dialog` | **caught** |
+| The clear hint is not pressable | `renameClearHit` recorded in `renderOverlays` | Never recorded | `TestRenameDialogClears`: `a click on the clear hint left the dialog open with an empty field: field never read ""` | **caught** |
+| ctrl+u does nothing in the help search | The `ctrl+u` check in `handleHelpOverlayKey` | Never taken | `TestRenameDialogClears`: `ctrl+u did not clear the help search query` | **caught** |
+## Look take-over
+
+`TestLookTakeOverAndRemove` applies a look over a config.toml and a later
+config.d file that set the same keys: with `--yes` alone, then with the
+take-over answered on a terminal, then removes it. Run on 2026-10-22.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| `--yes` alone does not take keys over | `confirmTakeOver` answers yes for `--yes` | `TestLookTakeOverAndRemove` ("apply --yes changed config.toml") | **caught** |
+| look remove puts the saved values back | `remove` in `internal/config/look.go` skips writing the restored files | `TestLookTakeOverAndRemove` ("look remove did not put config.toml back byte for byte") | **caught** |
+
+`TestLookTakeOverKeepsLaterEdits` runs four cases from a review of the
+take-over, each on its own scratch config. Run on 2026-10-22.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| A file a take-over left empty still drops the first copy when the person writes it again | `lookSaved.add` tests `f.After != "" &&` before its compare | none: `planRestore` drops the copy on its own compare first | **not caught**, the second check covers it |
+| The same, in both checks | `lookSaved.add` and `planRestore` both skip an empty `After` | `TestLookTakeOverKeepsLaterEdits/second_take-over_after_an_edit` ("the remove wrote back the copy from before the first take-over and lost startup.tiled") | **caught** |
+| A second take-over saves the value the file holds now | `lookSaved.add` merges the old saved values over the new ones | `TestLookTakeOverKeepsLaterEdits/second_take-over_after_an_edit` ("the remove put back the older border_focused_color") | **caught** |
+| A file that changed while tuios asked stops the command | the compare in `configWrites` cut | `TestLookTakeOverKeepsLaterEdits/edit_during_the_question` ("the take-over did not stop on the edit") | **caught** |
+| A remove with look.toml gone still puts the values back | `runLookRemove` stops with "No look is applied" when there is no look file | `TestLookTakeOverKeepsLaterEdits/look_file_deleted_by_hand` ("the remove did not put config.toml back") | **caught** |
+| A second look gives back the keys the first took and it does not set | the apply's restore skips every key | `TestLookTakeOverKeepsLaterEdits/second_look_over_a_take-over` ("the second look did not give the theme back to config.toml") | **caught** |
+| look remove puts the saved values back | `remove` in `internal/config/look.go` skips `Restore.write` | `TestLookTakeOverAndRemove` ("look remove did not put config.toml back byte for byte") | **caught** |
+
+## Look list and picker
+
+`TestLookPickAppliesAGalleryLook` serves a fake gallery feed on a loopback
+address through `TUIOS_LOOK_GALLERY`, runs `tuios look list`, and picks the
+second look with `tuios look pick`. Run on 2026-10-22.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| Enter applies the look under the cursor | the picker's Enter chooses row 0 | `TestLookPickAppliesAGalleryLook` (Alpha goes in, so the take-over question for Beta's border never comes) | **caught** |
+## A hook report lands only on the pane its harness runs in
+
+`TestAgentReportOnlyFromTheHarnessInThePane` (in
+`harness_integrations_test.go`) runs the real Claude Code hook under a
+stand-in harness, the test binary itself, a process that is not a shell, so
+the hook reports it as `harness_pid`. Outside the pane, a server started from
+the test leaves it, so it runs under init in a session of its own, and runs
+the harness on a terminal of its own with the pane's `TUIOS_PANE_ID` and
+`TUIOS_SESSION`, the way Claude Code's daemon runs a background session. The
+server is a copy of the test binary named `claude`, started with
+`--bg-pty-host`, as Claude Code's pty host is. Its prompt, its
+`SubagentStart` and a Droid `SessionStart` must each be refused with
+`foreign_pane`, and so must a `tuios call set-agent-state` from there that
+claims the pane's own shell as its `harness_pid`; the pane must stay `none`
+and unlisted by `list-agents`. The positive halves: the same harness and hook
+run from the pane's shell set the pane to `working`; a harness outside the
+pane whose environment names no pane may still choose it with `--window`; and
+the same kind of server started from the pane's shell as a copy named
+`conmon` (a rootless container's helper) and as a copy named `tmux` has left
+the pane's tree and terminal just as the background session has, with no
+harness daemon above it, and its prompt (and, for `conmon`, its `Stop`) sets
+the pane with its own conversation. The test writes each hook's `--explain`
+line and the pane's state after it to `agent-report-own-pane.log` in its
+artifact directory.
+
+Run on 2026-10-18 on macOS, on the branch rebased onto `upstream/main` at
+`55590f29`, with the test of that time: the outside server was a plain copy
+of the test binary, and the exception was for multiplexer servers by name.
+The second row was run before the rebase.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A harness outside the pane, with the pane's inherited `TUIOS_PANE_ID`, set its state | yes | `harnessOutsidePane` returns false at once, which cuts the check from all three verbs | `TestAgentReportOnlyFromTheHarnessInThePane` ("a prompt from a harness outside the pane: applied=true reason=\"\", want refused with foreign_pane"; then the subagent with `reason=""`, the Droid id with `foreign_harness` and the claimed shell with `foreign_session`, as the pane held `phantom-1`) | **caught** |
+| The same, on the branch's base | yes | `upstream/main` at `ccde47cf`, built unchanged | the same test, with the same first failure | **caught** |
+| A harness in tmux in the pane was refused, so the pane showing the tmux client lost its agent | yes | `harnessOutsidePane` without the multiplexer exception, since replaced by the harness daemon check | the same test ("a prompt from a harness in tmux in the pane: applied=false reason=\"foreign_pane\", want applied"); every other case passes | **caught** |
+| A caller outside the pane passed by naming the pane's shell as its `harness_pid` | yes | `harnessOutsidePane` without the check of the claim against the caller's pid | the same test ("a report from outside the pane claiming the pane's shell as its harness: applied=true reason=\"\", want refused with foreign_pane") | **caught** |
+
+Run on 2026-10-20 on macOS, on `upstream/main` at `5d290099` plus the
+branch, after review: the check refuses only a harness with a harness daemon
+(`harnessDaemons`) among its ancestors, not every harness that left the pane.
+Each control cut one thing from `internal/session/agent_report_pane.go`,
+built, ran the test, and restored the file byte for byte (same SHA-1).
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A harness in a rootless container in the pane (distrobox, toolbox, podman, docker, through conmon) was refused | yes | The branch before the change, which refused every harness that left the pane unless a multiplexer server was above it | the same test ("a prompt from a harness in conmon in the pane: applied=false reason=\"foreign_pane\", want applied", and the same for its `Stop`); every other case passes | **caught** |
+| The same, and a harness in tmux in the pane | yes | `harnessOutsidePane` refuses every harness that left the pane (`return !harnessDaemonAbove(...) \|\| true`) | the same test: the `conmon` prompt and `Stop`, and "a prompt from a harness in tmux in the pane: applied=false reason=\"foreign_pane\", want applied" | **caught** |
+| A background session outside the pane set its state (the bug the check is for) | yes | `harnessDaemons` emptied | the same test ("a prompt from a harness outside the pane: applied=true reason=\"\", want refused with foreign_pane", then the subagent; the phantom's id then refuses every later case with `foreign_session`) | **caught** |
+
+The fixed build passes it three runs in a row (`-count=3`).
+
+`TestOpenCodeV2PluginReportsOnlyItsSession` and
+`TestPluginsReportBlockingPrompts` ran their plugin driver from the test
+process with the pane's `TUIOS_PANE_ID`, which is the case this fix refuses,
+and failed against it. The driver now runs in the pane, as a harness's plugins
+do, and both pass on the fixed build and on `ccde47cf`.
+
+## The go-to picker (goto_picker)
+
+`TestGotoPickerGoesAnywhere` opens the picker with `Ctrl+B G` on a real client attached to `home`, with `work` and `ops` beside it and `home` and `ops` filed under the space `surge`. The pane `needy` in `ops` is an agent in `needs_input`, set with `tuios set-agent-state`. A fuzzy query for `zebra` has to land on the pane `zebra-ledger` on workspace 2 of `work`, read from list-clients, list-workspaces and list-windows. The queries `kind:session space:surge`, `kind:ws session:work` and `@harness:claude` each have to show the rows they name and none of the others, which another query in the same run shows. An empty query and Enter has to go back to `home`, and, after the prefix `n` moves to `homeb`, back to the first pane of `home`: the place the client left, not the place the picker last left, and not the agent that needs you, whose row has to be on screen both times. Each step saves its frame under `artifactDir`. Each control below was built from the branch head with one piece of wiring cut, and run alone with `-run TestGotoPicker`. Run on 2026-10-21, on the branch rebased onto main at b90ef7e7.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| Selector terms do not narrow the list | The `q.match(r)` gate in `gotoFiltered` (goto_picker.go) | Deleted | `TestGotoPickerGoesAnywhere` ("kind:session space:surge: showing \"session    work\"") | **caught** |
+| Enter on a pane in another session does not switch session | The `sidebarFocusWindow` call in `gotoRow`'s pane case | Replaced by a focus of the pane in the attached session only | `TestGotoPickerGoesAnywhere` ("ASSERTION: no client shows session work") | **caught** |
+| The empty list does not put the place left first | Both recent tiers in `gotoRank` | Deleted, so a recent place ranks in the rest | `TestGotoPickerGoesAnywhere` ("ASSERTION: no client shows session home", the first flip back) | **caught** |
+| A move made without the picker is not a place left | The `m.noteGotoPlace()` call in `Update` (update.go) | Deleted, so a place is noted only when the picker opens | `TestGotoPickerGoesAnywhere` ("ASSERTION: no client shows session home", the flip back after the prefix `n`) | **caught** |
+| An agent that needs you takes Enter on an empty query | The order of the first two tiers in `gotoRank` | Swapped back, so the needs-you tier sorts above the place left last | `TestGotoPickerGoesAnywhere` ("ASSERTION: no client shows session home", the first flip back) | **caught** |
+| The action reaches no handler | `registerPrefixHandlers`: the `goto_picker` line | Deleted | `TestGotoPickerGoesAnywhere` ("the go-to picker never showed") | **caught** |
+
+The fixed build passes it, along with every test matching `Switcher`, `Palette`, `Inbox`, `WhichKey`, `Overlay`, `KeybindManager`, `Keybinds` and `SessionPicker` (68 tests passed, 1 skipped: `TestRealCrushAnsweredFromTheInbox`, which needs a real crush binary).
+## Palette runs actions
+
+`TestPaletteRunsTheActionItFinds` types `#new_window` into the palette, presses `Enter`, and waits for the dock and the daemon's `list-windows` to show two windows with the palette closed and no keybind manager on screen. Then it types `#toggle_zoom`, presses `ctrl+e`, and waits for the keybind manager open on Toggle zoom, with the daemon still listing two windows. Frames are saved under the test's artifact directory: the `#` search with the `^e rebind` hint, the screen after `Enter`, and the manager after `ctrl+e`.
+
+`TestPaletteViewOnlyActionSaysSoInFull` types `#file_delete_forever`, an action only the rail reads, presses `Enter`, and waits for the keybind manager and the notice in the dock. It wants the notice whole, `file_delete_forever works only in its own view.`, with no ellipsis on its line, at the suite's terminal size. The frame is saved as `view-only-notice`.
+
+Run on 2026-10-21.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| Enter on an action row runs the action | the row's action skips `runPaletteAction` and opens the keybind manager, as it did before | `TestPaletteRunsTheActionItFinds` ("enter on the new_window row: window count never reached 2 (last 1)") | **caught** |
+| The view-only notice fits the dock | the two-sentence notice put back ("... runs only in its own view. Its keys are listed here.") | `TestPaletteViewOnlyActionSaysSoInFull` ("the notice is cut off in the dock: \"... file_delete_forever runs only in its own view. Its…  more ...\"") | **caught** |
+
+`TestPaletteTokenSearchesActions` and `TestUnbindingFromTheOverlayReachesTheConfigFile` reached the manager with `Enter` on an action row. That was the behaviour this changes, so they press `ctrl+e` now. With the fix every test matching `Palette|Keybind|Rebind|Unbind` passes (34 of 34).
+
+The footer hint is spelt `^e rebind`, the way the keybind manager spells `^r` and `^d`. Not covered end to end: an action run from the palette in terminal mode.
+## send_to_workspace keys
+
+`TestSendToWorkspaceKeyStaysHere` starts a session with three panes on workspace 1, writes no keybindings, and presses the shipped default for `send_to_workspace_2` (`ctrl+opt+2` on macOS, `ctrl+alt+2` elsewhere) as the CSI u sequence a Kitty keyboard terminal sends, first in terminal mode and then `ctrl+alt+3` in window mode. It reads the moved pane's workspace from `list-windows --json`, the workspace the daemon and the client show, and the focused pane. `TestSendToWorkspaceKeyYieldsATakenKey` binds `switch_workspace_2 = ["ctrl+alt+2"]` the way a config written before the default could, and wants `keybinds doctor` to list the yield, `ctrl+alt+2` to switch, and the free `ctrl+alt+3` to still move a pane. Each test saves the screen and `list-windows --json` under `artifactDir`.
+
+Run on 2026-10-21, macOS, each cut built into its own binary and the source put back after.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| The action stays on this workspace | the `send_to_workspace_` handler calls `MoveWindowToWorkspaceAndFollow` | `TestSendToWorkspaceKeyStaysHere` ("ctrl+alt+2 in terminal mode: the session shows workspace 2, want it to stay on 1", "the client shows workspace 2", "focus stayed on ..., the pane that left") | **caught** |
+| The action moves the pane | the `send_to_workspace_` handler moves nothing | `TestSendToWorkspaceKeyStaysHere` ("ctrl+alt+2 in terminal mode: pane ... is on workspace 1, want 2"), `TestSendToWorkspaceKeyYieldsATakenKey` ("ctrl+alt+3, a free key: pane ... is on workspace 1, want 3") | **caught** |
+| The key works in terminal mode | `send_to_workspace_` taken out of `isTerminalSafeAction` | `TestSendToWorkspaceKeyStaysHere` ("ctrl+alt+2 in terminal mode: pane ... is on workspace 1, want 2") | **caught** |
+| The new default yields a key the user holds | `send_to_workspace_2` taken out of `yieldingDefaults` | `TestSendToWorkspaceKeyYieldsATakenKey` ("keybinds doctor lists [], want only send_to_workspace_2 taken by switch_workspace_2", "the session shows workspace 1, want 2") | **caught** |
+| The default key exists | the plain upstream build, before this change | `TestSendToWorkspaceKeyStaysHere` ("ctrl+alt+2 in terminal mode: pane ... is on workspace 1, want 2"), `TestSendToWorkspaceKeyYieldsATakenKey` ("keybinds doctor lists []") | **caught** |
+
+The fixed build passes both tests 3 of 3. Not covered end to end: a legacy terminal, which cannot send `ctrl+alt+N` for most digits, and the GUI default `ctrl+alt+N` in `[keybindings.gui]`, which no test presses.
+
+### AltGr text on Windows
+
+Windows reports AltGr as Ctrl+Alt, and the layout fallback in `usesBaseLayout` read a non-Latin character by the US key at its position, so UK AltGr+4 (`€`) was `ctrl+alt+4` and moved the pane. The terminal is Windows, which the e2e suite does not drive, so `TestAltGrTextReachesThePane` in `internal/input/keybind_swallow_agreement_test.go` holds it, next to the swallow agreement test. It hands `handleTerminalModeBinds` the key the Windows console decoder builds for AltGr (the character as `Code` and `Text`, the digit as `BaseCode`, Ctrl and Alt) for `€` on 4, `²` on 2 and `§` on 5, under the default keybindings, and wants each to reach the pane. A fourth row, `ctrl+alt+4` with no text, must still be taken.
+
+Run on 2026-10-21, macOS.
+
+| Wiring | Cut | Tests that fail | Verdict |
+| --- | --- | --- | --- |
+| A Ctrl+Alt key with text keeps the key it produced | drop the `msg.Text != ""` early return from `usesBaseLayout` | `TestAltGrTextReachesThePane` (`€`, `²` and `§`: "handleTerminalModeBinds took the key: true, want false") | **caught** |
+
+The `ctrl+alt+4` row passes on both builds; it is the positive control. `TestSendToWorkspaceKeyStaysHere` and `TestSendToWorkspaceKeyYieldsATakenKey` pass on the fixed build: a Kitty terminal sends `ctrl+alt+N` with no text.
+## A pane whose session name is gone
+
+`TestHookFromPaneWhoseSessionNameIsGone` renames alpha to omega, lets a new alpha take the name and kills it, so the pane's TUIOS_SESSION (alpha) names no session under any name. A call from outside the pane naming alpha and the pane must be refused, so must the same call made with its own token from a second pane in omega, and the real `tuios agent-hook claude-code` run inside the pane must set the pane in omega to working. Run on 2026-10-22, macOS.
+
+| Control | Build | Where the test fails | Verdict |
+| --- | --- | --- | --- |
+| No fix | main before this change | "the hook did not reach the pane after its session name was gone: state \"none\"" | **caught** |
+| The `followOwnPane` call cut from `admitVerb` | mutant of this branch | "the hook did not reach the pane after its session name was gone: state \"none\"" | **caught** |
+| The placement check cut from `followOwnPane` (any caller is followed) | mutant of this branch | "a call from outside the pane naming the gone session was not refused: <nil>", and "a call from a second pane naming the gone session and the first pane was not refused", whose capture shows `{"applied":true,...,"type":"agent_state_set"}` | **caught** |
+| The verb skip cut from `followOwnPane` | mutant of this branch | not an e2e control: `TestFollowOwnPaneLeavesKillAndNewSession` in `internal/session` fails with "kill-session was rewritten to {\"session\":\"omega\",...}" and the same for new-session | **caught** |
+| The positive half | this branch | none: the outside call and the second pane's call are refused with `session_not_found` and the hook sets the pane to working | **guard** |
+## Focused popup dimming (#979, after #976)
+
+## Focused popup dimming (#979)
+
+`TestPopupDimsTheScreenBehind` covers option on/off, overrides, focus away/back,
+and pane/dock/rail dimming with the popup lit, at six theme/depth combinations.
+On 2026-10-22 (Go 1.26.10), all pass. Each dark/truecolor call-site control
+passed `default-off`, then failed: cutting both popup gates or the
+`scrimmedChrome` gate in `composeLayersIn` gave `option-30: pane, rail or dock
+cells did not reach dim=true`; omitting `PopupDim: p.Dim` at creation gave
+`--dim 60 kept the option's 30 percent`; retaining the target after focus moved
+away gave `focus-away: pane, rail or dock cells did not reach dim=false`.
+
+Cutting the fullscreen guard fails `TestPopupScrimNeedsTheCanvas` in
+`internal/app/popup_test.go`: `the dimmed fullscreen popup skipped the dock's
+scrim`, after dim-off passes. Cutting retention or fingerprint wiring fails
+`TestPopupDimWireAndRetention` in `internal/session/popup_test.go` at explicit
+zero or the shared fingerprint, respectively. Dropping the TML branch in
+`popupScrimTarget` fails `TestPopupScrimPercent/tml` with `dim = 40, want 30`.
+All pass with the wiring restored.
+
+Repeat from `e2e/tui` with `TUIOS_E2E=1 TUIOS_E2E_BIN=/path/to/tuios go test
+-count=1 -run '^TestPopupDimsTheScreenBehind$' -v .`. `TUIOS_E2E_FRAMES` saves
+plain/styled text and PNGs for each option, override and focus step.
+## Menus declared in config.toml
+
+`TestDeclaredMenuSplitsFromTheLeader` (window mode and terminal mode) and
+`TestDeclaredStickyMenuStaysOpenUntilAnUnboundKey` declare a split menu under
+the window prefix and a sticky resize menu inside it. They press `ctrl+b t s y`
+and `ctrl+b t s R h h z h` in the real TUI. The resize test also waits for the
+panel text of the menu's key. The unit tests in `internal/input/menus_test.go`
+and `internal/config/menus_test.go` cover nesting, a key read in its own menu
+only, the key a sticky menu hands to the pane, and the scope chord, the
+warnings and the panel rows.
+
+Run on 2026-10-18 on macOS.
+
+| Control | Tests that fail | Verdict |
+|---|---|---|
+| the sticky re-open (`m.Menu = name`) cut from `HandleMenuCommand` | `TestDeclaredStickyMenuStaysOpenUntilAnUnboundKey` ("the second h, on the same chord: pane b is still 55 wide, want less than 55") | **caught** |
+| the `if o.Menu != ""` routing cut from `HandleTerminalModeKey` | `TestDeclaredMenuSplitsFromTheLeader/terminal_mode` ("daemon never reported 2 windows with settled geometry"). The window-mode case passes, which is why both exist | **caught** |
+| The positive half | none: the sticky test shrinks the pane twice before `z` closes the menu, and the split test reads one pane before any key | **guard** |
+
+Not covered: the `Menu` clauses in `KeysGoToBindings`
+(internal/app/keyboard_enhancements.go) and `viewerTakesKey`
+(internal/input/handler.go) have no test of their own, so no control was run
+on them.
+## A workspace's number is its position
+
+A dock pill dragged to another place kept its old `{index}` and `Alt+N` still reached it by that number, and the move keys renumbered on the client only, so the daemon kept the old names. Closing a workspace left a gap: closing 2 of 1, 2 and 3 left tabs labelled 1 and 3. The daemon now renumbers on every move (`Session.RenumberWorkspaces`), closes up the place of a workspace that goes (`noteWorkspacesLocked`), and gives each herdr tab a key that moves with it (`SessionState.WorkspaceTabKeys`). The tests are in `workspace_renumber_test.go`, with `TestDockWorkspacePillsDragIntoANewOrder` updated.
+
+Run on 2026-10-17, each against a build with the fix line or lines cut, built to a separate path.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The pre-fix behaviour | yes | upstream/main at 84715194 | every new test, and `TestDockWorkspacePillsDragIntoANewOrder` ("the daemon does not have 1=REVW after the drag", "kept a display order"). The key move fails at the daemon's names ("the daemon has workspace 1 named EDIT, want REVW") | **caught** |
+| The pre-fix behaviour, rerun on 2026-10-18 | yes | upstream main at ccde47cf | `TestWorkspaceKeyMoveRenumbers`, `TestWorkspaceDragLeftRenumbers`, `TestWorkspaceDragThenKeyMove`, `TestWorkspaceRenumberReachesEveryClient`, `TestHerdrTabMoveKeepsTabIDs`, `TestWorkspaceMoveKeyTwiceQuickly`, `TestWorkspaceCloseRenumbersTheRest`, `TestWorkspaceSwitchPastTheLastOpensTheNext` and `TestDockWorkspacePillsDragIntoANewOrder` ("the daemon has workspace 1 named EDIT, want REVW", "EDIT is workspace 1 after two moves right") | **caught** |
+| A move did not renumber | yes | `state.renumberWorkspaces(newOf)` cut from `Session.RenumberWorkspaces` | `TestWorkspaceKeyMoveRenumbers`, `TestWorkspaceDragLeftRenumbers`, `TestWorkspaceDragThenKeyMove`, `TestWorkspaceRenumberReachesEveryClient`, `TestHerdrTabMoveKeepsTabIDs`, `TestWorkspaceMoveKeyTwiceQuickly`, `TestDockWorkspacePillsDragIntoANewOrder` | **caught** |
+| A herdr tab id followed the number, not the tab | yes | `renumberWorkspaces` keeps the keys where they were (`st.WorkspaceTabKeys = keys`) | `TestWorkspaceKeyMoveRenumbers` ("herdr tab ...:t1 names REVW after the move, want EDIT"), `TestWorkspaceDragLeftRenumbers`, `TestHerdrTabMoveKeepsTabIDs`, and the drag tests through the client's renumber reading | **caught** |
+| A key move left went nowhere | yes | the `delta < 0` order in `MoveWorkspaceBy` cut | `TestWorkspaceKeyMoveRenumbers` (second half), `TestWorkspaceDragThenKeyMove` | **caught** |
+| A second move sent before the first landed swapped back | yes | the `workspaceMoveInFlight` check in `OS.RenumberWorkspaces` cut | `TestWorkspaceMoveKeyTwiceQuickly` ("EDIT is workspace 1 after two moves right") | **caught** |
+| The client did not apply the daemon's renumber to its own state | yes | `adoptWorkspaceRenumbering` call cut from `ApplyStateSyncFrom` | `TestWorkspaceKeyMoveRenumbers`, `TestWorkspaceDragThenKeyMove`, `TestDockWorkspacePillsDragIntoANewOrder`. `TestWorkspaceDragLeftRenumbers` and the two-client test pass without it: the labels come from the daemon's state | **caught** |
+| Closing a workspace left a gap | yes | `closeUp(gone)` cut from `noteWorkspacesLocked` | `TestWorkspaceCloseRenumbersTheRest` ("the dock never drew [1·EDIT 2·DPLY]"), the three updated close tests in `workspace_tab_close_test.go` ("workspace 2 has 1 panes, want 0"), `TestEmptyWorkspaceReturnsWhereXpanesRan`, `TestEmptyWorkspaceOpensAPane` | **caught** |
+| `Alt+N` past the last workspace opened N, leaving a gap | yes | `newWorkspaceSlot` answers the number it was given | `TestWorkspaceSwitchPastTheLastOpensTheNext` ("opt+5 with three workspaces did not open workspace 4"), `TestEmptyWorkspaceOpensAPane` ("shows workspace 4, want 2") | **caught** |
+| The pane asked for on a new workspace landed on the old number when the switch closed up a workspace below it | yes | the client sends no tab key with `SendNewWindowFrom` | `TestEmptyWorkspaceOpensAPane` ("workspace 2 has 0 panes, want 1") | **caught** |
+
+The move controls were run against builds of 691b0394 (the move fix alone); the close controls against the final tree. The fixed build passes every test above, three times in a row for the move tests. Every E2E test that failed on the fixed build in a full run fails the same way on upstream/main at 84715194 (`TestDockFloodingComponentStaysBounded`, `TestMaxFPSAutoReadsTheDisplay`, the risk, GUI bridge, ports, OSC 7, kitten, nested-attach, page-binding, pty-log and stream-memory tests), apart from the ones this change moved on purpose, which are updated: a workspace's number is its position, so a test that put a pane on workspace 3 with nothing on 2, or pressed `Alt+3` in a one-workspace session, now reads the number the workspace holds. The option-key tests open a pane on every workspace first, so each `Alt+N` still reaches its own number and a misread digit still lands elsewhere. The Collie herdr fixture now expects `tab.close` on a tab whose last pane closed to answer `tab_not_found`, as herdr does.
+
+### Numbers close up only on a person's change
+
+Review of the renumbering: `Alt+6` from an empty workspace 4 opened 5 and left the dock at 1, 2, 3, 5; a workspace whose panes exited on their own closed up, renumbering the workspace on screen and sending `window-moved` and `workspace-switched` for a switch nobody made; and an Inbox item kept the workspace number its pane had before a move. `newWorkspaceSlot` now reads the slot past the last workspace that holds a pane (or has one on its way), the PTY tells the session when its process exited on its own (`Session.notePaneExitedAlone`) so that workspace leaves a gap until a person's close or move closes it up (`noteWorkspacesLocked`), and the attention store follows `window-moved` (`attentionStore.windowWorkspace`). The tests are `TestWorkspaceSwitchFromAnEmptyOneStaysOnIt`, `TestWorkspaceSelfExitLeavesTheNumbers` and `TestWorkspaceMoveRenumbersInboxItems` in `workspace_renumber_test.go`.
+
+Run on 2026-10-20, each against a build of the final tree with the fix line or lines cut, built to a separate path, the source restored with `git checkout` afterwards.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| The pre-fix behaviour | yes | the branch before these commits (f906cca7b) | all three new tests: "opt+6 from the empty workspace 4 left it, want it to stay on 4 (status [5:0 5 0])", "the daemon has workspace 3 named \"\", want \"DPLY\" (names map[1:EDIT 2:DPLY])", "the Inbox item of a pane on EDIT names workspace 1 after EDIT moved to 2" | **caught** |
+| `Alt+N` from an empty workspace opened the next number | yes | `newWorkspaceSlot` counts the workspace on screen as taken (`occupiedWorkspaceNumbers`) | `TestWorkspaceSwitchFromAnEmptyOneStaysOnIt` ("opt+6 from the empty workspace 4 left it"), `TestWorkspaceSelfExitLeavesTheNumbers` ("opt+5 with a gap at 2 did not open workspace 4") | **caught** |
+| A pane exiting on its own closed the numbers up | yes | the `p.exitedAlone` call cut from `PTY.noteExit` | `TestWorkspaceSelfExitLeavesTheNumbers` ("the daemon has workspace 3 named \"\", want \"DPLY\"") | **caught** |
+| An Inbox item kept the number from before a move | yes | the `EventWindowMoved` case cut from `attentionStore.noteSessionEvent` | `TestWorkspaceMoveRenumbersInboxItems` ("names workspace 1 after EDIT moved to 2") | **caught** |
+| The switch that stays on the empty workspace opened no pane with `new_window_when_empty` | yes | the `from = 0` for a redirected switch cut from `SwitchToWorkspace` | `TestEmptyWorkspaceOpensAPane` ("workspace 2 has 0 panes, want 1") | **caught** |
+| A workspace with a pane on its way counted as empty, so `Alt+2 Alt+3` ended on 2 | yes | the `paneRequests` check cut from `newWorkspaceSlot` | `TestEmptyWorkspaceFastSwitches` ("Alt+2 Alt+3: workspace 3 has 0 panes, want 1") | **caught** |
+
+The fixed build passes the three new tests and the targeted run (`TestWorkspace`, `TestHerdr`, `TestEmptyWorkspace`, `TestXpanes`, `TestDockWorkspace`, `TestCloseWorkspace`, `TestLiveness`, the pane-move, attach, option-key, subscribe, Inbox and agent-state tests: 101 passed). The Collie herdr fixture keeps `tab_not_found` for `tab.close` on a tab whose last pane closed: herdr 0.9.5 removes a tab with its last pane (`Workspace::close_pane` in `src/workspace.rs`), so an emptied workspace keeps no name and no tab.
+
+### Opt+N from the splash stays on workspace 1
+
+With no pane in any workspace, the splash of workspace 1 is the empty workspace on screen, and `Alt+2` stays on it, as `Alt+N` to an unused number does from any empty workspace on screen. A pane opened on 2 from the splash would leave 1 empty below it, and nothing a person does would close that up. `TestUnreadableKeyKeepsTheRestOfTheFile`, `TestDoctorMatchesTheAppWithBadKeys`, `TestReloadWithABadKeyAppliesTheRest` and `TestMacConfigWorksOnLinux` prove a configured workspace key is bound by where it goes, so each opens a pane on 1 first (`openPaneOnTheSplash`), and the key then lands on 2. The test is `TestWorkspaceSwitchFromTheSplashStaysOnIt` in `workspace_renumber_test.go`: `Alt+2` and then `n` from the splash, and the pane opens on 1.
+
+Run on 2026-10-21 on macOS, against a build with the old splash fallback put back, built to a separate path, the source restored afterwards.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| `Alt+2` from the splash went to 2 | yes | the `last == 0` fallback to `m.dockWorkspace()` put back in `newWorkspaceSlot` | `TestWorkspaceSwitchFromTheSplashStaysOnIt` ("opt+2 from the splash went to workspace 2, want it to stay on 1") | **caught** |
+
+The three config tests pass on that build too, as they should: with a pane on 1, both builds send the key to 2. The fixed build passes all four.
+
+### new_workspace from the empty workspace on screen
+
+`new_workspace` and the dock's `+` go to the lowest workspace with no pane that is not the one on screen. From an empty workspace past the last one in use, `SwitchToWorkspace` stays on it, since it is already the new one, so the dock never reads 1, 3. `handleNewWorkspace` then saw the switch land short of its target and opened no pane, so the key did nothing. It now opens the pane wherever the switch landed, as long as that workspace is empty. `TestNewWorkspaceSkipsTheEmptyWorkspaceOnScreen` expected the key to go on to 3. It is now `TestNewWorkspaceStaysOnTheEmptyWorkspaceOnScreen` in `tmux_style_actions_test.go`, which expects the view to stay on 2 with a pane there.
+
+Run on 2026-10-21 on macOS, against a build with the fix line cut, built to a separate path, the source restored afterwards.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| `new_workspace` from the empty workspace on screen did nothing | yes | `handleNewWorkspace` returns early again when `o.CurrentWorkspace != ws` | `TestNewWorkspaceStaysOnTheEmptyWorkspaceOnScreen` ("left panes by workspace map[1:1], want one on 1 and one on 2") | **caught** |
+
+`TestTmuxStyleActionsRunWhenBound` passes on the cut build too: from workspace 1 the switch lands on its target. The fixed build passes 37 tests: every `TestNewWorkspace*`, `TestTmuxStyle*`, `TestWorkspace*` and `TestEmptyWorkspace*` test, and `TestReloadWithABadKeyAppliesTheRest`.
+
+### A shell exit is a person's close
+
+Typing `exit` in the last shell of a workspace ended the pane's process without a close, so `notePaneExitedAlone` recorded it as exiting on its own and the dock kept a gap (1, 3). A pane's own shell is now told apart by how it was spawned: `PTY.ownShell` is set for a pane started with no command, without `close_on_exit`, on this machine. Its exit is recorded as a shell's, and `notePaneMovesLocked` counts it as a person's close unless an agent was live in the pane at the last change (`agentWasLive`), since an agent run with `exec` ends the shell's process when it finishes. A pane given a command (a `tuios xpanes` run, `start-agent`, a fan) or `close_on_exit` still exits on its own and leaves the gap. The new test is `TestWorkspaceShellExitClosesUp` in `workspace_renumber_test.go`.
+
+Run on 2026-10-21 on macOS, each against a build with one line changed, built to a separate path, the source restored afterwards.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| `exit` in the last shell of workspace 2 left the dock at 1, 3 | yes | `notePaneMovesLocked` treats a shell's exit as on its own again (`if true \|\| !shell \|\| was.agent`) | `TestWorkspaceShellExitClosesUp` ("the dock never drew [1·EDIT 2·DPLY]") | **caught** |
+| A command pane's exit closed up the numbers | n/a, the spawn fact itself | `ownShell` set for every pane (`true \|\| len(sp.command) == 0 ...`) | `TestWorkspaceSelfExitLeavesTheNumbers` ("the daemon has workspace 3 named \"\", want \"DPLY\" (names map[1:EDIT 2:DPLY])") | **caught** |
+
+`TestWorkspaceSelfExitLeavesTheNumbers` passes on the first build and `TestWorkspaceShellExitClosesUp` on the second, as they should: each build breaks only the side the other test covers. The fixed build passes both.
+
+### A workspace's layout mode moves with it
+
+A move renumbers every map kept by workspace number. The per-workspace layout modes are one of those maps, on the client (`renumberLocalWorkspaces`) and in the daemon (`renumberWorkspaces` and `takeWorkspaceMapsFrom`). The new test is `TestLayoutModeMovesWithItsWorkspace` in `workspace_layout_mode_test.go`.
+
+Run on 2026-10-23 on Linux, each against a build with lines cut, built to a separate path, the source restored afterwards.
+
+| Bug | Fix removed | How | Tests that fail | Verdict |
+|---|---|---|---|---|
+| A moved workspace left its layout mode on its old number | yes, daemon side | the two `WorkspaceLayoutModes` lines cut from `workspace_renumber.go` | `TestLayoutModeMovesWithItsWorkspace` ("has layout mode \"scrolling\", want \"bsp\"") | **caught** |
+| The same | yes, both sides | the daemon lines and the `WorkspaceLayoutMode` line in `renumberLocalWorkspaces` cut | `TestLayoutModeMovesWithItsWorkspace` (the same message) | **caught** |
+
+The fixed build passes it.
+
+## A pane reports agent state only for its own window
+
+`TestAPaneCannotMarkAnotherPaneToAnswerItsPrompt` runs on a daemon in the
+default open mode, where every pane holds admin. Pane A reports
+`needs_input` for itself with no `--window` and waits on a prompt that it
+draws again on SIGWINCH. Pane B runs `set-agent-state -w A working`, then
+`send-keys -w A 'y Enter'`. Both are refused and A's prompt stays unanswered.
+Then the person's CLI marks A `working` from outside every pane, which works.
+B resizes A, A draws its prompt again, and B's keys are still refused. Given
+`respond`, B marks A and answers the prompt.
+
+`TestADaemonChildCannotMarkAnotherPane` runs `set-agent-state -w A working`
+from an `after-new-window` hook, a process the daemon starts outside every
+pane. It is refused and A stays on `needs_input`.
+
+Run on 2026-10-23 on Linux.
+
+| Control | Tests that fail | Verdict |
+|---|---|---|
+| a binary built from origin/main at `e2fa758d5` | `TestAPaneCannotMarkAnotherPaneToAnswerItsPrompt` ("B answered A's prompt without respond": `SET_EXIT=0`, `SK_EXIT=0`, `ANSWERED:y`) | **caught** |
+| `promptStillShown` made to return false | `TestAPaneCannotMarkAnotherPaneToAnswerItsPrompt` ("B answered A's prompt after the person marked A working": `SK2_EXIT=0`, `ANSWERED:y`) | **caught** |
+| the hold ended by any output after it, with the unplaced exemption in `holdOwnRecord` (the build at `7ae7a847f`) | `TestAPaneCannotMarkAnotherPaneToAnswerItsPrompt` (`REDRAWN` after the resize, then `SK2_EXIT=0`, `ANSWERED:y`), `TestADaemonChildCannotMarkAnotherPane` (`HOOK_EXIT=0`, A moved to `working`) | **caught** |
+| The positive half | none: B with `respond` marks A and its keys answer the prompt | **guard** |
+
+`TestGitRunsNoFSMonitor` in `internal/childproc` sets `core.fsmonitor` in a
+repository to a program that leaves a file. Plain git runs it, which is the
+test's own positive control. With `gitArgs` returning the arguments unchanged,
+it fails with "git started by childproc ran the repository's core.fsmonitor".
+
+Repeat with `TUIOS_E2E=1 TUIOS_E2E_BIN=/path/to/tuios go test -count=1
+-run '^(TestAPaneCannotMarkAnotherPaneToAnswerItsPrompt|TestADaemonChildCannotMarkAnotherPane)$' -v .`
+from `e2e/tui`.
+## Live handoff
+
+`e2e/tui/live_handoff_test.go` drives the daemon live upgrade of `docs/design/live-handoff.md` against real daemons. The daemon runs with `TUIOS_TEST_HANDOFF=1`, which registers the test-only verbs `test-quiesce` and `test-handoff`. Each test writes what it measured to `handoff.json` under `artifactDir`.
+
+### PR 2: quiesce, gated exit wait, adopted pane
+
+- `TestQuiesceLosesNoBytes`: a pane prints a numbered counter as fast as `sh` can. It is quiesced and resumed 100 times, 5 ms each. The stream must not move while the pane is quiesced (`read_while_quiesced` is 0), and the counter in the daemon's scrollback must be contiguous. The positive half: the counter moved between the first and the last capture, so the pane was producing the whole time.
+- `TestExitDuringQuiesceKeepsStatus`: a kept-open pane prints `ready`, then sleeps and exits 7 during a 3.5 s hold between the manifest write and the exec, with no output unread. The new image must report 7. The positive half: a pane that exited 5 before the handoff, reaped by the old image and written down as exited, reads 5 after it.
+- `TestSelfExecAdoptsPanes`: two command panes print `pid-$$`. After a handoff to the same binary the daemon's pid is unchanged, its image id (hello's `instance`) is new, every pane's pid is unchanged, and a pane told to exit 9 after the handoff reads 9. Its subtest lets a child fork while the descriptors are exposed, then runs `kill-server` and `start-server`.
+
+Each control is a build that cuts one line, run on 2026-10-17 on macOS arm64 (Darwin 27, Go 1.26.9) against the branch feat/live-handoff-impl.
+
+| Control | How | Test that fails | Verdict |
+| --- | --- | --- | --- |
+| The reader ignores the gate | drop the `if p.quiesced { ... }` block from `readOutput` | `TestQuiesceLosesNoBytes`: "the pane's reader took 1070643 bytes while it was quiesced" | **caught** |
+| `monitorExit` is a plain wait | drop the `peekExit` call and `p.reap.enter()`/`leave()` from `monitorExit` | `TestExitDuringQuiesceKeepsStatus`: "the pane that exited during the handoff reads -1, want 7" | **caught** |
+| Close-on-exec left on the masters | drop `r.fds = append(r.fds, rec.FD)` in `writeManifest` | `TestSelfExecAdoptsPanes`: "the daemon never answered from a new image within 20s: ... a stale socket is left over" (the new image found no master to adopt) | **caught** |
+| No `syscall.ForkLock` around the exposed span | drop `syscall.ForkLock.Lock()` and its unlock from `execHandoff` | `TestSelfExecAdoptsPanes/fork_in_the_exposed_window`: "start-server after kill-server failed, so something kept the start lock" | **caught** |
+
+```sh
+TUIOS_E2E=1 TUIOS_E2E_BIN=/path/to/tuios \
+  go test -count=1 -run '^(TestQuiesceLosesNoBytes|TestQuiesceAfterBurstDoesNotWait|TestExitDuringQuiesceKeepsStatus|TestSelfExecAdoptsPanes|TestPaneCellFollowsOneClient|TestOmarchyThemeSwitchIsFollowed|TestKittyUploadReply|TestKittyUploadReplyTwoClients|TestHandoffRefusedWhileHostedPaneRuns|TestHandoffRefusedByPaneNotReadingInput)$' .
+```
+
+### The reply forwarder and the read gate's wait
+
+- The reply forwarder sends the emulator's replies only when woken, and the emulator wakes it through `OnResponse` each time it queues one. `TestPaneCellFollowsOneClient` (a mode 2048 report queued by a cell size change), `TestOmarchyThemeSwitchIsFollowed` (a mode 2031 report queued by a colour scheme switch) and `TestKittyUploadReply`/`TestKittyUploadReplyTwoClients` (kitty upload answers, those for a file queued from a goroutine once the file has been looked at) each need a reply that no output of the program follows.
+- `TestQuiesceAfterBurstDoesNotWait`: a pane prints 8 MiB as fast as `yes` can, then nothing. Twenty quiesces of it must return without error well inside the 10 s quiesce deadline, with `read_while_quiesced` 0. A reader whose wait reported output when there was none would be blocked in read holding `readMu`, and the quiesce would wait on the quiet program.
+
+Each control cuts one change, rebuilds, runs the tests, and restores the file, checked byte for byte with sha256. Run on 2026-10-21 against pr/live-handoff-1, on macOS arm64 (Darwin 27, Go 1.26.10) and, for the Linux row, in Docker (Linux 6.8 arm64, Alpine) with binaries cross-built on the Mac.
+
+| Control | How | Test that fails | Verdict |
+| --- | --- | --- | --- |
+| `OnResponse` is never set | drop `pty.terminal.OnResponse(pty.wakeResponses)` and its `if` from `startPTY` | `TestKittyUploadReply/daemon` and `TestKittyUploadReplyTwoClients`, 2 runs of 2: every upload "got no answer" (the standalone half, with no daemon, passes); `TestPaneCellFollowsOneClient` and `TestOmarchyThemeSwitchIsFollowed`, 2 runs of 2 | **caught** |
+| The kqueue wait reports output without waiting (macOS) | `return false, nil` at the top of the waiter in `newGateWaiter`, `pty_gate_kqueue.go` | `TestQuiesceAfterBurstDoesNotWait`, 2 runs of 2: "quiescing the pane that went quiet after a burst failed after 20.002s: call test-quiesce did not return within 20s" | **caught** |
+| The poll wait reports output without waiting (Linux) | `return false, nil` at the top of `pollGate`, `pty_gate_poll.go` | `TestQuiesceAfterBurstDoesNotWait`, 2 runs of 2, the same failure after 20.002s and 20.029s | **caught** |
+
+With the changes in place, on macOS `TestQuiesceAfterBurstDoesNotWait` passed 3 runs of 3 (17 to 23 ms for the twenty quiesces) and the four reply tests 3 runs of 3; on Linux `TestQuiesceAfterBurstDoesNotWait` and `TestQuiesceLosesNoBytes` passed 3 runs of 3 (2 ms).
+
+### Refusals: hosted panes and a pane that does not read its input
+
+- `TestHandoffRefusedWhileHostedPaneRuns`: a pane opened with `open-pane`, as another machine's daemon opens one, is running when a handoff is asked for. The handoff must be refused with an error that names the panes run for another machine, the daemon must answer hello on its old image, and the hosted pane's process must still run. The positive half: after `close-pane` the same handoff goes through to a new image.
+- `TestHandoffRefusedByPaneNotReadingInput`: a pane in raw mode sends 6000 DA1 queries and never reads its input, so the replies fill the terminal's input queue and the write of the next one blocks. The handoff must answer within twice the 10 s quiesce deadline, refused with an error saying the program is not reading its input, and the daemon must answer hello on its old image. The positive half: after the stuck window is closed the handoff goes through to a new image.
+- `TestReadGateNeverReportsOutputAfterAFailedWait` (`internal/session/pty_gate_unix_test.go`, a kept unit test: a deterministic hang regression, since a real wait cannot be made to fail on two valid descriptors): with the gate's wait failing with ENOMEM, whether or not it also says the wake pipe is readable, `wait` must report neither output nor a wake. Its positive half: an EINTR is retried and the output already on the master is reported.
+
+Each control cuts one change from the fix, rebuilds, runs the test twice, and restores the file, checked byte for byte with sha256. Run on 2026-10-20 on macOS arm64 (Darwin 27, Go 1.26.9) against pr/live-handoff-1.
+
+| Control | How | Test that fails | Verdict |
+| --- | --- | --- | --- |
+| Hosted panes are not refused | drop the `shutHostedPanes` check and its undo from `handoffRun.prepare` | `TestHandoffRefusedWhileHostedPaneRuns`, 2 runs of 2: "the handoff went ahead with a hosted pane open, which closes its terminal at the exec" (the artifact records the hosted process gone after it) | **caught** |
+| The reply flush ignores the deadline | flush under `respMu` inline in `Quiesce`, as before the fix | `TestHandoffRefusedByPaneNotReadingInput`, 2 runs of 2: "the handoff hung on the pane that does not read its input: call test-handoff did not return within 20s" | **caught** |
+| A failed wait reads as an answer | skip the `if waitErr != nil` return in `readGate.wait` (run on 2026-10-21, Go 1.26.10) | `TestReadGateNeverReportsOutputAfterAFailedWait`, 2 runs of 2: "the gate reported output after the wait failed with ENOMEM, so the reader would block in read holding readMu" and "the gate reported a wake after the wait failed with ENOMEM, so the reader would stop for good" | **caught** |
+
+```sh
+go test -count=1 -run '^TestReadGateNeverReportsOutputAfterAFailedWait$' ./internal/session/
+```

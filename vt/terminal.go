@@ -33,6 +33,11 @@ type Terminal interface {
 	// blocking, or nil when there are none. A host that drains after each
 	// Write uses it instead of a goroutine blocked in Read.
 	TakeResponses() []byte
+	// OnResponse sets a function called each time a response is queued, on
+	// the goroutine that queued it, which is not always the one calling
+	// Write: a cell size change and a kitty file upload queue theirs from
+	// elsewhere. It must not block. nil clears it.
+	OnResponse(fn func())
 	// WriteResponse queues data to come out of Read, for a response made outside
 	// the emulator.
 	WriteResponse(data []byte)
@@ -338,18 +343,24 @@ type Terminal interface {
 	RestoreModifyOtherKeys(level int)
 
 	// Colors.
+	//
+	// SetThemeColors sets the colours the screen is drawn in: the default
+	// text, background and cursor colours and the sixteen ANSI slots. It
+	// sends no mode 2031 notice. See SetReportColors.
 	SetThemeColors(fg, bg, cur color.Color, ansiPalette [16]color.Color)
 	// SetReportColors sets the colours an OSC 10 and OSC 11 query is answered
 	// with while the guest has not set its own: the ground the pane is really
-	// drawn on, when that is not the default. A nil colour keeps the default
-	// answer. Nothing is drawn differently; it only changes the answer.
-	SetReportColors(fg, bg color.Color)
-	// SetReportPalette sets what an OSC 4 query for one of the sixteen ANSI
-	// slots is answered with while neither the guest nor a theme has set that
-	// slot: the host terminal's own colour, when tuios knows it. A nil entry
-	// keeps the default answer. Like SetReportColors it changes only the
-	// answer; the slot is still drawn by the host.
-	SetReportPalette(pal [16]color.Color)
+	// drawn on, when that is not the default. pal is what an OSC 4 query for
+	// one of the sixteen ANSI slots is answered with while neither the guest
+	// nor a theme has set that slot. A nil colour keeps the default answer.
+	// Nothing is drawn differently; it only changes the answers.
+	//
+	// A call that changes any of them sends a guest that turned on mode 2031
+	// one CSI ? 997 ; Ps n notice, 1 for a dark background and 2 for a light
+	// one, so a program can ask for the new colours. Only this method sends
+	// the notice. SetThemeColors does not, so a host can preview a theme
+	// without telling the guest.
+	SetReportColors(fg, bg color.Color, pal [16]color.Color)
 	// PaletteColor returns the colour of ANSI slot i (0 to 15) as it is drawn,
 	// or nil for a slot out of range.
 	PaletteColor(i int) color.Color

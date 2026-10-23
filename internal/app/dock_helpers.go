@@ -230,6 +230,23 @@ func (m *OS) workspacePillClipped(n int) bool {
 	return lipgloss.Width(m.workspaceTabText(&tabs, n)) > limit
 }
 
+// workspacePillHidesName reports whether the pill does not show workspace n's
+// whole name, which is when the hover label has something to say: the pill cut
+// the name short, or the tab format has no {name}. An unnamed workspace's name
+// is its number, so it has nothing to add when the format shows {index}. A
+// format with neither, such as "{icon}", shows no number at all, so the label
+// gives it.
+func (m *OS) workspacePillHidesName(n int) bool {
+	if m.workspacePillClipped(n) {
+		return true
+	}
+	format := m.Settings.DockWorkspaceTabFormat
+	if format == "" || strings.Contains(format, "{name}") {
+		return false
+	}
+	return printableTitle(m.WorkspaceNames[n]) != "" || !strings.Contains(format, "{index}")
+}
+
 // occupiedWorkspaceNumbers lists the workspaces worth showing: those holding a
 // window, plus the current one even when it is empty. It answers which, in
 // numeric order, and occupiedWorkspaces answers where.
@@ -672,7 +689,7 @@ type ModeInfo struct {
 func (m *OS) prefixArmed() bool {
 	return m.PrefixActive || m.WorkspacePrefixActive || m.MinimizePrefixActive ||
 		m.TilingPrefixActive || m.DebugPrefixActive || m.TapePrefixActive ||
-		m.LayoutPrefixActive || m.TuiosPrefixActive
+		m.LayoutPrefixActive || m.TuiosPrefixActive || m.Menu != ""
 }
 
 // prefixOnPill reports whether the dock's mode pill shows the armed leader.
@@ -704,8 +721,8 @@ func (m *OS) buildDockLeftText() (modeLabel, trail, tape string, width int, mode
 		IsTiling: m.AutoTiling,
 	}
 
-	// Get next split direction if tiling is active
-	if m.AutoTiling {
+	// Get next split direction if tiling is active and the pill shows it.
+	if m.AutoTiling && m.Settings.DockModeSplitLetter {
 		modeInfo.NextSplit = m.nextSplitIndicator(focusedWindow)
 	}
 

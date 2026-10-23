@@ -73,6 +73,31 @@ and run throwaway daemons under a scratch directory. Only `install`,
 `install-ghostty`, `deploy`, `deploy-hosts` and `restart` touch the live
 daemon. `just deploy` runs `tuios hosts sync --dev --local --restart --yes`.
 
+### The check gate
+
+Run `just check --changed` before you mark a pull request ready. It runs
+`scripts/check.sh` on the packages the branch changed against `origin/main`.
+`just check` runs it on every module, which is the form for main.
+
+| Check | What it runs | Fails the gate |
+|-------|--------------|----------------|
+| `fmt` | `gofmt -l`, and `goimports -l` when installed | yes |
+| `vet` | `go vet`, also with `-tags ghostty` when libghostty-vt is built | yes |
+| `lint` | `golangci-lint` with `.golangci.yml`, at the CI version | yes |
+| `tuioslint` | the `internal/lint` tests | yes |
+| `vuln` | `govulncheck`, for each module the branch touched | yes |
+| `fix` | the `go fix` modernizers, one line per finding | no, report |
+| `gopls` | `gopls check` on the changed Go files | yes |
+| `tidy` | `go mod tidy -diff` per module, `scripts/library-pins.sh check` | yes |
+| `cross` | `go build` for linux, darwin, windows and freebsd | yes |
+| `deadcode` | functions no binary or test reaches, outside `pkg/` | no, report |
+
+`--only vet,lint` runs a subset. Each check writes its full output to
+`.dev/check/NAME.log`. `gopls` fails only on the lines the branch added.
+`lint` covers the whole of each changed package. Apply a `fix` finding package by package, and read each
+diff first. `go fix -diff ./...` prints the patches. Fix a finding at the
+root. A `//nolint` needs its reason on the same line.
+
 ### Browser build (Learn tuios)
 
 `cmd/tuios-wasm` is tuios compiled to WebAssembly for the guided tour at
@@ -113,7 +138,8 @@ Some parts of tuios are Go modules of their own, published under
 `tuios.dev/<name>` import paths. tuios.dev serves the `go-import` meta tag
 that points the go command at the folder in this repository. They are
 `progstatus/` (`tuios.dev/progstatus`), `vt/` (`tuios.dev/vt`), `swatch/`
-(`tuios.dev/swatch`) and `shot/` (`tuios.dev/shot`).
+(`tuios.dev/swatch`), `shot/` (`tuios.dev/shot`), `tml/` (`tuios.dev/tml`),
+`plot/` (`tuios.dev/plot`) and `loom/` (`tuios.dev/loom`).
 
 - `go.work` makes the app, `e2e/tui` and each library one workspace, so a
   change to a library and to the app lands in one pull request. Never add a
@@ -131,9 +157,12 @@ that points the go command at the folder in this repository. They are
 
 - A new library joins `go.work` first. It gets its pin with the first change
   that imports it, because `go mod tidy` drops a requirement nothing imports.
-  Until then `scripts/library-pins.sh` skips it.
+  Until then `scripts/library-pins.sh` skips it. A library may require
+  another one at a commit before tuios imports either, as loom requires plot.
+  `scripts/library-pins.sh proxy` serves that version too, so the tidy check
+  needs no network for it.
 - `./...` from the root stops at a nested module. Name a library to test it:
-  `go test ./progstatus/... ./vt/...`.
+  `go test ./progstatus/... ./vt/... ./tml/...`.
 - A library imports no `github.com/Gaurav-Gosain/tuios/...` package.
 - A branch made before `internal/vt` became `vt/` crosses the move with
   `scripts/vt-rename.sh` after a rebase.
@@ -147,6 +176,7 @@ tuios/
 ├── cmd/tuios/              # CLI entry point (main.go with cobra commands)
 ├── cmd/tuios-web/          # Web terminal server binary (separate for security)
 ├── cmd/tuios-wasm/         # Browser build for the Learn tuios tour (js/wasm)
+├── cmd/sketch-wasm/        # tuios.dev/sketch for the browser: the Mermaid playground at tuios.dev/sketch
 ├── cmd/tuios-fuzz/         # The property fuzzer, drawn while it runs; kept out of the shipped binary
 ├── internal/
 │   ├── app/                # Core window manager, OS model, rendering
@@ -178,6 +208,7 @@ tuios/
 │   ├── dirwatch/           # Tells the rail's files section when the listed folder's entries change
 │   ├── review/             # Reading a worktree's diff, and the notes left on it
 │   ├── diffview/           # Drawing diff lines: chroma highlighting, split layout, changed words
+│   ├── markdown/           # Reads the Markdown agents write into blocks and styled runs; draws nothing
 │   ├── capture/            # Turns a screenshot request and config into what shot renders
 │   ├── release/            # Finds published releases and verifies a downloaded binary (tuios update)
 │   ├── netutil/            # Small network helpers the servers share
@@ -211,9 +242,12 @@ tuios/
 │   └── ui/                 # Animation system
 │                           # (plus cliflags, debuglog, fang, listnav, sound,
 │                           #  transcript, guestenv, perf, fuzz, testutil)
+├── loom/                   # tuios.dev/loom, a Go module of its own: draws TML into cells; flex layout, retained tree, palettes per depth, keys and mouse
+├── plot/                   # tuios.dev/plot, a Go module of its own: bar, line, area, sparkline, gauge and histogram charts as cells with theme roles
 ├── progstatus/             # tuios.dev/progstatus, a Go module of its own: OSC 7501 parser, record store, encoder
 ├── shot/                   # tuios.dev/shot, a Go module of its own: a cell grid to PNG, SVG, HTML, ANSI or text; mosaic turns pictures into cells
 ├── swatch/                 # tuios.dev/swatch, a Go module of its own: desktop theme palettes (Omarchy), followed live
+├── tml/                    # tuios.dev/tml, a Go module of its own: the TML markup for surfaces (codecs, validator, expressions, JSON Patch); draws nothing
 ├── vt/                     # tuios.dev/vt, a Go module of its own: the terminal emulator, pure Go, plus libghostty-vt behind -tags ghostty
 │   ├── emulator.go         # The pure Go Emulator and its write path
 │   ├── parser.go           # Parser state machine
@@ -290,7 +324,7 @@ Tiling itself toggles on `Ctrl+B` `Space` (or bare `t` in window-management mode
 ### Go Style
 
 - Follow standard Go conventions ([Effective Go](https://go.dev/doc/effective_go))
-- Run `go fmt` before committing
+- Run `go fmt` before committing, and `just check --changed` before a pull request is marked ready
 - Package comments on all packages (see existing `internal/*/` packages)
 - Meaningful variable names (avoid single letters except loop indices)
 

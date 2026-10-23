@@ -149,6 +149,12 @@ func syncProbeScript() string {
 	}, "; ")
 }
 
+// syncStopFunc defines stopd BINARY, which stops the daemon with BINARY.
+// kill-server --restart tells the attached clients to wait for the new daemon
+// and attach to it again. A binary older than the flag refuses it with
+// "unknown flag" (or "Unknown flag" from fang before v0.8.0), and then stops the daemon without it, as runRestart does.
+const syncStopFunc = `stopd() { if so=$("$1" kill-server --restart </dev/null 2>&1); then return 0; fi; case $so in *[Uu]"nknown flag"*) "$1" kill-server </dev/null >/dev/null 2>&1 ;; *) return 1 ;; esac; }`
+
 // syncInstallScript receives a binary on stdin and puts it in place.
 //
 //	$1 the target, as syncResolveArg reads it
@@ -177,7 +183,8 @@ func syncInstallScript() string {
 		`chmod 755 "$t"`,
 		`if v=$("$t" --version </dev/null 2>&1); then echo "staged=$(echo "$v" | head -n 1)"; else echo "fail=run"; echo "$v" | head -n 3 | while IFS= read -r l; do echo "out=$l"; done; exit 5; fi`,
 		`stopped=0`,
-		`if [ "$4" = 1 ]; then o=$5; if [ "$o" = - ]; then o=$t; fi; if "$o" kill-server </dev/null >/dev/null 2>&1; then stopped=1; echo "stopped=1"; else echo "stopfail=1"; fi; fi`,
+		syncStopFunc,
+		`if [ "$4" = 1 ]; then o=$5; if [ "$o" = - ]; then o=$t; fi; if stopd "$o"; then stopped=1; echo "stopped=1"; else echo "stopfail=1"; fi; fi`,
 		`mv -f "$t" "$a" || { echo "fail=move"; exit 6; }`,
 		`echo "target=$a"`,
 		`if [ "$stopped" = 1 ]; then if "$a" start-server </dev/null >/dev/null 2>&1; then echo "started=1"; else echo "startfail=1"; fi; fi`,
@@ -194,7 +201,8 @@ func syncInstallScript() string {
 func syncRestartScript() string {
 	return strings.Join([]string{
 		syncResolveArg,
-		`if "$a" kill-server </dev/null >/dev/null 2>&1; then echo "stopped=1"; else echo "stopfail=1"; exit 7; fi`,
+		syncStopFunc,
+		`if stopd "$a"; then echo "stopped=1"; else echo "stopfail=1"; exit 7; fi`,
 		`if "$a" start-server </dev/null >/dev/null 2>&1; then echo "started=1"; else echo "startfail=1"; exit 7; fi`,
 	}, "; ")
 }
@@ -509,14 +517,22 @@ func readDaemonSessions(ctx context.Context, t *syncTarget, call daemonCaller) {
 					PID         int    `json:"pid"`
 					AtPrompt    *bool  `json:"at_prompt"`
 					Running     string `json:"running_cmdline"`
+					AgentState  string `json:"agent_state"`
+					Resumable   string `json:"agent_resumable"`
 				} `json:"windows"`
 			}
 			if json.Unmarshal(raw, &wl) == nil {
 				ss.Panes = len(wl.Windows)
+				live := map[string]string{}
 				for _, w := range wl.Windows {
 					name := plainLine(w.DisplayName)
 					if name == "" {
 						name = shortWindowID(w.WindowID)
+					}
+					if w.Resumable != "" {
+						ss.Resume = append(ss.Resume, syncAgent{Window: name, Harness: plainLine(w.Resumable)})
+					} else if w.AgentState != "" && w.AgentState != "none" {
+						live[w.WindowID] = name
 					}
 					f := paneFacts{pid: w.PID, running: plainLine(w.Running)}
 					if w.AtPrompt != nil {
@@ -526,6 +542,11 @@ func readDaemonSessions(ctx context.Context, t *syncTarget, call daemonCaller) {
 					if w.PID > 0 {
 						pids = append(pids, strconv.Itoa(w.PID))
 					}
+				}
+				// A daemon of another build may not mark the panes, so the
+				// saved files answer for it.
+				if t.local && t.res.Daemon.Version != version {
+					ss.Resume = append(ss.Resume, resumableAgents(s.Name, live)...)
 				}
 			}
 		}

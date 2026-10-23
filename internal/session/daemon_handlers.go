@@ -19,6 +19,9 @@ func (d *Daemon) handleHello(cs *connState, msg *Message) error {
 	cs.mu.Lock()
 	cs.listingPush = payload.ListingPush
 	cs.paneMarks = payload.PaneMarks
+	cs.goodbye = payload.Goodbye
+	cs.tmlSurfaces = payload.TMLSurfaces
+	cs.pluginAsks = payload.PluginApprovals
 	changed := cs.treeOps != payload.LayoutTreeOps || cs.scratchWS != payload.ScratchWorkspaces
 	cs.treeOps = payload.LayoutTreeOps
 	cs.scratchWS = payload.ScratchWorkspaces
@@ -386,6 +389,11 @@ func (d *Daemon) handleAttach(cs *connState, msg *Message) error {
 	if hook := attachReplied.Load(); hook != nil {
 		(*hook)()
 	}
+	// The surfaces open in the session, behind the reply that carries the
+	// windows they are drawn in. See tml_surface.go.
+	d.sendTMLSurfaces(cs, session.ID)
+	// The native plugins that wait for the person. See plugin_approval.go.
+	d.sendPluginAsks(cs)
 
 	// A probe that has not reached a pane yet may still: see nest_probe.go.
 	if inside == nil && !cs.viaLink {
@@ -630,6 +638,12 @@ func (d *Daemon) handleResurrect(cs *connState, msg *Message) error {
 
 	if payload.SessionName == "" {
 		return d.replyError(cs, msg, ErrCodeInvalidMessage, "session name required")
+	}
+	// The name is also the name of the state file, and the link policy lets
+	// a machine on another host send this message, so the name is checked
+	// before it becomes a path.
+	if err := ValidateSessionName(payload.SessionName); err != nil {
+		return d.replyError(cs, msg, ErrCodeInvalidMessage, err.Error())
 	}
 
 	// Already live (e.g. auto-restored on start): nothing to do, report success.
@@ -971,7 +985,9 @@ func (d *Daemon) handleUpdateState(cs *connState, msg *Message) error {
 	// and OSC 10 with. See report_colors.go.
 	reportBg, reportFg, reportPal := state.PaneReportBg, state.PaneReportFg, state.PaneReportPalette
 	accepted, behind, pushSeq := session.updateStateFrom(&state, d.mayActAsHuman(cs))
-	session.applyReportColors(reportBg, reportFg, reportPal)
+	if d.ownsReportColors(cs, session.ID) {
+		session.applyReportColors(reportBg, reportFg, reportPal)
+	}
 
 	// The merged state is a full copy of the session's, retitled from every
 	// live emulator. It is read only by the reconcile reply and the peer

@@ -11,6 +11,7 @@ import (
 	"os"
 	"runtime"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/Gaurav-Gosain/tuios/internal/agentproto"
@@ -51,6 +52,7 @@ const (
 	ErrVerbInvalidParams   = "invalid_params"    // params failed to decode or a required field was missing
 	ErrVerbSessionNotFound = "session_not_found" // named session does not exist
 	ErrVerbSessionExists   = "session_exists"    // new-session was given a name the daemon already holds
+	ErrVerbFanExists       = "fan_exists"        // fan was given the name of a fan that exists, with no join
 	ErrVerbWindowNotFound  = "window_not_found"  // window target did not resolve
 	ErrVerbNoWindows       = "no_windows"        // session has no windows to act on
 	ErrVerbPTYNotFound     = "pty_not_found"     // the target window has no live PTY
@@ -161,11 +163,15 @@ type verbError struct {
 	Code    string    `json:"code"`
 	Message string    `json:"message"`
 	Hint    *VerbHint `json:"hint,omitempty"`
+	// Problems lists what is wrong with a TML document, on invalid_tml.
+	Problems any `json:"problems,omitempty"`
 }
 
 func (e *verbError) Error() string { return e.Code + ": " + e.Message }
 
 // newVerbError builds a *verbError with the given code and message.
+//
+//go:noinline
 func newVerbError(code, message string) *verbError {
 	return &verbError{Code: code, Message: message}
 }
@@ -254,14 +260,29 @@ func selectWriteParams(what string) []verbParam {
 	}
 }
 
-// verbRegistry is the dispatch table for every JSON verb the daemon supports.
-// It is built once at package init so list-verbs and dispatch share one source
-// of truth. It is populated in init() to avoid a static initialization cycle
-// (list-verbs reads the registry).
-var verbRegistry map[string]verbEntry
+// verbRegistry returns the dispatch table for every JSON verb the daemon
+// supports, so list-verbs and dispatch share one source of truth.
+//
+// It is built on first use, not in init. A table that init builds is reachable
+// in every program that links this package, and so is every handler it names,
+// which is most of the daemon. The browser build links this package for its
+// types and never runs a daemon, and the table alone kept about 3 MB of daemon
+// code in it. A function rather than a package-level initializer, because the
+// table names list-verbs, which reads the table: an initializer would be a
+// static initialization cycle.
+func verbRegistry() map[string]verbEntry {
+	verbRegistryOnce.Do(func() { verbRegistryMap = buildVerbRegistry() })
+	return verbRegistryMap
+}
 
-func init() {
-	verbRegistry = map[string]verbEntry{
+var (
+	verbRegistryOnce sync.Once
+	verbRegistryMap  map[string]verbEntry
+)
+
+// buildVerbRegistry makes the table verbRegistry returns.
+func buildVerbRegistry() map[string]verbEntry {
+	table := map[string]verbEntry{
 		"hello": {
 			description: "Handshake: report the protocol version this daemon speaks and the version range it accepts. Also tells the daemon the caller's terminal, so a session this connection later creates (new-session, switch-session's create) gets it rather than the daemon's fallback.",
 			params: []verbParam{
@@ -303,6 +324,8 @@ func init() {
 				{Name: "pane_token", Type: "string", Description: "The pane's $TUIOS_PANE_TOKEN, which proves pane_id. It is good for one pane of one daemon start."},
 				{Name: "peer_pid", Type: "int", Description: "Answer for the process with this pid instead of the caller, placed the way a caller is. The tmux shim's pane holder asks this for the process on its own socket before it replaces the pane's command. The answer echoes peer_pid. A pane without admin asking about a process in another pane is told only pane and admin. Not with pane_id or pane_token, and refused over a link."},
 				{Name: "peer_start", Type: "int", Description: "With peer_pid: the process's start time as the asker read it when the process connected. A process with another start time now is not the one that connected, and is answered as one that cannot be read."},
+				{Name: "plugin_id", Type: "string", Description: "The native plugin the caller belongs to, normally $TUIOS_PLUGIN_ID. Only with plugin_token, and only alone. It places this connection in that plugin for as long as it is open, held to the plugin's grants. A caller the kernel places in another plugin is refused."},
+				{Name: "plugin_token", Type: "string", Description: "The plugin's $TUIOS_PLUGIN_TOKEN, which proves plugin_id. It is good for one plugin of one daemon start."},
 			},
 			returns: []verbParam{
 				{Name: "pane", Type: "bool", Description: "Whether the caller runs in a pane of this daemon. When false, no pane grants apply to it: the person's own CLI and client keep full rights."},
@@ -469,6 +492,7 @@ func init() {
 				{Name: "cwd", Type: "string", Description: "Directory the session's windows start in: the first window, and any later one with no directory to inherit. Omit to use the daemon's."},
 				{Name: "command", Type: "[]string", Description: "Argv to exec as the first window's process instead of a shell. No shell parses it, so nothing needs quoting."},
 				{Name: "space", Type: "string", Description: "Space to file the session under, as set-session-space does: trimmed, then held to the session name rules and 64 bytes. Omit for none."},
+				{Name: "env", Type: "object", Description: "Environment variables for the window's process, name to value, on top of the daemon's. TUIOS_ names, TMUX and TMUX_PANE are refused, and a call from another machine may not pass env. Not for a window on another machine. Not saved: a restored pane starts without it."},
 			},
 			returns: []verbParam{
 				{Name: "session", Type: "string", Description: "Name of the new session. Use it as the session parameter of every later call."},
@@ -645,7 +669,8 @@ func init() {
 				{Name: "prompts", Type: "[]string", Description: "One prompt per session, in order. count defaults to how many there are and must equal it when given. Takes no prompt."},
 				{Name: "repo", Type: "string", Description: "A directory inside the repository. Required unless repo_url is passed."},
 				{Name: "base", Type: "string", Description: "Ref every branch starts from. Omit for HEAD of the main checkout."},
-				{Name: "name", Type: "string", Description: "Branch stem. The branches are the stem, then stem-2, stem-3 and so on. Omit for fan/ and the first words of the first prompt."},
+				{Name: "name", Type: "string", Description: "Branch stem, which names the fan. The branches are the stem, then stem-2, stem-3 and so on. A name that is already a fan in the repository is refused with fan_exists unless join is given. Omit for fan/ and the first words of the first prompt, which moves on to a free name. A name can have only A-Z, a-z, 0-9 and / . _ -. Any other character is refused."},
+				{Name: "join", Type: "string", Description: "A session of an existing fan to add the attempts to. The caller must reach that session. Omit to start a new fan."},
 				{Name: "ready_timeout", Type: "int", Description: "Milliseconds to wait for each agent to be ready before giving up on its prompt.", Default: "600000"},
 				{Name: "env", Type: "object", Description: "Environment variables for every agent, name to value, on top of the daemon's. PATH in it is where the programs are looked up, so an agent the caller can run is found. The tuios CLI sends its PATH. TUIOS_ names, TMUX and TMUX_PANE are refused, and a call from another machine may not pass env at all. Not saved: a restored pane starts with the daemon's environment."},
 				grantsParam,
@@ -751,7 +776,7 @@ func init() {
 		"list-hosts": {
 			description: "List the machines named in the [hosts] config table, with the state of each link.",
 			returns: []verbParam{
-				{Name: "hosts", Type: "[]string", Description: "One entry per configured host, carrying its name, address, status, plain reason, remote daemon version, control protocol range, the last time it answered, and events: live when this daemon streams the host's agents and Inbox, polling when the host's tuios is too old to (events_note says what to update), empty while the link is not up. queued is how many messages this daemon holds for the host until its link is back."},
+				{Name: "hosts", Type: "[]string", Description: "One entry per configured host, carrying its name, address, status, plain reason, remote daemon version, control protocol range, the last time it answered, and events: live when this daemon streams the host's agents and Inbox, polling when the host's tuios is too old to (events_note says what to update), empty while the link is not up. queued is how many messages this daemon holds for the host until its link is back. cores, load1, mem_pct and agents_working are the host's load from the last hello on the link, at load_at (Unix seconds), and rtt_ms is that hello's round trip in milliseconds; all are absent until a hello from the host carried a load."},
 				{Name: "total", Type: "int", Description: "How many hosts are configured."},
 				{Name: "events_push", Type: "bool", Description: "Always true from a daemon that pushes host changes: host-changed on subscribe, and a hosts-changed push to attached clients."},
 				{Name: "config_problems", Type: "[]string", Description: "Config entries that were dropped, with the reason for each. Omitted when there are none."},
@@ -1026,6 +1051,7 @@ func init() {
 				{Name: "timeout", Type: "int", Description: "With wait: milliseconds to wait before failing with the timeout code. 0 waits with no limit.", Default: "0"},
 				{Name: "kind", Type: "string", Description: "What draws the window: terminal, or view, web or app for a window a native renderer (tuios-gpui) draws itself. Such a window runs a placeholder that shows its uri in a terminal client.", Default: "terminal", Accepted: WindowKinds},
 				{Name: "uri", Type: "string", Description: "What a view, web or app window shows, such as tuios://review/<pane> or a page. Needed for those kinds."},
+				{Name: "env", Type: "object", Description: "Environment variables for the window's process, name to value, on top of the daemon's. TUIOS_ names, TMUX and TMUX_PANE are refused, and a call from another machine may not pass env. Not for a window on another machine. Not saved: a restored pane starts without it."},
 			},
 			returns: []verbParam{
 				{Name: "window_id", Type: "string", Description: "Id of the new window. Use it to address the window in later calls."},
@@ -1054,6 +1080,7 @@ func init() {
 				{Name: "command", Type: "[]string", Required: true, Description: "Argv to run in the popup. No shell parses it, so nothing needs quoting. The popup closes when the program exits."},
 				{Name: "width", Type: "string", Description: "Popup width, in cells (\"60\") or as a share of the pane region (\"60%\").", Default: PopupDefaultWidth},
 				{Name: "height", Type: "string", Description: "Popup height, in cells (\"20\") or as a share of the pane region (\"50%\").", Default: PopupDefaultHeight},
+				{Name: "dim", Type: "int", Description: "Percent to dim the screen behind this popup, 0 to 90. Omit to inherit appearance.popup_dim (default 0); explicit 0 disables it. Scratch panes are unchanged."},
 				{Name: "name", Type: "string", Description: "Name for the popup. Omit to use the program's title."},
 				{Name: "cwd", Type: "string", Description: "Directory to run the command in. Omit to inherit the daemon's."},
 				{Name: "workspace", Type: "int", Description: "Workspace to open the popup on. Omit for the current one."},
@@ -1080,6 +1107,145 @@ func init() {
 				`{"id":1,"verb":"popup","params":{"session":"work","command":["fzf"],"wait":true,"capture_stdout":true}}`,
 			},
 			handler: (*Daemon).verbPopup,
+		},
+		"tml-open": {
+			description: "Show a TML document as a popup or a pane. Every attached client draws it, and the daemon keeps it while nobody is attached.",
+			params: []verbParam{
+				sessionParam,
+				{Name: "doc", Type: "string", Required: true, Description: "The document: TML text or TML JSON as a string, or a TML JSON object. It is checked as tml-validate checks it, and a document with errors is refused with invalid_tml and the problem list."},
+				{Name: "target", Type: "string", Description: "Where to show it: popup, a floating box over the panes that needs an attached client, or pane, a tiled pane.", Default: TMLTargetPopup, Accepted: tmlTargets},
+				{Name: "name", Type: "string", Description: "Name for the window. Omit to use the document's title."},
+				{Name: "width", Type: "string", Description: "Popup width, in cells (\"60\") or as a share of the pane region (\"60%\"). Popup only.", Default: PopupDefaultWidth},
+				{Name: "height", Type: "string", Description: "Popup height, in cells (\"20\") or as a share of the pane region (\"50%\"). Popup only.", Default: PopupDefaultHeight},
+				{Name: "workspace", Type: "int", Description: "Workspace to open it on. Omit for the current one."},
+				{Name: "wait", Type: "bool", Description: "Keep the call open until the surface closes, and return the close value in a tml_result.", Default: "false"},
+				{Name: "timeout", Type: "int", Description: "With wait: milliseconds to wait before failing with the timeout code. The surface stays open. 0 waits as long as it is open.", Default: "0"},
+				{Name: "events", Type: "bool", Description: "Keep the connection and stream the surface's tml-event events on it after the answer, as subscribe does: each emit, and the close as the last one. Not with wait.", Default: "false"},
+			},
+			returns: []verbParam{
+				{Name: "surface", Type: "string", Description: "Id of the surface. Use it to patch, replace, read or close the surface."},
+				{Name: "seq", Type: "int", Description: "With events: the last event number when the stream went live, as subscribe answers."},
+				{Name: "boot_id", Type: "string", Description: "With events: the daemon start that numbers the events."},
+				{Name: "window_id", Type: "string", Description: "Id of the window the surface is drawn in."},
+				{Name: "target", Type: "string", Description: "popup or pane."},
+				{Name: "workspace", Type: "int", Description: "Workspace the surface was opened on."},
+				{Name: "value", Type: "any", Description: "With wait: the value the surface closed with. null when the person dismissed it."},
+				{Name: "reason", Type: "string", Description: "With wait: closed when the person ran a close action, so the value is the person's answer; program when a tml-close gave the value; dismissed when the window closed without one."},
+			},
+			examples: []string{
+				`{"id":1,"verb":"tml-open","params":{"session":"work","doc":"<tml version=\"1\" title=\"Hi\"><text>Hello</text></tml>"}}`,
+				`{"id":1,"verb":"tml-open","params":{"doc":{"type":"tml","version":1,"title":"Build","children":[{"type":"progress","value":0.4}]},"target":"pane"}}`,
+				`{"id":1,"verb":"tml-open","params":{"doc":"<tml version=\"1\"><button key=\"y\" on-press=\"close('yes')\">Yes</button></tml>","wait":true}}`,
+			},
+			handler: (*Daemon).verbTMLOpen,
+		},
+		"tml-close": {
+			description: "Close a TML surface and its window. A tml-open that waits on it answers with the value.",
+			params: []verbParam{
+				{Name: "surface", Type: "string", Required: true, Description: "The surface id tml-open answered with."},
+				{Name: "value", Type: "any", Description: "A JSON value for the waiting caller. Omit for null."},
+			},
+			returns: []verbParam{
+				{Name: "surface", Type: "string", Description: "The surface that closed."},
+			},
+			examples: []string{
+				`{"id":1,"verb":"tml-close","params":{"surface":"tml-4f1a9c02","value":"done"}}`,
+			},
+			handler: (*Daemon).verbTMLClose,
+		},
+		"tml-input": {
+			description: "Report what the person did on a TML surface: the state its local actions changed, and a close. The attached client sends it, with its attach nonce.",
+			params: []verbParam{
+				{Name: "surface", Type: "string", Required: true, Description: "The surface id."},
+				{Name: "human_nonce", Type: "string", Required: true, Description: "The attach nonce of the person's client."},
+				{Name: "ops", Type: "[]object", Description: "A JSON Patch (RFC 6902) on the surface's state."},
+				{Name: "close", Type: "bool", Description: "Close the surface.", Default: "false"},
+				{Name: "value", Type: "any", Description: "With close: the value. Omit when the person dismissed the surface."},
+				{Name: "events", Type: "[]object", Description: "The emit actions the person ran, each {name, value}. Each becomes a tml-event for the owner."},
+				{Name: "actions", Type: "[]object", Description: "The pane() actions the person ran, each {verb, params}: focus, new-window or send-text. Each runs with the grants of the pane that opened the surface, never the person's."},
+			},
+			returns: []verbParam{
+				{Name: "version", Type: "int", Description: "The surface's version after the change."},
+				{Name: "actions", Type: "[]object", Description: "Each pane() action's result: verb, ok, and error and code when it was refused."},
+			},
+			examples: []string{
+				`{"id":1,"verb":"tml-input","params":{"surface":"tml-4f1a9c02","human_nonce":"...","ops":[{"op":"replace","path":"/tab","value":"log"}]}}`,
+			},
+			handler: (*Daemon).verbTMLInput,
+		},
+		"tml-patch": {
+			description: "Change a TML surface's state with a JSON Patch (RFC 6902). Only the parts of the surface that read the changed paths are drawn again.",
+			params: []verbParam{
+				{Name: "surface", Type: "string", Required: true, Description: "The surface id tml-open answered with."},
+				{Name: "ops", Type: "[]object", Required: true, Description: "The JSON Patch: add, remove, replace, move, copy and test operations on the state. A test that does not match refuses the whole patch, so read the state again with tml-get."},
+			},
+			returns: []verbParam{
+				{Name: "version", Type: "int", Description: "The surface's version after the patch."},
+				{Name: "changed", Type: "[]string", Description: "The JSON Pointers the patch changed."},
+			},
+			examples: []string{
+				`{"id":1,"verb":"tml-patch","params":{"surface":"tml-4f1a9c02","ops":[{"op":"replace","path":"/failed","value":0}]}}`,
+			},
+			handler: (*Daemon).verbTMLPatch,
+		},
+		"tml-replace": {
+			description: "Swap a TML surface's tree. Each client keeps its view state (the open tab, the cursor row) for the nodes whose ids stay.",
+			params: []verbParam{
+				{Name: "surface", Type: "string", Required: true, Description: "The surface id."},
+				{Name: "doc", Type: "string", Required: true, Description: "The new document, as tml-open takes it."},
+				{Name: "keep_state", Type: "bool", Description: "Keep the state the surface has now instead of the new document's state.", Default: "false"},
+			},
+			returns: []verbParam{
+				{Name: "version", Type: "int", Description: "The surface's version after the swap."},
+			},
+			examples: []string{
+				`{"id":1,"verb":"tml-replace","params":{"surface":"tml-4f1a9c02","doc":"<tml version=\"1\"><text>Done</text></tml>"}}`,
+			},
+			handler: (*Daemon).verbTMLReplace,
+		},
+		"tml-get": {
+			description: "Read a TML surface: its tree as TML JSON, its state and its version.",
+			params: []verbParam{
+				{Name: "surface", Type: "string", Required: true, Description: "The surface id."},
+			},
+			returns: []verbParam{
+				{Name: "doc", Type: "object", Description: "The tree as TML JSON, with the state it was opened with."},
+				{Name: "state", Type: "object", Description: "The state now."},
+				{Name: "version", Type: "int", Description: "The version: it counts every change of the tree or the state."},
+				{Name: "window_id", Type: "string", Description: "The window the surface is drawn in."},
+				{Name: "title", Type: "string", Description: "The surface's title."},
+				{Name: "owner", Type: "string", Description: "Who opened it: a pane, or tuios tml show."},
+			},
+			examples: []string{
+				`{"id":1,"verb":"tml-get","params":{"surface":"tml-4f1a9c02"}}`,
+			},
+			handler: (*Daemon).verbTMLGet,
+		},
+		"tml-list": {
+			description: "List the open TML surfaces of a session.",
+			params: []verbParam{
+				sessionParam,
+			},
+			returns: []verbParam{
+				{Name: "surfaces", Type: "[]object", Description: "Each surface: surface, window_id, title, owner and version."},
+			},
+			examples: []string{
+				`{"id":1,"verb":"tml-list","params":{"session":"work"}}`,
+			},
+			handler: (*Daemon).verbTMLList,
+		},
+		"tml-validate": {
+			description: "Check a TML document as tml-open would. Needs no session.",
+			params: []verbParam{
+				{Name: "doc", Type: "string", Required: true, Description: "The document: TML text or TML JSON as a string, or a TML JSON object."},
+			},
+			returns: []verbParam{
+				{Name: "warnings", Type: "[]object", Description: "The warnings, each with at, code and message. A document with errors fails with invalid_tml instead."},
+			},
+			examples: []string{
+				`{"id":1,"verb":"tml-validate","params":{"doc":"<tml version=\"1\"><text>Hello</text></tml>"}}`,
+			},
+			handler: (*Daemon).verbTMLValidate,
 		},
 		"split-window": {
 			description: "Split a pane and put a new one beside it. Needs an attached client and tiling on.",
@@ -1128,7 +1294,7 @@ func init() {
 				{Name: "window", Type: "string", Description: "Window to move. Omit to move the focused one."},
 				{Name: "workspace", Type: "int", Description: "Workspace number to move the window to. Required without to_session. With to_session, omit it to use the workspace the destination shows."},
 				{Name: "follow", Type: "bool", Description: "Switch to that workspace after moving. With to_session, focus the window in the destination.", Default: "false"},
-				{Name: "to_session", Type: "string", Description: "Session to move the window to, by name or id. A popup, a scratch pane and a pane on another machine cannot move (pane_not_movable). The window's own session is refused (same_session)."},
+				{Name: "to_session", Type: "string", Description: "Session to move the window to, by name or id. A popup, a scratch pane, a TML pane and a pane on another machine cannot move (pane_not_movable). The window's own session is refused (same_session)."},
 			},
 			returns: []verbParam{
 				{Name: "window_id", Type: "string", Description: "Id of the window that moved. A move to another session keeps it."},
@@ -1662,10 +1828,10 @@ func init() {
 			handler:  (*Daemon).verbSetWorkspaceName,
 		},
 		"set-workspace-order": {
-			description: "Set the order the workspaces are shown in. Only the display order changes: verbs, keys and windows still address each workspace by its number.",
+			description: "Put the workspaces in an order, renumbering them: a workspace's number is its position. Each workspace takes its panes, name, focus and layout to its new number.",
 			params: []verbParam{
 				sessionParam,
-				{Name: "order", Type: "[]int", Required: true, Description: "Workspace numbers in the order to show them. Numbers outside the session's range and repeats are dropped. A workspace the list omits keeps its place after the ones named. An ascending order clears the arrangement."},
+				{Name: "order", Type: "[]int", Required: true, Description: "Workspace numbers in their new order. The workspaces named take the numbers they hold between them, smallest first, in this order: [3,1,2] makes 3 workspace 1, 1 workspace 2 and 2 workspace 3. A workspace the list omits keeps its number. Numbers outside the session's range and repeats are dropped."},
 			},
 			examples: []string{`{"id":1,"verb":"set-workspace-order","params":{"session":"work","order":[3,1,2]}}`},
 			handler:  (*Daemon).verbSetWorkspaceOrder,
@@ -1683,14 +1849,15 @@ func init() {
 				{Name: "agent_session_id", Type: "string", Description: "The harness's own id for the conversation, as a hook reports it. It is stored on the window for a later resume. It also turns on the nested-session guard: while the pane's harness is working or needs_input by its own report, a report for a different conversation or from a different harness is refused with reason foreign_session or foreign_harness."},
 				{Name: "transcript_path", Type: "string", Description: "The transcript file the harness is writing, as a hook reports it. For a harness whose manifest has a transcript reader, the window is joined to this exact file instead of a searched one. It must be a regular file under the harness's transcript folder, and a process in a pane may name one only for its own pane. Kept in daemon memory only."},
 				{Name: "if_state", Type: "string", Description: "Comma-separated states. The report applies only when the window is in one of them now, and is otherwise refused with reason if_state.", Accepted: AgentStateNames},
-				{Name: "harness_pid", Type: "int", Description: "The pid of the harness process that ran the hook. With agent_session_id, a different session from the same harness process is a new conversation in that process (/clear or /resume, even after an interrupted turn that never reported Stop), so it takes the pane over instead of being refused as foreign_session. Kept in daemon memory only."},
+				{Name: "harness_pid", Type: "int", Description: "The pid of the harness process that ran the hook. With agent_session_id, a different session from the same harness process is a new conversation in that process (/clear or /resume, even after an interrupted turn that never reported Stop), so it takes the pane over instead of being refused as foreign_session. A harness whose environment names this pane in TUIOS_PANE_ID but that runs outside it, neither the pane's process, on its terminal, nor descended from it, with a harness daemon among its ancestors (Claude Code's daemon or the pty host of its background sessions), is refused with reason foreign_pane: a background session that inherited the variable. A harness under anything else that left the pane, such as a tmux server or a rootless container's conmon, is taken for the pane. A harness_pid that is not the caller or one of its ancestors is not believed, and the caller is checked in its place. Kept in daemon memory only."},
+				{Name: "session_start", Type: "bool", Description: "Marks the report of a conversation starting or resuming, as a SessionStart hook sends it. For a harness whose manifest sets shared_server (Codex), a report for a conversation other than the pane's own takes the pane over only with this set, and is otherwise refused with reason foreign_session."},
 				{Name: "agent_cwd", Type: "string", Description: "The folder the harness reported for its session (a hook payload's cwd). The first one for a session is kept as the agent's start folder, when it is the folder the pane's process runs in. The risk rules use it as the root of a pane that started in the home folder or above. Later reports never move it."},
 				{Name: "activity", Type: "object", Description: "One hook event of the pane's own agent, for its activity ring: event (prompt, tool, tool_done, tool_failed or turn_end), tool, target, text, files, ok and model. It is recorded whenever the report passes the identity guard, whether or not the state applies, and read back with agent-activity. It also sets the reserved metadata keys now (a tool call starting) and prompt (a prompt), and model when the harness named one. Display only. A hook sends it only to a daemon whose list-verbs lists it."},
 			},
 			returns: []verbParam{
 				{Name: "state", Type: "string", Description: "The state the window shows after the call, which is the reported one only when applied is true."},
 				{Name: "applied", Type: "bool", Description: "Whether this report set the state."},
-				{Name: "reason", Type: "string", Description: "Why the report was not applied. Absent when it was.", Accepted: []string{agentRefusedOutranked, agentRefusedIfState, agentRefusedForeignSession, agentRefusedForeignHarness}},
+				{Name: "reason", Type: "string", Description: "Why the report was not applied. Absent when it was.", Accepted: []string{agentRefusedOutranked, agentRefusedIfState, agentRefusedForeignSession, agentRefusedForeignHarness, agentRefusedForeignPane}},
 				{Name: "activity_recorded", Type: "bool", Description: "With activity: whether it went into the pane's activity ring. False for a report the identity guard refused. Absent without activity."},
 				{Name: "transcript_refused", Type: "string", Description: "Why the window was not joined to transcript_path. Absent when it was, or when no path was given."},
 			},
@@ -1708,12 +1875,12 @@ func init() {
 				windowParam,
 				{Name: "harness", Type: "string", Required: true, Description: "Id of the harness the conversation belongs to. A window attributed to a different harness refuses the report with reason foreign_harness."},
 				{Name: "agent_session_id", Type: "string", Required: true, Description: "The harness's own id for the conversation, at most 256 bytes."},
-				{Name: "harness_pid", Type: "int", Description: "The pid of the harness process that ran the hook. While the window is working or needs_input, a different id from a different process than the one that reported the stored id is a nested run and is refused with reason foreign_session. Kept in daemon memory only."},
+				{Name: "harness_pid", Type: "int", Description: "The pid of the harness process that ran the hook. While the window is working or needs_input, a different id from a different process than the one that reported the stored id is a nested run and is refused with reason foreign_session. A harness whose environment names this pane in TUIOS_PANE_ID but that runs outside it, neither the pane's process, on its terminal, nor descended from it, with a harness daemon among its ancestors (Claude Code's daemon or the pty host of its background sessions), is refused with reason foreign_pane: a background session that inherited the variable. A harness under anything else that left the pane, such as a tmux server or a rootless container's conmon, is taken for the pane. Kept in daemon memory only."},
 			},
 			returns: []verbParam{
 				{Name: "agent_session_id", Type: "string", Description: "The id the window holds after the call."},
 				{Name: "applied", Type: "bool", Description: "Whether the report was taken. A report naming the id the window already holds is taken and changes nothing."},
-				{Name: "reason", Type: "string", Description: "Why the report was not taken. Absent when it was.", Accepted: []string{agentRefusedForeignSession, agentRefusedForeignHarness}},
+				{Name: "reason", Type: "string", Description: "Why the report was not taken. Absent when it was.", Accepted: []string{agentRefusedForeignSession, agentRefusedForeignHarness, agentRefusedForeignPane}},
 			},
 			examples: []string{
 				`{"id":1,"verb":"set-agent-session","params":{"session":"work","window":"build","harness":"qwen","agent_session_id":"5f1c","harness_pid":4100}}`,
@@ -1728,13 +1895,13 @@ func init() {
 				{Name: "activity", Type: "object", Required: true, Description: "The hook event: event, and as set-agent-state's activity tool, target, text, files, ok and model. A subagent event takes agent_id (1 to 128 letters, digits, '_', '.', ':', '@' or '-', required), which pairs a start with its stop, and agent_type; a stop's text is what the subagent said last, and a stop with none reads as stopped. subagent_update names its subagent by agent_id, or by call_id, the tool call that launched it, and carries any of: text (its description, or with outcome failed the error), tool and target (the call it runs; with ok, how that call ended), outcome (stopping or failed) and tools (how many tool calls it made). A tool event, set-agent-state's or a subagent_update's, with spawn true launches a subagent: agent_type is the type asked for, target the description, and call_id the call; the next subagent to start takes them. session_start, a new, resumed or cleared conversation, forgets the pane's subagents.", Accepted: reportActivityEvents},
 				{Name: "harness", Type: "string", Description: "Id of the harness the event is about. A window attributed to a different harness refuses it with reason foreign_harness."},
 				{Name: "agent_session_id", Type: "string", Description: "The harness's own id for the conversation the event is about. A window holding a different id refuses it with reason foreign_session, at rest as well as mid-turn: the report never takes a pane over, so another conversation's subagent is not the pane's."},
-				{Name: "harness_pid", Type: "int", Description: "The pid of the harness process that ran the hook, read as set-agent-state reads it. Kept in daemon memory only."},
+				{Name: "harness_pid", Type: "int", Description: "The pid of the harness process that ran the hook, read as set-agent-state reads it. A harness whose environment names this pane in TUIOS_PANE_ID but that runs outside it, neither the pane's process, on its terminal, nor descended from it, with a harness daemon among its ancestors (Claude Code's daemon or the pty host of its background sessions), is refused with reason foreign_pane: a background session that inherited the variable. A harness under anything else that left the pane, such as a tmux server or a rootless container's conmon, is taken for the pane. Kept in daemon memory only."},
 			},
 			returns: []verbParam{
 				{Name: "window_id", Type: "string", Description: "The window the event is about."},
 				{Name: "state", Type: "string", Description: "The state the window shows, unchanged by the call.", Accepted: AgentStateNames},
 				{Name: "recorded", Type: "bool", Description: "Whether the event went into the pane's activity ring, or for a subagent_update, which the ring does not keep unless it ended the subagent, whether it changed the subagent. False for one the guard refused, and for a subagent event that moved nothing: a stop or an update for a subagent the pane does not know, a second start of one running (which renews it), a start past 64, or a start on a pane with no state."},
-				{Name: "reason", Type: "string", Description: "Why the guard refused the event. Absent when it did not.", Accepted: []string{agentRefusedForeignSession, agentRefusedForeignHarness}},
+				{Name: "reason", Type: "string", Description: "Why the guard refused the event. Absent when it did not.", Accepted: []string{agentRefusedForeignSession, agentRefusedForeignHarness, agentRefusedForeignPane}},
 				{Name: "subagents", Type: "int", Description: "How many subagents the pane's agent is running after the call."},
 			},
 			examples: []string{
@@ -2324,26 +2491,27 @@ func init() {
 	}
 	// The verbs of the agent review, triage, queue and approval work, kept in
 	// a file of their own. See verb_protocol_agents.go.
-	maps.Copy(verbRegistry, agentWorkVerbs())
+	maps.Copy(table, agentWorkVerbs())
 	// The checkpoint verbs. See verb_checkpoint.go.
-	maps.Copy(verbRegistry, checkpointVerbs())
+	maps.Copy(table, checkpointVerbs())
 	// The ship verbs. See verb_ship.go.
-	maps.Copy(verbRegistry, shipVerbs())
+	maps.Copy(table, shipVerbs())
 	// The paste buffer verbs. See verb_buffers.go.
-	maps.Copy(verbRegistry, bufferVerbs())
+	maps.Copy(table, bufferVerbs())
 	// The file verbs, transfers, the drop folder and previews. See
 	// verb_files.go, transfer.go, drop_files.go and verb_preview.go.
-	maps.Copy(verbRegistry, fileVerbs())
-	maps.Copy(verbRegistry, transferVerbs())
-	maps.Copy(verbRegistry, dropVerbs())
-	maps.Copy(verbRegistry, previewVerbs())
+	maps.Copy(table, fileVerbs())
+	maps.Copy(table, transferVerbs())
+	maps.Copy(table, dropVerbs())
+	maps.Copy(table, previewVerbs())
 	// The tree stream, the check-ahead and the link speed test. See
 	// transfer_tree.go and transfer_speed.go.
-	maps.Copy(verbRegistry, treeVerbs())
-	maps.Copy(verbRegistry, speedVerbs())
+	maps.Copy(table, treeVerbs())
+	maps.Copy(table, speedVerbs())
 	// search-panes, command-history and list-ports. See verb_find.go and
 	// verb_ports.go.
-	maps.Copy(verbRegistry, findVerbs())
+	maps.Copy(table, findVerbs())
+	return table
 }
 
 // detectJSONClient inspects the first byte of the connection without consuming
@@ -2518,7 +2686,7 @@ func (d *Daemon) dispatchVerbLine(cs *connState, line []byte, release func()) er
 // socket's adapters (herdr_api.go), so a herdr client in a pane is held to
 // exactly what the same call as a verb would be.
 func (d *Daemon) admitVerb(cs *connState, verb string, params json.RawMessage) (verbEntry, json.RawMessage, *verbError) {
-	entry, ok := verbRegistry[verb]
+	entry, ok := verbRegistry()[verb]
 	if !ok {
 		known := knownVerbNames()
 		return verbEntry{}, nil, hintedVerbError(ErrVerbUnknownVerb, "unknown verb "+echoName(verb), &VerbHint{
@@ -2558,6 +2726,9 @@ func (d *Daemon) admitVerb(cs *connState, verb string, params json.RawMessage) (
 	// A window moved out of the session named goes to the one it is in now.
 	// See window_move_session.go.
 	params = d.followMovedWindow(params)
+	// A pane's own call naming a session that is gone goes to the pane's
+	// session. See session_rename.go.
+	params = d.followOwnPane(cs, verb, params)
 	granted, verr := d.checkGrants(cs, verb, params)
 	if verr != nil {
 		return verbEntry{}, nil, verr
@@ -2700,7 +2871,7 @@ func (d *Daemon) verbListVerbs(_ *connState, params json.RawMessage) (any, *verb
 	}
 
 	if p.Verb != "" {
-		entry, ok := verbRegistry[p.Verb]
+		entry, ok := verbRegistry()[p.Verb]
 		if !ok {
 			known := knownVerbNames()
 			return nil, hintedVerbError(ErrVerbUnknownVerb, "unknown verb "+echoName(p.Verb), &VerbHint{
@@ -2723,7 +2894,7 @@ func (d *Daemon) verbListVerbs(_ *connState, params json.RawMessage) (any, *verb
 	names := knownVerbNames()
 	verbs := make([]verbDoc, 0, len(names))
 	for _, name := range names {
-		verbs = append(verbs, describeVerb(name, verbRegistry[name]))
+		verbs = append(verbs, describeVerb(name, verbRegistry()[name]))
 	}
 	return map[string]any{
 		"type":           "verb_list",
@@ -2760,7 +2931,7 @@ func VerbDocs() []VerbDoc {
 	names := knownVerbNames()
 	out := make([]VerbDoc, 0, len(names))
 	for _, name := range names {
-		out = append(out, describeVerb(name, verbRegistry[name]))
+		out = append(out, describeVerb(name, verbRegistry()[name]))
 	}
 	return out
 }
@@ -2827,6 +2998,7 @@ func (d *Daemon) verbHello(cs *connState, params json.RawMessage) (any, *verbErr
 		LogBasic("Client %s identified as %s %s (protocol %d)", cs.clientID, p.Client, p.Version, p.Protocol)
 	}
 
+	infos := d.manager.ListSessions()
 	return map[string]any{
 		"type":           "hello",
 		"protocol":       VerbProtocolVersion,
@@ -2834,7 +3006,10 @@ func (d *Daemon) verbHello(cs *connState, params json.RawMessage) (any, *verbErr
 		"daemon_version": d.version,
 		"pid":            os.Getpid(),
 		"instance":       d.instance,
-		"sessions":       len(d.manager.ListSessions()),
+		"sessions":       len(infos),
+		// load is this machine's load, which a linked daemon reads off the
+		// hello its heartbeat sends anyway. See machine_load.go.
+		"load": machineLoad(infos),
 		// link_policy says this daemon holds links to a policy, so a proxy
 		// must reach it on a link socket and never on this one. See
 		// DialForLink in link_dial.go.

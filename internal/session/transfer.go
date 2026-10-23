@@ -13,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -188,6 +189,9 @@ type transferJob struct {
 	// devices), and skippedCount counts all of it.
 	skipped      []SkippedItem
 	skippedCount int
+	// denied counts the entries of a folder copy that the source machine
+	// left out because a linked machine may not read them.
+	denied int
 	// same counts the files that were there already with the same bytes,
 	// conflictsSkipped the files a skip answer left out, conflictsLeft the
 	// files that appeared during the copy under a policy that asks, and
@@ -628,20 +632,17 @@ func classify(err error) error {
 	if err == nil {
 		return nil
 	}
-	var te *transferError
-	if errors.As(err, &te) {
+	if _, ok := errors.AsType[*transferError](err); ok {
 		return err
 	}
-	var ve *VerbCallError
-	if errors.As(err, &ve) {
+	if ve, ok := errors.AsType[*VerbCallError](err); ok {
 		switch ve.Code {
 		case ErrVerbHostUnreachable, ErrVerbHostRefused, ErrVerbBusy, ErrVerbTooManyConnections:
 			return &transferError{code: ve.Code, msg: ve.Message, retry: true}
 		}
 		return &transferError{code: ve.Code, msg: ve.Message}
 	}
-	var pe *fs.PathError
-	if errors.As(err, &pe) {
+	if pe, ok := errors.AsType[*fs.PathError](err); ok {
 		v := fileError("copy", pe.Path, err)
 		return &transferError{code: v.Code, msg: v.Message}
 	}
@@ -942,8 +943,11 @@ func (m *transferManager) attemptDir(ctx context.Context, j *transferJob, src, d
 	}
 	j.set(func(j *transferJob) {
 		j.size, j.files, j.isDir = total, files, true
-		j.skipped, j.skippedCount = w.skipped, w.skippedCount
+		j.skipped, j.skippedCount, j.denied = w.skipped, w.skippedCount, w.denied
 	})
+	if w.denied > 0 {
+		LogBasic("Transfer %s leaves out %d items of %s that a linked machine may not read", j.id, w.denied, j.src)
+	}
 	if w.skippedCount > 0 {
 		LogBasic("Transfer %s does not copy %d items of %s that are not files or folders, such as links", j.id, w.skippedCount, j.src)
 	}
@@ -1312,11 +1316,11 @@ func removeMoved(ctx context.Context, src fileEnd, root string, entries []WalkEn
 		}
 	}
 	left := false
-	for i := len(entries) - 1; i >= 0; i-- {
-		if !entries[i].Dir {
+	for _, e := range slices.Backward(entries) {
+		if !e.Dir {
 			continue
 		}
-		if err := src.remove(ctx, joinRemote(root, entries[i].Rel), false); err != nil && !gone(err) {
+		if err := src.remove(ctx, joinRemote(root, e.Rel), false); err != nil && !gone(err) {
 			if ctx.Err() != nil {
 				return false, ctx.Err()
 			}
@@ -1708,6 +1712,10 @@ type TransferRow struct {
 	// sockets and devices. SkippedItems names the first of them.
 	Skipped      int           `json:"skipped,omitempty"`
 	SkippedItems []SkippedItem `json:"skipped_items,omitempty"`
+	// Denied counts the entries of a folder copy that were left out because
+	// a linked machine may not read them: keys, credentials, shell start
+	// files. A folder counts once. They are not named.
+	Denied int `json:"denied,omitempty"`
 	// Same counts the files that were there with the same bytes, which were
 	// not copied again.
 	Same int `json:"same,omitempty"`
@@ -1737,7 +1745,7 @@ func (j *transferJob) row() TransferRow {
 		Files: j.files, FilesDone: j.filesDone, Current: j.current,
 		Error: j.errText, Code: j.errCode, ResumedFrom: j.resumedAt, Resumes: j.resumes,
 		SHA256: j.hash, Verified: j.verified, Created: j.created.UnixMilli(),
-		Skipped: j.skippedCount, SkippedItems: j.skipped,
+		Skipped: j.skippedCount, SkippedItems: j.skipped, Denied: j.denied,
 		Same: j.same, ConflictsSkipped: j.conflictsSkipped, ConflictsLeft: j.conflictsLeft,
 		ConflictCount: len(j.pending), FailedFiles: j.failedFiles,
 		Pane: j.opts.Pane, PaneSession: j.opts.PaneSession,
@@ -1971,8 +1979,7 @@ func (d *Daemon) verbTransferStart(cs *connState, params json.RawMessage) (any, 
 		st, err := d.transfers.end(probe, p.Dst.Host).stat(ctx, p.Dst.Path)
 		cancel()
 		if err != nil {
-			var ve *VerbCallError
-			if errors.As(err, &ve) {
+			if ve, ok := errors.AsType[*VerbCallError](err); ok {
 				return nil, newVerbError(ve.Code, ve.Message)
 			}
 			return nil, newVerbError(ErrVerbHostUnreachable, err.Error())

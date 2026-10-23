@@ -224,9 +224,19 @@ func (m *OS) renderOverlays() []*lipgloss.Layer {
 		layers = m.placeOverlayPanel(layers, "agentmail", content, geo, rows)
 	}
 
+	// The Inbox is the cockpit: the whole screen between the dock's rows,
+	// with its own click targets. See render_cockpit.go.
 	if m.ShowInbox {
-		content, geo, rows := m.renderInbox()
-		layers = m.placeOverlayPanel(layers, "inbox", content, geo, rows)
+		if content, y, w, h := m.renderCockpit(); content != "" {
+			z := m.overlayZ("inbox")
+			m.OverlayHits = append(m.OverlayHits, overlayPanelHit{Kind: "inbox", OriginY: y, Z: z, Geo: overlay.Geometry{Width: w, Height: h}})
+			layers = append(layers, lipgloss.NewLayer(content).X(0).Y(y).Z(z).ID("inbox"))
+		}
+	}
+
+	if m.gotoPicker.open {
+		content, geo, rows := m.renderGotoPicker()
+		layers = m.placeOverlayPanel(layers, "goto", content, geo, rows)
 	}
 
 	if m.ShowWorkspaceSwitcher {
@@ -322,6 +332,11 @@ func (m *OS) renderOverlays() []*lipgloss.Layer {
 	// rather than through the overlay panel stack. It is centred like the rest.
 	if content, geo, x, y, ok := m.renderRenameDialog(); ok {
 		m.renameHit = overlay.Rect{X0: x, Y0: y, X1: x + geo.Width, Y1: y + geo.Height}
+		m.renameClearHit = overlay.Rect{}
+		if renameHintClear < len(geo.Hints) && !geo.Hints[renameHintClear].Empty() {
+			r := geo.Hints[renameHintClear]
+			m.renameClearHit = overlay.Rect{X0: x + r.X0, Y0: y + r.Y0, X1: x + r.X1, Y1: y + r.Y1}
+		}
 		layers = append(layers, lipgloss.NewLayer(content).
 			X(x).Y(y).Z(config.ZIndexOverlayBase).ID("rename"))
 	}
@@ -356,9 +371,22 @@ func (m *OS) renderOverlays() []*lipgloss.Layer {
 	// screen, and its marquee has to be visible on top of whatever is open.
 	layers = append(layers, m.renderCaptureMode()...)
 
+	// The wait for a new daemon is said in the dock. With the dock hidden it
+	// is said in the middle of the screen. See daemon_reconnect.go.
+	if m.daemonReconnect != nil && m.Settings.DockbarPosition == "hidden" {
+		pal := theme.UI()
+		box := overlay.Style(pal.Surface).Foreground(pal.Fg).Render("  " + daemonWaitNote + "  ")
+		layers = append(layers, m.centeredBoxLayer(box, config.ZIndexOverlayBase, "daemon-wait"))
+	}
+
 	if m.ShowQuitMenu {
 		content, geo, rows := m.renderQuitMenu()
 		layers = m.placeOverlayPanel(layers, "quit", content, geo, rows)
+	}
+
+	if m.DaemonRestartOpen() {
+		content, geo, rows := m.renderDaemonRestart()
+		layers = m.placeOverlayPanel(layers, overlayKindRestart, content, geo, rows)
 	}
 
 	if m.ShowSessionClose {
@@ -379,6 +407,11 @@ func (m *OS) renderOverlays() []*lipgloss.Layer {
 	if m.WorktreePromptOpen() {
 		content, geo, rows := m.renderWorktreePrompt()
 		layers = m.placeOverlayPanel(layers, "worktreeprompt", content, geo, rows)
+	}
+
+	if m.PluginApprovalOpen() {
+		content, geo, rows := m.renderPluginApproval()
+		layers = m.placeOverlayPanel(layers, overlayKindPluginApproval, content, geo, rows)
 	}
 
 	if m.ShowHelp {

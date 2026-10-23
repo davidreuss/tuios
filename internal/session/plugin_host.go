@@ -70,6 +70,9 @@ type pluginHost struct {
 	dirs []string
 	// startedUp are the plugins whose startup commands ran.
 	startedUp map[string]bool
+	// roots are the folders the startup of each plugin ran from, for
+	// plugin.restart.
+	roots map[string]string
 	// panes are the plugin panes plugin.pane.open made, by window id.
 	panes map[string]pluginPane
 	// burst counts each plugin's event hook runs in the current window.
@@ -87,13 +90,22 @@ type pluginHost struct {
 // pluginPane is a pane a plugin opened.
 type pluginPane struct {
 	pluginID, entrypoint string
+	// root is the plugin folder the pane was opened from.
+	root string
 }
 
+// PluginReaper is the argv that runs a plugin command under a reaper, set
+// by the tuios binary (herdrplugin.Runner.Reaper). Nil runs commands
+// without one, as in tests.
+var PluginReaper []string
+
 func newPluginHost(d *Daemon, cfg config.PluginsConfig) *pluginHost {
+	runner := herdrplugin.NewRunner()
+	runner.Reaper = PluginReaper
 	return &pluginHost{
-		d: d, runner: herdrplugin.NewRunner(),
+		d: d, runner: runner,
 		enabled: slices.Clone(cfg.Enabled), dirs: slices.Clone(cfg.Dirs),
-		startedUp: map[string]bool{}, panes: map[string]pluginPane{}, burst: map[string]int{},
+		startedUp: map[string]bool{}, roots: map[string]string{}, panes: map[string]pluginPane{}, burst: map[string]int{},
 	}
 }
 
@@ -227,18 +239,45 @@ func (h *pluginHost) apply(cfg config.PluginsConfig, byPerson bool) (waits bool)
 	return waits
 }
 
+// refresh reads the plugins again and starts what may run now, after an
+// answer to an approval.
+func (h *pluginHost) refresh() {
+	h.mu.Lock()
+	h.cache = nil
+	running := h.running
+	h.mu.Unlock()
+	if running {
+		h.runStartups()
+	}
+}
+
+// stopPlugin stops a plugin's processes, and lets its startup run again
+// when it may run again.
+func (h *pluginHost) stopPlugin(id string) {
+	h.mu.Lock()
+	delete(h.startedUp, id)
+	h.mu.Unlock()
+	h.runner.StopPlugin(id)
+}
+
 // runStartups runs the startup commands of every enabled plugin whose
-// startup has not run yet, in plugin id order, as herdr does.
+// startup has not run yet, in plugin id order, as herdr does. It also tells
+// the clients which native plugins wait for the person.
 func (h *pluginHost) runStartups() {
-	for _, e := range h.entries(true) {
-		if !e.Runnable() || len(e.Plugin.Startup) == 0 {
+	entries := h.entries(true)
+	defer func() { h.d.notePluginAsks(pluginAsksOf(entries)) }()
+	for _, e := range entries {
+		if !e.Runnable() {
 			continue
 		}
 		h.mu.Lock()
 		done := h.startedUp[e.ID]
 		h.startedUp[e.ID] = true
+		if !done {
+			h.roots[e.ID] = e.Plugin.PluginRoot
+		}
 		h.mu.Unlock()
-		if done {
+		if done || len(e.Plugin.Startup) == 0 {
 			continue
 		}
 		ctx := h.d.pluginContextCurrent("plugin.startup")
@@ -301,6 +340,11 @@ func (h *pluginHost) baseEnv(p *herdrplugin.Plugin, dirs herdrplugin.Dirs) []str
 		"HERDR_PLUGIN_ROOT=" + p.PluginRoot,
 		"HERDR_PLUGIN_CONFIG_DIR=" + dirs.ConfigDir(p.PluginID),
 		"HERDR_PLUGIN_STATE_DIR=" + dirs.StateDir(p.PluginID),
+	}
+	if p.Format == herdrplugin.FormatTuios {
+		// The plugin's token, for a caller the kernel cannot place. See
+		// plugin_token.go.
+		env = append(env, "TUIOS_PLUGIN_ID="+p.PluginID, "TUIOS_PLUGIN_TOKEN="+h.d.manager.PluginToken(p.PluginID))
 	}
 	if b := h.d.manager.herdrBin.Load(); b != nil && *b != "" {
 		env = append(env, "HERDR_BIN_PATH="+*b)

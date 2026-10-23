@@ -2,6 +2,7 @@ package harness
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode"
@@ -416,8 +417,9 @@ func (r *Registry) TitlePrompt(id, title string) (Prompt, bool) {
 }
 
 // optionLine matches one numbered option: an optional cursor mark, the
-// number, a dot or a parenthesis, and the label.
-var optionLine = lazyre.New(`^(?:[❯›>▶→*]\s*)?([0-9]{1,2})[.)]\s+(\S.*)$`)
+// number with a dot or a parenthesis after it ("1." as Claude Code draws
+// it) or in brackets ("[1]" as Kimi Code CLI draws it), and the label.
+var optionLine = lazyre.New(`^(?:[❯›>▶→*]\s*)?(?:([0-9]{1,2})[.)]|\[([0-9]{1,2})\])\s+(\S.*)$`)
 
 // maxOptionGap is how many lines that are not options may sit between two
 // options of one menu: a label that wraps, or a description under it.
@@ -431,8 +433,8 @@ const maxOptionGap = 3
 func parseOptions(lines []string) ([]Option, int) {
 	var out []Option
 	want, gap, first := 0, 0, -1
-	for i := len(lines) - 1; i >= 0; i-- {
-		n, label, ok := parseOptionLine(lines[i])
+	for i, line := range slices.Backward(lines) {
+		n, label, ok := parseOptionLine(line)
 		if !ok {
 			if len(out) > 0 {
 				if gap++; gap > maxOptionGap {
@@ -469,11 +471,15 @@ func parseOptionLine(line string) (int, string, bool) {
 	if m == nil {
 		return 0, "", false
 	}
-	n, err := strconv.Atoi(m[1])
+	num := m[1]
+	if num == "" {
+		num = m[2]
+	}
+	n, err := strconv.Atoi(num)
 	if err != nil || n <= 0 {
 		return 0, "", false
 	}
-	label := CleanPromptLine(m[2])
+	label := CleanPromptLine(m[3])
 	if label == "" {
 		return 0, "", false
 	}

@@ -174,6 +174,19 @@ const (
 	// it. The daemon sends it only to a client whose hello set PaneMarks.
 	// See pane_marks.go.
 	MsgPaneMark
+	// MsgGoodbye is the daemon's last message to a client before it stops:
+	// why it stops. The daemon sends it only to a client whose hello set
+	// Goodbye. See daemon_goodbye.go.
+	MsgGoodbye
+	// MsgTMLSurface is one TML surface as the daemon holds it: the tree, the
+	// state and the version, or a mark that it closed. The daemon sends it
+	// only to a client whose hello set TMLSurfaces. See tml_surface.go.
+	MsgTMLSurface
+	// MsgPluginApprovals lists the native plugins that wait for the
+	// person's approval on this machine (PluginApprovalsPayload). An empty
+	// list closes the client's dialog. The daemon sends it only to a client
+	// whose hello set PluginApprovals. See plugin_approval.go.
+	MsgPluginApprovals
 )
 
 // WatchDirPayload is the body of MsgWatchDir. WindowID is the pane the folder
@@ -300,6 +313,16 @@ type HelloPayload struct {
 	// PaneMarks says the client reads MsgPaneMark. The daemon sends it to no
 	// other client. See pane_marks.go.
 	PaneMarks bool `json:"pane_marks,omitzero"`
+	// Goodbye says the client reads MsgGoodbye. See daemon_goodbye.go.
+	Goodbye bool `json:"goodbye,omitzero"`
+	// TMLSurfaces says the client draws TML surfaces: it reads
+	// MsgTMLSurface. The daemon sends it to no other client. See
+	// tml_surface.go.
+	TMLSurfaces bool `json:"tml_surfaces,omitzero"`
+	// PluginApprovals says the client asks the person about native plugins
+	// that wait for approval: it reads MsgPluginApprovals. The daemon sends
+	// it to no other client. See plugin_approval.go.
+	PluginApprovals bool `json:"plugin_approvals,omitzero"`
 }
 
 // WelcomePayload is sent by server in response to Hello.
@@ -844,6 +867,13 @@ type ExecuteCommandPayload struct {
 	// sends it for the pane it opens on an empty workspace, and only to a
 	// daemon whose welcome set EmptyWorkspacePanes.
 	FocusIfShown bool `json:"focus_if_shown,omitempty"`
+	// TabKey is the herdr tab key of Workspace as the client last saw it
+	// (see SessionState.WorkspaceTabKey). The pane a client opens on an empty
+	// workspace is asked for right after the switch that shows it, and the
+	// switch can leave a workspace below it empty, which renumbers it before
+	// the request lands. The key still names it. An older daemon ignores it
+	// and reads Workspace.
+	TabKey int `json:"tab_key,omitempty"`
 }
 
 // CommandResultPayload contains the result of a remote command execution.

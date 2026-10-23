@@ -34,9 +34,13 @@ with the names that do exist, so pick another name rather than assuming you took
 it over.
 
 `tuios session-info -s work` reports the workspace you are on, how many exist,
-the tiling mode, any workspace names and, when the workspaces were rearranged,
-their display `order`. They keep their numbers, so `select-workspace 2` still
-means workspace 2.
+the tiling mode and any workspace names. A workspace's number is its position:
+moving one, with the move keys, by dragging its dock pill or with
+`set-workspace-order`, renumbers it, and `select-workspace 2` then means
+whatever workspace is second now. Closing a pane or a workspace closes up
+the numbers above an empty place, and so does `exit` typed in a pane's own
+shell. A pane whose program exits on its own (a command, `close_on_exit`)
+renumbers nothing, so a number you read stays good until a close or a move.
 
 ## Opening a pane and running work in it
 
@@ -109,7 +113,8 @@ its item. Without `-s`, `-c` is typed into the pane's shell, which stays.
 `-s` runs it with no shell and holds the pane until Enter; `-ss` closes the
 pane when it exits. `--interval` spaces the panes. `--session` names the
 session (`-s` is speedy mode, as in tmux-xpanes). `tuios close-workspace N`
-closes them all, like tmux kill-window. When the last of them closes, the
+closes them all, like tmux kill-window, and the workspaces above N move down
+one. When the last of them closes, the
 session goes back to the workspace that ran `xpanes`. `--json` prints the window ids. The layout and
 multifocus need an attached client; without one the panes open and a warning
 says so. More than 64 panes needs `--force`. For work you drive yourself, open
@@ -386,11 +391,13 @@ needs a client attached.
 
 ```sh
 tuios popup -s work --width 60 --height 20 -- gum choose one two three
+tuios popup -s work --dim 30 -- gum choose one two three
 file=$(tuios popup -s work --capture-stdout -- fzf)
 tuios popup -s work --wait -- gum confirm "Deploy?" && ./deploy.sh
 ```
 
-`--width` and `--height` take cells or a percent. `--wait` returns the command's
+`--width` and `--height` take cells or a percent. `--dim` overrides
+`appearance.popup_dim` (0 to 90; 0 is off). `--wait` returns the command's
 status; `--capture-stdout` prints its standard output. A popup closed by hand
 exits 130. Capture is not on Windows.
 

@@ -125,9 +125,10 @@ func run(ctx context.Context, dir string, args ...string) (string, error) {
 	}
 	cmd := childproc.CommandContext(ctx, path, args...)
 	cmd.Dir = dir
-	cmd.Env = append(os.Environ(),
+	// gh runs git in dir, which a pane controls (childproc.WithGitSettings).
+	cmd.Env = childproc.WithGitSettings(append(os.Environ(),
 		"GH_PROMPT_DISABLED=1", "GH_NO_UPDATE_NOTIFIER=1", "GH_PAGER=", "PAGER=cat",
-		"NO_COLOR=1", "CLICOLOR=0", "GIT_TERMINAL_PROMPT=0")
+		"NO_COLOR=1", "CLICOLOR=0", "GIT_TERMINAL_PROMPT=0"))
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -153,8 +154,7 @@ func run(ctx context.Context, dir string, args ...string) (string, error) {
 // repository at dir.
 func CheckAuth(ctx context.Context, dir string) error {
 	_, err := run(ctx, dir, "auth", "status")
-	var ge *Error
-	if errors.As(err, &ge) {
+	if ge, ok := errors.AsType[*Error](err); ok {
 		ge.Auth = true
 	}
 	return err

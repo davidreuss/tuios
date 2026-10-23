@@ -3,7 +3,6 @@ package app
 import (
 	"encoding/json"
 	"errors"
-	"github.com/Gaurav-Gosain/tuios/internal/composer"
 	"os"
 	"sort"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/Gaurav-Gosain/tuios/internal/composer"
 	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/session"
 	"github.com/Gaurav-Gosain/tuios/internal/sound"
@@ -68,6 +68,10 @@ type AgentMailLoadedMsg struct {
 type AgentMailSentMsg struct {
 	Err error
 	New bool
+	// history is the pane the message is kept in the history of, and parts
+	// what was sent, for a message the keyboard wrote to an agent here.
+	histSession, histWindow string
+	histParts               []composer.Part
 }
 
 // AgentMailMarkedMsg is the outcome of marking the person's mail read. It
@@ -137,6 +141,9 @@ type AgentMailState struct {
 	// ComposeTo is the window a new message goes to, while the draft is a
 	// new message rather than a reply. Empty while the draft is a reply.
 	ComposeTo string
+	// wires is the draft's previewer, @ list and history state. See
+	// draft_wiring.go.
+	wires draftWires
 }
 
 // agentMailThread is one conversation as the list draws it.
@@ -236,7 +243,10 @@ func agentMailNotThePerson(id, name string) string {
 // list-windows prints one.
 func shortWindowLabel(id string) string {
 	if len(id) > 8 {
-		return id[:8]
+		// By character, so a cut never splits one.
+		if r := []rune(id); len(r) > 8 {
+			return string(r[:8])
+		}
 	}
 	return id
 }
@@ -544,6 +554,8 @@ func (m *OS) CloseAgentMail() {
 	st.Error = ""
 	st.Picking = false
 	st.ComposeTo = ""
+	// The copy of an image the draft's view opened goes with it.
+	m.replyPreviewClosed()
 }
 
 // resetAgentMail forgets the mirror, on a session switch: the ring is per
@@ -826,11 +838,12 @@ func (m *OS) AgentMailStartReply() bool {
 	if st.Thread == 0 || st.Sending {
 		return false
 	}
-	if _, _, ok := m.agentMailReplyTarget(); !ok {
+	to, _, ok := m.agentMailReplyTarget()
+	if !ok {
 		return false
 	}
 	st.Composing = true
-	st.Comp = m.newMailDraft()
+	st.Comp = m.newMailDraft(to)
 	st.Error = ""
 	st.Scroll = agentMailBottom
 	return true
@@ -895,7 +908,7 @@ func (m *OS) AgentMailPick() bool {
 	st.Picking = false
 	st.ComposeTo = w.ID
 	st.Composing = true
-	st.Comp = m.newMailDraft()
+	st.Comp = m.newMailDraft(w.ID)
 	st.Error = ""
 	return true
 }
@@ -907,13 +920,12 @@ const agentMailMaxText = 8 << 10
 // block that does not fit in a message to a file.
 const agentMailMaxDraft = 1 << 20
 
-// newMailDraft is an empty mail draft. A key that did not come from the
-// keyboard opening it marks it at once.
-func (m *OS) newMailDraft() *composer.Model {
+// newMailDraft is an empty mail draft to the pane windowID of this session,
+// wired as the Inbox reply is: image previews, the @ list and the pane's
+// history. An empty windowID, a sender on another machine, keeps no history.
+func (m *OS) newMailDraft(windowID string) *composer.Model {
 	comp := composer.New(composer.Options{MaxRows: agentMailDraftRows, MaxBytes: agentMailMaxDraft, Placeholder: "Type the message.", Images: true})
-	if m.ProcessingRemoteKeys {
-		comp.MarkAutomated()
-	}
+	m.AgentMail.wires = m.wireDraft(comp, m.sidebarCurrentSessionID(), windowID, windowID != "")
 	return comp
 }
 
@@ -948,19 +960,32 @@ func (m *OS) AgentMailKey(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	st.Error = ""
-	switch st.Comp.Update(msg, m.ProcessingRemoteKeys) {
+	comp, wires := st.Comp, st.wires
+	var cmd tea.Cmd
+	switch comp.Update(msg, m.ProcessingRemoteKeys) {
 	case composer.EventSend:
-		return m.AgentMailSendReply()
+		cmd = m.AgentMailSendReply()
 	case composer.EventClose:
 		m.AgentMailCancelReply()
 	case composer.EventPaste:
-		return m.composerClipboardCmd(st.Comp, "")
+		cmd = m.composerClipboardCmd(comp, "")
+	case composer.EventOpenImage:
+		cmd = m.replyOpenImage(comp.OpenedImage())
 	case composer.EventEditor:
 		if !m.ProcessingRemoteKeys {
-			return m.replyEditorCmd(st.Comp)
+			cmd = m.replyEditorCmd(comp)
+		}
+	case composer.EventCleared:
+		// A draft cleared by mistake goes to the history, as the Inbox
+		// reply's does.
+		if !comp.Automated() && !m.ProcessingRemoteKeys && wires.histWindow != "" {
+			cmd = m.replyHistoryAdd(wires.histSession, wires.histWindow, comp.Cleared())
 		}
 	}
-	return nil
+	// A view that closed takes its copy for the desktop viewer with it, and
+	// one that opened, or a strip that changed, may need pictures.
+	m.replyPreviewClosed()
+	return tea.Batch(cmd, m.replyPreviewCmd(), m.replyMentionCmd())
 }
 
 // draftAutomated reports whether a key that did not come from the keyboard
@@ -996,6 +1021,7 @@ func (m *OS) AgentMailSendReply() tea.Cmd {
 		return nil
 	}
 	parts = trimReplyParts(parts)
+	sent := parts
 	text := composer.JoinParts(parts)
 	blocks := st.Comp.Blocks() > 0
 	if !blocks && len(text) > agentMailMaxText {
@@ -1035,7 +1061,19 @@ func (m *OS) AgentMailSendReply() tea.Cmd {
 	}
 	st.Sending = true
 	st.Error = ""
-	return agentMailSendCmd(m.agentMailDialer(), m.AttachedHost != "", name, inbox, replyTo, text, m.agentMailReplyNonce(m.DaemonClient.HumanNonce()), parts)
+	send := agentMailSendCmd(m.agentMailDialer(), m.AttachedHost != "", name, inbox, replyTo, text, m.agentMailReplyNonce(m.DaemonClient.HumanNonce()), parts)
+	w := st.wires
+	if w.histWindow == "" || st.draftAutomated() || m.ProcessingRemoteKeys {
+		return send
+	}
+	return func() tea.Msg {
+		msg := send()
+		if sentMsg, ok := msg.(AgentMailSentMsg); ok {
+			sentMsg.histSession, sentMsg.histWindow, sentMsg.histParts = w.histSession, w.histWindow, sent
+			return sentMsg
+		}
+		return msg
+	}
 }
 
 // agentMailSendCmd is the send-agent-message call a reply makes. remote says
@@ -1058,7 +1096,7 @@ func agentMailSendCmd(dial agentMailDial, remote bool, sessionName, inbox string
 		_, err = client.Call("send-agent-message", params)
 		if err != nil && text == "" && parts != nil && strings.Contains(err.Error(), "text is required") {
 			// A daemon older than parts read no message.
-			err = errors.New("this daemon cannot take images or long pastes in mail. Update the daemon: tuios kill-server")
+			err = errors.New("this daemon cannot take images or long pastes in mail. Update the daemon: tuios restart-server")
 		}
 		// A reply always answers a message, so no reply_to is a new message.
 		return AgentMailSentMsg{Err: err, New: replyTo == 0}

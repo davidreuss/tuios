@@ -92,6 +92,9 @@ type Settings struct {
 	// ModalDim is the percent the screen behind a modal overlay is darkened
 	// by. Zero turns it off. Set via appearance.modal_dim.
 	ModalDim int
+	// PopupDim is the percent the screen behind a focused plain popup is darkened
+	// by. Zero turns it off. Set via appearance.popup_dim.
+	PopupDim int
 
 	// AlwaysConfirmQuit controls whether the quit confirmation dialog is shown
 	// every time, regardless of whether there are active foreground processes.
@@ -328,8 +331,9 @@ type Settings struct {
 	// the historic rendering.
 	DockWorkspaceTabFormat string
 
-	// DockWorkspaceTooltip pops the whole name of a workspace whose pill had to cut
-	// it short. Off, a long name stays truncated with no way to read the rest.
+	// DockWorkspaceTooltip pops the whole name of a workspace whose pill does not
+	// show it: the pill had to cut it short, or the tab format has no {name}.
+	// Off, the name stays cut or hidden with no way to read it from the dock.
 	DockWorkspaceTooltip bool
 
 	// DockWorkspaceLabelMax caps a workspace pill's label in cells. 0 draws the
@@ -340,6 +344,12 @@ type Settings struct {
 	// workspace tabs and minimized-window pills. On by default. Off, each is a
 	// flat filled cell, for anyone who reads a row of caps as a row of beads.
 	DockPillCaps bool
+
+	// DockModeSplitLetter shows the next split's direction, V or H, after the
+	// tiling icon in the mode pill. On by default. Off, the pill is the icon
+	// alone. With the default icons that is as wide as the leader's pill, so
+	// pressing the leader no longer moves the workspace tabs.
+	DockModeSplitLetter bool
 
 	// DockPrefixIndicator is where an armed leader shows: "pill" colours the
 	// dock's mode pill, "badge" draws the floating PREFIX badge. The badge is
@@ -825,6 +835,7 @@ func DefaultSettings() Settings {
 		UseASCIIOnly:                false,
 		Motion:                      MotionFull,
 		ModalDim:                    ModalDimDefault,
+		PopupDim:                    PopupDimDefault,
 		AnimationsSuppressed:        false,
 		AlwaysConfirmQuit:           false,
 		WhichKeyEnabled:             true,
@@ -867,6 +878,7 @@ func DefaultSettings() Settings {
 		DockWorkspaceTooltip:        true,
 		DockWorkspaceLabelMax:       12,
 		DockPillCaps:                true,
+		DockModeSplitLetter:         true,
 		DockPrefixIndicator:         DefaultDockPrefixIndicator,
 		BorderGradientAngle:         DefaultBorderGradientAngle,
 		HideWindowButtons:           false,

@@ -2,7 +2,6 @@ package session
 
 import (
 	"encoding/json"
-	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"maps"
 	"slices"
 	"strconv"
@@ -11,6 +10,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/harness"
 )
 
@@ -1187,7 +1187,17 @@ func (d *Daemon) askAgent(cs *connState, sess *Session, state *SessionState, tar
 	// prompt. See prompt_submit.go. The gate reads the pane first, so it can
 	// tell afterwards whether the pane took the question. See prompt_gate.go.
 	gate := d.newPromptGate(sess, target.ID)
-	submittedAt, werr := submitPrompt(d.ctx, pty, p.Text, d.inputProfileFor(sess, target.ID))
+	// And once more right before the submit key, which would answer a
+	// prompt that came up while the paste was taken in.
+	ctx := withSubmitGuard(d.ctx, func() *verbError {
+		if !p.AllowBlocked {
+			if verr := d.refuseBlockedAgent(sess, target.ID); verr != nil {
+				return verr
+			}
+		}
+		return d.recheckTyping(cs, "ask-agent", sess, target.ID)
+	})
+	submittedAt, werr := submitPrompt(ctx, pty, p.Text, d.inputProfileFor(sess, target.ID))
 	if werr != nil {
 		return nil, promptWriteError(werr)
 	}
@@ -1539,8 +1549,8 @@ func contentLines(s string) int {
 // needs both the count and the lines does not split a ten-thousand-line
 // scrollback twice.
 func countContent(lines []string) int {
-	for i := len(lines) - 1; i >= 0; i-- {
-		if strings.TrimSpace(lines[i]) != "" {
+	for i, line := range slices.Backward(lines) {
+		if strings.TrimSpace(line) != "" {
 			return i + 1
 		}
 	}

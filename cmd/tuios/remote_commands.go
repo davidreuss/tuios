@@ -364,7 +364,7 @@ func runNewWindow(o newWindowOptions) error {
 // know, and its own wording ("fix the name") points at the caller instead of
 // at the daemon. An older one ignores the parameter and answers without the
 // fields that say it was used.
-var errStaleNewWindow = errors.New("the running daemon is older than this tuios and does not know --keep-open or --wait. Run 'tuios kill-server' and start tuios again to update it")
+var errStaleNewWindow = errors.New("the running daemon is older than this tuios and does not know --keep-open or --wait. Run 'tuios restart-server' to update it")
 
 // staleNewWindowParam reports whether err is that refusal.
 func staleNewWindowParam(err error) bool {
@@ -424,7 +424,7 @@ func runSplitWindow(sessionName, windowTarget, direction, name string, jsonOutpu
 			return reportVerbError(&diagnosticError{
 				What:  fmt.Sprintf("The running daemon cannot split toward %s.", direction),
 				Cause: "the daemon is older than this tuios. It knows only horizontal and vertical.",
-				Fix:   "run 'tuios kill-server' and start tuios again. Saved sessions come back with new shells.",
+				Fix:   "run 'tuios restart-server'. Saved sessions come back with new shells.",
 				Err:   err,
 			}, jsonOutput)
 		}
@@ -845,7 +845,7 @@ func runCapturePane(o captureOptions) error {
 // unwrap or trim. Since v0.8.0 a daemon refuses a parameter it does not know,
 // and its own wording ("fix the name") points at the caller instead of at the
 // daemon.
-var errStaleCapture = errors.New("the running daemon is older than this tuios and does not know --unwrap or --trim. Run 'tuios kill-server' and start tuios again to update it")
+var errStaleCapture = errors.New("the running daemon is older than this tuios and does not know --unwrap or --trim. Run 'tuios restart-server' to update it")
 
 // printCapture writes a capture-pane result. A capture from this machine is
 // the content as it is. A capture from host is fenced with
@@ -1194,9 +1194,9 @@ func printSessionInfo(raw json.RawMessage) error {
 		sort.Strings(named)
 		fmt.Printf("%-14s %s\n", "named", strings.Join(named, " "))
 	}
-	// Only a rearranged session prints a row here. The order is presentation, so
-	// the workspaces keep the numbers everything else addresses them by whatever
-	// this says.
+	// Only a daemon of a build that kept a display order beside the numbering
+	// sends one. A current daemon renumbers the workspaces instead and always
+	// sends null.
 	if len(res.WorkspaceOrder) > 0 {
 		shown := make([]string, 0, len(res.WorkspaceOrder))
 		for _, ws := range res.WorkspaceOrder {
@@ -1559,6 +1559,8 @@ func agentRefusalText(reason string) string {
 		return "the pane's agent is mid-turn in another conversation, so this looks like a nested run."
 	case "foreign_harness":
 		return "another harness reported this pane mid-turn, so this looks like a nested run."
+	case "foreign_pane":
+		return "the harness that ran the hook is a background session outside this pane. It inherited the pane's TUIOS_PANE_ID."
 	default:
 		// outranked, or a daemon that predates reasons.
 		return "a higher-ranked source owns this pane."
@@ -3069,6 +3071,7 @@ func printPopupResult(w io.Writer, raw json.RawMessage) error {
 // popupOptions is the `tuios popup` command line, gathered so the runner reads
 // as one thing rather than as seven positional arguments.
 type popupOptions struct {
+	dim       *config.PopupDim
 	session   string
 	name      string
 	cwd       string
@@ -3090,6 +3093,9 @@ type popupOptions struct {
 // The command is refused here as well as in the daemon so the message names the
 // flag the user typed rather than the parameter the wire carries.
 func runPopup(o popupOptions) error {
+	if o.dim != nil && (o.dim.Percent < 0 || o.dim.Percent > config.PopupDimMax) {
+		return fmt.Errorf("--dim must be an integer from 0 to 90")
+	}
 	if len(o.command) == 0 {
 		return fmt.Errorf("popup needs a command to run, e.g. tuios popup -- fzf")
 	}
@@ -3106,6 +3112,9 @@ func runPopup(o popupOptions) error {
 	// Only the parameters the user named are sent. The daemon refuses a params
 	// key a verb does not declare and fills its own defaults for the rest, so
 	// sending an empty width would ask for a size nobody chose.
+	if o.dim != nil {
+		params["dim"] = o.dim
+	}
 	if o.width != "" {
 		params["width"] = o.width
 	}

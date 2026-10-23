@@ -5,12 +5,13 @@ import (
 	"crypto/sha256"
 	"errors"
 	"image"
+	"strconv"
+
 	// The decoders read only an image's header here, for its size. They are
 	// in the binary already, for the launcher's icons and file previews.
 	_ "image/gif"
 	_ "image/jpeg"
 	_ "image/png"
-	"strconv"
 )
 
 // Image bounds. They match the daemon's: one pasted image is at most
@@ -33,6 +34,9 @@ type Image struct {
 	Width, Height int
 	// Sum is the bytes' SHA-256, which tells the same image pasted twice.
 	Sum [sha256.Size]byte
+	// Name is the name of the file it was read from, empty for an image
+	// from the clipboard.
+	Name string
 }
 
 // Errors of NewImage.

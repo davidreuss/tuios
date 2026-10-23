@@ -11,6 +11,7 @@ overlays, the dockbar) from them.
 - [Edit a Theme](#edit-a-theme)
 - [A Light and a Dark Theme](#a-light-and-a-dark-theme)
 - [Match Your Terminal](#match-your-terminal)
+- [Programs That Follow the Theme](#programs-that-follow-the-theme)
 - [Custom Themes](#custom-themes)
 - [Theme File Format](#theme-file-format)
 - [Start from Another Theme](#start-from-another-theme)
@@ -191,6 +192,38 @@ An empty `theme` keeps the terminal's colours for the panes too, but the
 dialogs keep tuios's constant ramp on a dark terminal. In a client of
 `tuios ssh` or `tuios-web`, the dialogs keep the constant ramp, because one
 server serves many terminals.
+
+## Programs That Follow the Theme
+
+A program in a pane can ask tuios for the theme colours. OSC 10 gives the
+text colour, OSC 11 gives the background and OSC 4 gives one of the sixteen
+colours. The answers are the colours that the pane shows.
+
+A program can also ask tuios to tell it when the colours change:
+
+- A program that turns on mode 2031 (`CSI ? 2031 h`) gets `CSI ? 997 ; 1 n`
+  on a dark background or `CSI ? 997 ; 2 n` on a light background.
+- tuios sends this notice each time the theme colours change. This includes a
+  change from one dark theme to another dark theme.
+- tuios sends one notice for each theme change, also when the background, the
+  text colour and the sixteen colours all change.
+- While the theme picker or the theme editor is open, tuios sends no notice.
+  The panes show each theme. When you pick a theme, tuios sends one notice.
+  When you cancel, tuios sends nothing.
+- With two or more clients in one session, the panes report the theme of the
+  client that you used last. A client that you do not use does not change it.
+- `CSI ? 996 n` asks for the same report at any time.
+
+Neovim 0.11 and later asks for the background again when the notice comes, and
+sets `'background'`. opencode with the `system` theme asks for all the colours
+again and draws with the new colours.
+
+A program that uses only the sixteen ANSI colours changes colour with the theme
+and needs no notice.
+
+For a program that reads its colours from a file, use the `after-theme-change`
+hook. The hook gets the theme id, the background and a light flag. See
+[HOOKS.md](HOOKS.md).
 
 ## Custom Themes
 
@@ -398,12 +431,17 @@ close = "x"
 - A look file is 64 KiB at most. A theme or a glyph set in it is 32 KiB at
   most.
 
-tuios writes the look to `config.d/look.toml` and does not change
-`config.toml`. `config.toml` wins over `config.d`, so a key that
-`config.toml` sets hides the same key in the look. `tuios look apply` names
-those keys. When you change a look key in the settings, tuios writes the
-change to `config.toml`. The next `tuios look apply` or `tuios look remove`
-then keeps your change.
+tuios writes the look to `config.d/look.toml`. `config.toml` wins over
+`config.d`, so a key that `config.toml` sets hides the same key in the look.
+`tuios look apply` names those keys and asks if the look can set them. A yes
+is a take-over: tuios removes the keys from `config.toml`, and from a later
+`config.d` file, and saves your values. `--take-over` answers yes.
+`tuios look remove` puts your values back. A file that you did not change
+since goes back byte for byte.
+
+When you change a look key in the settings, tuios writes the change to
+`config.toml`. The next `tuios look apply` or `tuios look remove` then keeps
+your change.
 
 tuios does not replace or delete a file of your own. If `config.d/look.toml`
 is a file that tuios did not write, `tuios look` stops. It also stops if a

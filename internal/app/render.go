@@ -582,6 +582,10 @@ func rendersBorderless(window *terminal.Window) bool {
 // path so both produce identical output.
 func (m *OS) renderWindowBox(window *terminal.Window, index int, isFocused bool, borderColorObj color.Color) string {
 	content := m.renderTerminal(window, isFocused, m.Mode == TerminalMode)
+	if m.isTMLPopup(window) {
+		// A TML popup is a dialog, with a frame of its own. See tml_chrome.go.
+		return m.renderTMLDialogBox(window, fitToContentBox(content, window.ContentWidth(), window.ContentHeight()))
+	}
 	preShaped := !preShapedDisabled &&
 		window.RenderedCols == window.ContentWidth() &&
 		window.RenderedRows == window.ContentHeight()
@@ -754,6 +758,7 @@ func (m *OS) composeFrameOnce() string {
 	// it is drawn on. First, because every path below draws the panes. See
 	// background.go.
 	m.syncReportColors()
+	m.noteThemeChange()
 
 	// The screen saver is the frame, not a layer over one.
 	//
@@ -938,6 +943,10 @@ func (m *OS) fullscreenFastWindow() (*terminal.Window, bool) {
 		return nil, false
 	}
 	window := visible[0]
+	// A fullscreen popup still dims the dock. That pass needs the canvas.
+	if _, dim := m.popupScrimTarget(); dim > 0 {
+		return nil, false
+	}
 	if window.IsBeingManipulated {
 		return nil, false
 	}
@@ -1180,7 +1189,7 @@ func (m *OS) View() tea.View {
 	// cached frame can carry a picture-in-picture box placed for where the
 	// cursor was. Such a frame is composed again rather than reused: the box
 	// must never cover the cursor the same frame shows.
-	if m.renderSkipped && m.cachedViewContent != "" && !m.pipCoversCursor(m.getRealCursor()) {
+	if cur, _ := m.viewCursor(); m.renderSkipped && m.cachedViewContent != "" && !m.pipCoversCursor(cur) {
 		view.SetContent(m.cachedViewContent)
 	} else if !compose() {
 		return m.crashView()
@@ -1213,7 +1222,10 @@ func (m *OS) View() tea.View {
 		m.lastKeyboardEnhancements = m.keyboardEnhancements()
 	}
 	view.KeyboardEnhancements = m.lastKeyboardEnhancements
-	view.Cursor = m.getRealCursor()
+	// With no cursor shown, the cursor is parked hidden at the caret, so an
+	// input method opens its window there. See cursor_park.go.
+	var cursorShown bool
+	view.Cursor, cursorShown = m.viewCursor()
 	// The emulator's cursor can move between the read the composed frame
 	// placed the picture-in-picture box by and the read above, since pane
 	// output is written on another goroutine. When the move took it under the
@@ -1222,8 +1234,9 @@ func (m *OS) View() tea.View {
 		if !compose() {
 			return m.crashView()
 		}
-		view.Cursor = m.getRealCursor()
+		view.Cursor, cursorShown = m.viewCursor()
 	}
+	m.cursorPark.set(view.Cursor, cursorShown)
 	// The title of the terminal tuios runs in, when a tool set one through
 	// herdr's client.window_title.set. Empty leaves the title alone.
 	view.WindowTitle = m.ClientTitle
@@ -1298,7 +1311,7 @@ func (m *OS) flushGraphicsForView() {
 	// of the drag. Hiding keeps the image data resident, so the gesture ending
 	// puts it back with no round trip to whatever drew it.
 	hideImages := m.Resizing || m.ShowHelp || m.ShowCommandPalette || m.ShowLauncher || m.ShowSessionSwitcher || m.ShowAgentMail || m.ShowInbox ||
-		m.ShowWorkspaceSwitcher || m.buffers.open || m.navigator.open || m.ShowLayoutPicker || m.ShowHostPicker || m.ShowQuitMenu || m.ShowScrollbackBrowser ||
+		m.ShowWorkspaceSwitcher || m.gotoPicker.open || m.buffers.open || m.navigator.open || m.ShowLayoutPicker || m.ShowHostPicker || m.ShowQuitMenu || m.DaemonRestartOpen() || m.ShowScrollbackBrowser ||
 		m.ShowLogs || m.msgView.open || m.ShowCacheStats || m.ShowAggregateView ||
 		m.ShowSettings || m.ShowThemePicker || m.themeEditor.open || m.presetPicker.open || m.ShowKeybindManager || m.ShowAccentPicker || m.ShowTapeManager || m.ShowTapeReview ||
 		m.ShotPreview.Open || m.review.open

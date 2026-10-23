@@ -4,10 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"strings"
 	"sync"
 
+	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/worktree"
 	"github.com/google/uuid"
 )
@@ -233,6 +233,8 @@ type NewWindowOptions struct {
 	// See WindowState.PopupWidth. They mean nothing unless Popup is set.
 	PopupWidth  string
 	PopupHeight string
+	// PopupDim is the optional daemon-owned dim override, including zero.
+	PopupDim *config.PopupDim
 	// Scratch marks the popup as the session's scratch terminal. See
 	// WindowState.Scratch. It means nothing unless Popup is set.
 	Scratch bool
@@ -250,6 +252,11 @@ type NewWindowOptions struct {
 	// unexported: only new-window sets it, and the caller's onExit must not
 	// close the window for it to mean anything.
 	keepOpen bool
+	// closeOnExit is new-window's close_on_exit: the daemon closes the
+	// window when its process exits. It is unexported, like keepOpen: the
+	// caller's onExit does the closing, and this only tells the PTY that its
+	// exit is not a person's close (see PTY.ownShell).
+	closeOnExit bool
 	// Env is KEY=VALUE pairs the process gets on top of the daemon's own
 	// environment, from a caller that passed its own (fan, start-agent). The
 	// TUIOS_ variables are set after it, so it cannot change them. It is not
@@ -261,6 +268,11 @@ type NewWindowOptions struct {
 	// as a focus move. See ExecuteCommandPayload.FocusIfShown. It means
 	// nothing with Focus set.
 	FocusIfShown bool
+	// TabKey names the workspace by its tab key, which follows it through a
+	// renumber, when the caller read the workspace's number before one it
+	// may not have seen. Zero names it by Workspace alone. See
+	// ExecuteCommandPayload.TabKey.
+	TabKey int
 	// Grants is what the window's process may do through tuios, nil for the
 	// default of [agents.permissions]. It is in force before the process
 	// starts, and it is saved with the window. See pane_grants.go.
@@ -404,10 +416,18 @@ func (s *Session) AddDaemonWindowWith(opts NewWindowOptions, onExit func(ptyID s
 	pty, err := s.createPTY(ptyWidth, ptyHeight, ptySpawn{
 		windowID: windowID, cwd: cwd, command: opts.Command, env: opts.Env, host: opts.Host,
 		onExit: onExit, stdout: opts.stdout, extraFiles: opts.extraFiles, grants: opts.Grants, keepOpen: opts.keepOpen,
-		workspace: opts.Workspace, noStartDir: noStartDir,
+		workspace: opts.Workspace, noStartDir: noStartDir, closeOnExit: opts.closeOnExit,
 	})
 	if err != nil {
 		return WindowState{}, err
+	}
+	// A client that creates a pane gives it the session's cell itself (see
+	// handleCreatePTY). A pane asked for any other way, by a verb or for a
+	// session nobody is attached to, gets it here.
+	if s.config != nil && s.config.CellSize != nil {
+		if w, h, ok := s.config.CellSize(s.ID); ok {
+			_ = pty.UpdatePixelDimensions(w, h)
+		}
 	}
 	if windowSpawnedHook != nil {
 		windowSpawnedHook(pty)
@@ -467,6 +487,11 @@ func (s *Session) AddDaemonWindowWith(opts NewWindowOptions, onExit func(ptyID s
 		if opts.Workspace != 0 {
 			workspace = opts.Workspace
 		}
+		if opts.TabKey > 0 {
+			if at := state.WorkspaceForTabKey(opts.TabKey); at > 0 {
+				workspace = at
+			}
+		}
 		// The pane a switch to an empty workspace asks for is one per
 		// workspace, whatever asked: a second client that switched too, or a
 		// request sent again after the first one was slow. Checked under the
@@ -504,6 +529,7 @@ func (s *Session) AddDaemonWindowWith(opts NewWindowOptions, onExit func(ptyID s
 			IsFloating:  opts.Popup,
 			PopupWidth:  opts.PopupWidth,
 			PopupHeight: opts.PopupHeight,
+			PopupDim:    opts.PopupDim,
 			Scratch:     scratch,
 			ScratchName: scratchName,
 			Kind:        opts.Kind,
@@ -584,6 +610,7 @@ func (s *Session) CloseDaemonWindow(target string) (string, error) {
 		// running, and a claim can now come from a source that is not the detector.
 		delete(s.agentClaims, closed.ID)
 		delete(s.agentHarnessPIDs, closed.ID)
+		delete(s.agentSharedGuards, closed.ID)
 		return nil
 	})
 	if err != nil {
@@ -802,42 +829,6 @@ func (s *Session) SetDaemonWorkspaceName(ws int, name string) error {
 			state.WorkspaceNames = make(map[int]string)
 		}
 		state.WorkspaceNames[ws] = name
-		return nil
-	})
-}
-
-// SetDaemonWorkspaceOrder records the order the workspaces are shown in. It
-// moves no workspace: every number keeps everything it owns, and the windows,
-// the focus map, the trees and the verbs all go on addressing by number.
-//
-// The order is sanitised rather than trusted, because it arrives from a drag
-// that reads a list the client rendered and the daemon's own list may since
-// have changed: an entry outside the session's range or naming a workspace
-// already placed cannot mean anything, so it is dropped instead of stored.
-//
-// An ascending order is stored as nil. That is the arrangement a session with
-// no order already has, so recording it would leave a trace in serialized state
-// that says nothing, the way an empty name would.
-func (s *Session) SetDaemonWorkspaceOrder(order []int) error {
-	return s.mutateState(func(state *SessionState) error {
-		bound := state.workspaceBound()
-		clean := make([]int, 0, len(order))
-		seen := make(map[int]bool, len(order))
-		for _, ws := range order {
-			if ws < 1 || ws > bound || seen[ws] {
-				continue
-			}
-			seen[ws] = true
-			clean = append(clean, ws)
-		}
-		if len(clean) == 0 && len(order) > 0 {
-			return fmt.Errorf("no workspace in the order is in range (1-%d)", bound)
-		}
-		if slices.IsSorted(clean) {
-			state.WorkspaceOrder = nil
-			return nil
-		}
-		state.WorkspaceOrder = clean
 		return nil
 	})
 }
