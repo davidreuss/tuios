@@ -24,7 +24,7 @@ func (m *OS) GetCanvas(render bool) *frameCanvas {
 	// already composed, so a client launched with ascii_only painted its first
 	// frame with unicode glyphs in the rail and only corrected itself on the
 	// next redraw.
-	syncOverlayASCII(&m.Settings)
+	syncOverlaySettings(&m.Settings)
 
 	// Reuse the canvas across frames. Allocating a fresh one each frame was the
 	// single largest source of allocations (a full-screen cell buffer per frame).
@@ -1097,6 +1097,9 @@ func (m *OS) chargeRenderCost(d time.Duration) {
 }
 
 func (m *OS) View() tea.View {
+	if renderTraceEnabled {
+		m.traceFrame()
+	}
 	var view tea.View
 	// composed is set when this call composed a frame that differs from the
 	// last one.
@@ -1172,11 +1175,13 @@ func (m *OS) View() tea.View {
 			// for this frame. See releaseEmulatorScratch.
 			m.emulatorReleasePending = true
 		}
-		// This frame carries the beam at the pointer's newest position, so the
-		// skipped move it was waiting for has been drawn. Cleared here rather
-		// than on the motion path so a frame composed for any other reason (a
-		// keystroke, pane output) counts too.
-		m.spotlightMotionPending = false
+		// This frame carries the hover and the beam at the pointer's newest
+		// position, so the skipped move it was waiting for has been drawn.
+		// Cleared here rather than on the motion path so a frame composed for
+		// any other reason (a keystroke, pane output) counts too, and it starts
+		// the motion frame budget over for the same reason.
+		m.pointerMotionPending = false
+		m.lastInteractionRender = composeStart
 		m.zenHidden = m.zenBordersHidden(false)
 		view.SetContent(content)
 		return true

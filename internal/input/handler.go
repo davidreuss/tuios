@@ -159,8 +159,8 @@ func HandleInput(msg tea.Msg, o *app.OS) (tea.Model, tea.Cmd) {
 			o.CockpitSpawnPaste(msg.Content)
 			return o, nil
 		}
-		if pasteTakenByOverlay(o, msg.Content) {
-			return o, nil
+		if cmd, taken := pasteTakenByOverlay(o, msg.Content); taken {
+			return o, cmd
 		}
 		if o.SidebarSessionFocused() {
 			if msg.Content != "" {
@@ -216,8 +216,8 @@ func HandleInput(msg tea.Msg, o *app.OS) (tea.Model, tea.Cmd) {
 			o.CockpitSpawnPaste(msg.Content)
 			return o, nil
 		}
-		if pasteTakenByOverlay(o, msg.Content) {
-			return o, nil
+		if cmd, taken := pasteTakenByOverlay(o, msg.Content); taken {
+			return o, cmd
 		}
 		if o.Mode == app.TerminalMode {
 			o.ClipboardContent = msg.Content
@@ -255,91 +255,59 @@ func HandleInput(msg tea.Msg, o *app.OS) (tea.Model, tea.Cmd) {
 // does, and reports whether the paste must go no further. It serves both the
 // terminal's bracketed paste (tea.PasteMsg) and the paste key's clipboard read
 // (tea.ClipboardMsg), so neither path can reach a pane the other protects.
-func pasteTakenByOverlay(o *app.OS, content string) bool {
+func pasteTakenByOverlay(o *app.OS, content string) (tea.Cmd, bool) {
+	// A TML surface the person is in, in the agents view, takes a paste
+	// into its focused text field.
+	if o.ShowInbox && o.CockpitArtifactFocused() {
+		return o.CockpitArtifactPaste(content), true
+	}
 	// While the Inbox's reply editor is open the paste is the reply's text,
 	// line breaks and all. A long paste is held as one block.
 	// The reply editor is handled by the two callers, before this.
 	if o.InboxReplyOpen() {
-		return true
+		return nil, true
 	}
 	// The mail editor takes a paste as the reply does. Its image work is
 	// done by the two callers.
 	if o.ShowAgentMail && o.AgentMail.Composing {
-		return true
+		return nil, true
 	}
 	// The Inbox's one-line editors take a paste on one line. Before they
 	// were composers, a paste here reached the pane under the Inbox.
 	switch {
 	case o.ShowInbox && o.InboxReasonOpen():
 		o.InboxReasonPaste(content)
-		return true
+		return nil, true
 	case o.ShowInbox && o.InboxPeekComposing():
 		o.InboxPeekPaste(content)
-		return true
+		return nil, true
 	case o.ShowInbox && o.InboxSelecting():
 		o.InboxSelectType(content)
-		return true
-	}
-	// Hints mode takes labels one key at a time. A paste, or an input
-	// method's commit that arrives as one, is not a label, and nothing
-	// typed while the labels are up may reach the pane.
-	if o.HintsOpen() {
-		return true
-	}
-	// The pane labels the same: a paste is not a label, and with multifocus
-	// on it would reach every pane of the set.
-	if o.PaneLabelsOpen() {
-		return true
-	}
-	// The pane navigator covers the screen, so a paste is never the pane's.
-	// In the search line it is search text, on one line. In the list it is
-	// dropped.
-	if o.NavigatorOpen() {
-		if o.NavigatorSearching() {
-			if text := strings.Join(strings.Fields(content), " "); text != "" {
-				o.NavigatorSetQuery(o.NavigatorQuery() + text)
-			}
-		}
-		return true
+		return nil, true
 	}
 	// The go-to picker takes a paste as query text, on one line.
 	if o.GotoPickerOpen() {
-		if text := strings.Join(strings.Fields(content), " "); text != "" {
+		if text := pasteLine(content); text != "" {
 			o.SetGotoPickerQuery(o.GotoPickerQuery() + text)
 		}
-		return true
+		return nil, true
 	}
 	// The multi copy save prompt takes a paste as its path, with line
 	// breaks and control characters removed. It must never reach a shell:
 	// a pasted path ending in a newline would run as a command.
 	if o.MultiCopy != nil && o.MultiCopy.Save != nil {
 		o.MultiCopySaveType(content)
-		return true
+		return nil, true
 	}
-	// The review's line takes a paste as one line; with no line open
-	// the overlay drops it, since nothing under it may receive it.
-	if o.ReviewOpen() {
-		if o.ReviewEditing() {
-			o.ReviewEditorType(strings.Join(strings.Fields(content), " "))
-		}
-		return true
+	// Every other one-line field takes a paste as typed text on one line.
+	if paste := textFieldPaste(o); paste != nil {
+		return paste(pasteLine(content)), true
 	}
-	// The message view and the log viewer take no text, and they cover the
-	// pane, so a paste while one is open is dropped rather than typed into a
-	// shell nobody can see.
-	if o.MessageViewOpen() || o.ShowLogs {
-		return true
-	}
-	// A copy's question takes a paste as the folder it asks for, on one
-	// line, and the Copies panel drops it: nothing under them may get it.
-	if o.CopyDialogOpen() {
-		o.CopyDialogPaste(strings.Join(strings.Fields(content), " "))
-		return true
-	}
-	if o.TransfersOpen() {
-		return true
-	}
-	return false
+	// Anything else in front of the panes drops it: hints, the pane labels,
+	// the navigator's list, the message view, a dialog or a list. None of
+	// them would let a typed key through either, and a paste into a shell
+	// nobody can see is worse than none.
+	return nil, o.HintsOpen() || o.PaneLabelsOpen() || o.OverlayOwnsKeyboard()
 }
 
 // shouldShowQuitDialog checks if there are any terminals with active foreground processes
@@ -422,7 +390,8 @@ func HandleKeyPress(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	// so holding it cannot type anything into a pane; every other key struck
 	// while it is held loses the trigger's own modifier, so holding Option and
 	// tapping n runs the window-mode action bound to n.
-	if o.PressHoldKey(msg) {
+	// Lock mode gives the hold key to the pane like every other key.
+	if !o.Locked() && o.PressHoldKey(msg) {
 		return o, nil
 	}
 	msg = o.StripHoldModifier(msg)
@@ -509,6 +478,11 @@ func routeAfterEsc(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 // the mode. It is the part of HandleKeyPress after the gestures that own the
 // whole screen, and the screenshot chord replays a held leader through it.
 func routeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+	// The paste key, while a one-line field owns the keyboard, pastes into
+	// the field. See paste_text.go.
+	if cmd, ok := pasteKeyIntoTextField(msg, o); ok {
+		return o, cmd
+	}
 	// The close confirmation outranks even the quit menu: it is the last thing
 	// between a keystroke and a session that cannot be brought back, so nothing
 	// underneath may answer for it.
@@ -624,14 +598,10 @@ func routeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		// Keep leader chords and workspace navigation in the window manager.
 		// Every other key belongs to the pane actually visible in the rail.
 		key := withoutChordText(msg).String()
-		workspaceChord := strings.HasPrefix(key, "alt+") && len(key) == len("alt+1") && key[len(key)-1] >= '1' && key[len(key)-1] <= '9'
+		// Lock mode gives the workspace chords to the pane, so to this one.
+		workspaceChord := !o.Locked() && strings.HasPrefix(key, "alt+") && len(key) == len("alt+1") && key[len(key)-1] >= '1' && key[len(key)-1] <= '9'
 		if !o.PrefixActive && !isLeaderKey(msg, &o.Settings, o.HostBaseCode(msg)) && !workspaceChord {
-			if w := o.SidebarSessionWindow(); w != nil {
-				raw, released := paneKeyBytes(paneMsg(msg, o), w, o, true)
-				if len(raw) > 0 && o.WriteSidebarSession(raw) && !released {
-					o.NotePaneKeyDown(msg.Code, w.ID)
-				}
-			}
+			typeIntoRailPane(msg, o)
 			return o, nil
 		}
 	}
@@ -696,7 +666,9 @@ func routeKey(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	//
 	// It is after every overlay above: a key while the palette or the help
 	// panel is open belongs to the panel, whatever was pressed before it.
-	if !o.PrefixActive {
+	// Lock mode holds a menu open instead, so no window is armed while it is on;
+	// one left over from window mode must not take a locked key either.
+	if !o.PrefixActive && !o.Locked() {
 		if m, cmd, ok := tryPrefixRepeat(msg, o); ok {
 			return m, cmd
 		}

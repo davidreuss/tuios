@@ -1143,6 +1143,10 @@ func (m *OS) OpenInbox(filter string) {
 	m.cockpitRows()
 	m.cockpitClamp()
 	m.cockpitSync()
+	// A TML popup an agent has floating now moves into the view.
+	if filter == "" {
+		m.cockpitAdoptFloating()
+	}
 }
 
 // OpenInboxOn shows the Inbox with the cursor on the item with this id, as
@@ -1169,6 +1173,8 @@ func (m *OS) inboxLandOn(id string) {
 
 // CloseInbox hides the Inbox, and the peek with it.
 func (m *OS) CloseInbox() {
+	// A surface the person was in floats again, with what they typed.
+	m.cockpitArtifactRelease()
 	m.ShowInbox = false
 	// The live pane goes back to being streamed as its workspace has it.
 	m.cockpitLiveFollow()
@@ -1402,7 +1408,7 @@ func (m *OS) InboxReplyApproval(decision string) tea.Cmd {
 		return nil
 	}
 	if !inboxHeld(it) {
-		m.ShowNotification("1, 2 and 3 answer a held approval. Enter goes to the pane.", "info", m.Settings.NotificationDuration)
+		m.ShowNotification(inboxNotHeldWords, "info", m.Settings.NotificationDuration)
 		return nil
 	}
 	if !slices.Contains(it.Options, decision) {
@@ -1424,6 +1430,10 @@ func (m *OS) InboxReplyApproval(decision string) tea.Cmd {
 	}
 	return m.inboxReplyCmd(it, decision)
 }
+
+// inboxNotHeldWords is what an answer key says on an item that no hold
+// waits behind, such as an approval the harness asks about in its pane.
+const inboxNotHeldWords = "1, 2 and 3 answer a held approval. Enter goes to the pane."
 
 // refuseRemoteAnswer refuses a key that send-keys typed when that key would
 // act as the person: answer a held approval or a question, or pass on held

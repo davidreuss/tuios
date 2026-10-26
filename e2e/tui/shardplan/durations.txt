@@ -585,6 +585,8 @@ TestKittyAttachDuringAStreamPrintsNoImageData 11.3
 TestKittyAttachDuringIDlessStreamPrintsNoImageData 28.6
 TestKittyComposedCharacterFollowsOptionGlyphs 0.5
 TestKittyDirectTransportDrawsWholeImage 18.8
+TestKittyFilesFromAPaneOnAHost 3.0
+TestKittyFilesLinkImpact 0.0
 TestKittyImageIDsForALateClient 4.8
 TestKittyImageNumberDeletePlacement 6.1
 TestKittyImageNumberReupload 8.6
@@ -1202,6 +1204,7 @@ TestTheSuiteReadsNoConfigButItsOwn 0.0
 TestThemeOffLeavesThePaletteToTheTerminal 2.0
 TestThemePickerEnterOnNoMatch 0.2
 TestThemedDaemonPaneReportsTheTheme 1.4
+TestTiledPanesMoveOneWay 3.0
 TestTilingOffBringsTheStripOnScreen 5.8
 TestTintPickerOffersItsKeywords 0.7
 TestTmuxShimBuffersAndEnvironment 0.3

@@ -360,22 +360,25 @@ type OS struct {
 	// new pane is not built locally; it arrives later through a state sync. These
 	// remember which side of which pane the split was meant for so the sync path
 	// can honor the direction instead of falling back to the spiral scheme.
-	pendingSplitDir        layout.PreselectionDir
-	pendingSplitTarget     string
-	WindowToBSPID          map[string]int                // Maps window UUID to stable BSP integer ID
-	BSPIDToWindowID        map[int]string                // Reverse of WindowToBSPID: BSP integer ID to window UUID (speed-up for GetWindowByIntID)
-	NextBSPWindowID        int                           // Next BSP window ID to assign (starts at 1)
-	RenameKind             RenameKind                    // What the open rename editor targets (RenameNone when closed)
-	RenameBuffer           string                        // Buffer for new window name
-	RenameTargetID         string                        // Window the rename in flight applies to
-	renameHit              overlay.Rect                  // Where the dialog was drawn, in screen cells
-	renameClearHit         overlay.Rect                  // Where its clear hint was drawn, in screen cells
-	PrefixActive           bool                          // True when prefix key was pressed (tmux-style)
-	WorkspacePrefixActive  bool                          // True when Ctrl+B, w was pressed (workspace sub-prefix)
-	MinimizePrefixActive   bool                          // True when Ctrl+B, m was pressed (minimize sub-prefix)
-	TilingPrefixActive     bool                          // True when Ctrl+B, t was pressed (tiling/window sub-prefix)
-	DebugPrefixActive      bool                          // True when Ctrl+B, D was pressed (debug sub-prefix)
-	LastPrefixTime         time.Time                     // Time when prefix was activated
+	pendingSplitDir       layout.PreselectionDir
+	pendingSplitTarget    string
+	WindowToBSPID         map[string]int // Maps window UUID to stable BSP integer ID
+	BSPIDToWindowID       map[int]string // Reverse of WindowToBSPID: BSP integer ID to window UUID (speed-up for GetWindowByIntID)
+	NextBSPWindowID       int            // Next BSP window ID to assign (starts at 1)
+	RenameKind            RenameKind     // What the open rename editor targets (RenameNone when closed)
+	RenameBuffer          string         // Buffer for new window name
+	RenameTargetID        string         // Window the rename in flight applies to
+	renameHit             overlay.Rect   // Where the dialog was drawn, in screen cells
+	renameClearHit        overlay.Rect   // Where its clear hint was drawn, in screen cells
+	PrefixActive          bool           // True when prefix key was pressed (tmux-style)
+	WorkspacePrefixActive bool           // True when Ctrl+B, w was pressed (workspace sub-prefix)
+	MinimizePrefixActive  bool           // True when Ctrl+B, m was pressed (minimize sub-prefix)
+	TilingPrefixActive    bool           // True when Ctrl+B, t was pressed (tiling/window sub-prefix)
+	DebugPrefixActive     bool           // True when Ctrl+B, D was pressed (debug sub-prefix)
+	LastPrefixTime        time.Time      // Time when prefix was activated
+	// LockHeld is true while lock mode keeps a menu open after a repeatable
+	// action, until esc. See lock_mode.go.
+	LockHeld               bool
 	HelpScrollOffset       int                           // Scroll offset for help menu
 	HelpCategory           int                           // Current help category index (for left/right navigation)
 	HelpSearchMode         bool                          // True when help search is active
@@ -451,6 +454,17 @@ type OS struct {
 	// name another pane. "" is no pane.
 	SessionCloseWindow   string
 	SessionCloseSelected int
+	// SessionCloseWorktreeToll is what the delete-worktree row would take, read
+	// by a round trip after the dialog opened. Nil, or Loaded false, is a toll
+	// that has not landed yet, and the dialog says nothing about the worktree
+	// until it has: a count it does not have is a count it must not invent.
+	SessionCloseWorktreeToll *worktreeToll
+	// pendingWorktreeKill makes the next SessionKilledMsg a silent one: the
+	// worktree-deletion note is on screen and is the one record of where the
+	// stashed changes went, so the kill's own "Killed session" note would
+	// replace it with less news. Set only when KillOtherSession will actually
+	// post, and read once, by the kill handler.
+	pendingWorktreeKill bool
 	// Pending resize tracking for debouncing PTY resize during mouse drag
 	PendingResizes map[string][2]int // windowID -> [width, height] of pending PTY resize
 	// pendingCopy is text a settled multi-click selection will put on the
@@ -522,16 +536,15 @@ type OS struct {
 	// themeFx is the running theme transition, if any. See
 	// theme_transition.go.
 	themeFx themeTransition
-	// lastInteractionRender is when a drag/resize motion event last produced a
-	// frame. Motion events arrive faster than a frame can be composed, so this
+	// lastInteractionRender is when a motion event last produced a frame.
+	// Motion events arrive faster than a frame can be composed, so this
 	// bounds how often they are allowed to redraw.
 	lastInteractionRender time.Time
-	// spotlightMotionPending is set when a mouse-anchored spotlight dropped a
-	// motion frame to the frame budget. It is the one term that flushes that
-	// position, because the beam has no tick of its own. False whenever the
-	// beam is off or the pointer is at rest, which is what keeps the idle tick
-	// idle. See update.go.
-	spotlightMotionPending bool
+	// pointerMotionPending is set when a motion event dropped its frame to the
+	// frame budget. It is the term that flushes that position: hover and the
+	// mouse-anchored beam have no tick of their own. False whenever the pointer
+	// is at rest, which is what keeps the idle tick idle. See update.go.
+	pointerMotionPending bool
 	// viewportResizing is set while terminal sizes are still arriving. A retile
 	// it drives places panes directly instead of easing them into position, and
 	// resizes them visually only, exactly as a mouse resize drag does: a resize
@@ -782,6 +795,12 @@ type OS struct {
 	tailnetMu         sync.Mutex
 	tailnetAskedAt    time.Time
 	tailnetCandidates []string
+	// The [tailscale] table as last read, and the version of the config file
+	// it was read from. See tailnetOptionsCached.
+	tailnetOpt        federation.TailnetOptions
+	tailnetOptEnabled bool
+	tailnetOptKey     tailnetFileKey
+	tailnetOptValid   bool
 	// SessionWorktree is the attached session's daemon-owned worktree record,
 	// nil when its directory is not a linked git worktree. Every other
 	// session's arrives with the cached listing; this one comes down with the
@@ -1259,6 +1278,9 @@ type OS struct {
 	// replyEditorDir is the private folder of the file $EDITOR has open for
 	// a draft, removed when it closes. See inbox_reply_history.go.
 	replyEditorDir string
+	// scrollbackEditorDir is the private folder of the scrollback file the
+	// editor has open, removed when it closes. See os_selection.go.
+	scrollbackEditorDir string
 	// launcherIconCells is where the last frame put each row's icon, in
 	// panel-relative cells, for the flush that follows the frame.
 	launcherIconCells []launcherIconPlacement
@@ -2307,6 +2329,7 @@ func (m *OS) Cleanup() {
 	// The copy of an image the desktop viewer was given.
 	m.replyPreview.removeOpened()
 	m.removeReplyEditorFile()
+	m.removeScrollbackEditorFile()
 	m.stopWindowExitDrain()
 	m.endConfigWatch()
 	m.endOmarchyFollow()

@@ -59,7 +59,7 @@ func (d *Daemon) verbScreenshot(cs *connState, params json.RawMessage) (any, *ve
 		return nil, invalidParam("theme", "no theme by that name is installed")
 	}
 
-	sess, verr := d.resolveVerbSession(p.Session)
+	sess, verr := d.resolveVerbSession(cs, p.Session)
 	if verr != nil {
 		return nil, verr
 	}
@@ -117,6 +117,7 @@ func (d *Daemon) verbScreenshot(cs *connState, params json.RawMessage) (any, *ve
 		return nil, newVerbError(ErrVerbCommandFailed, err.Error())
 	}
 
+	d.recordScreenshot(cs, path, string(settings.Format))
 	return map[string]any{
 		"type":   "screenshot",
 		"path":   path,

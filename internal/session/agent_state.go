@@ -449,6 +449,21 @@ func (s *Session) applyAgentReport(target string, r AgentReport) (AgentState, bo
 			return err
 		}
 		w := &st.Windows[idx]
+		if ask, asking := s.askShowLocked(w); asking {
+			// The pane shows a question from ask-human over its state. The
+			// report is about the state beneath it, judged and applied
+			// there, and the question stays on top unless the report is
+			// one the person has to see now (ask_human_state.go).
+			shown := w
+			beneath := *shown
+			ask.beneath.put(&beneath)
+			w = &beneath
+			defer func() {
+				if s.settleAskShowLocked(shown, &beneath, ask, applied) {
+					effective = AgentStateNeedsInput
+				}
+			}()
+		}
 		if r.foreignPane {
 			effective = w.AgentState
 			return errAgentReportRefused(agentRefusedForeignPane)
@@ -602,8 +617,19 @@ func (s *Session) applyAgentReport(target string, r AgentReport) (AgentState, bo
 // guessed, which is how a harness behind a wrapper gets attributed at all. The
 // one report that clears it is none, since that is the caller saying in as many
 // words that the pane is not running an agent.
+//
+// It clears it whatever harness the none report names. A harness's own none
+// names that harness (Claude Code's SessionEnd hook, herdr's
+// pane.release_agent), and a none that kept it left the pane at none with a
+// harness. Nothing cleared that afterwards: the detector lets go of a claim it
+// does not own only while the pane still shows a state, and a pane at none has
+// none to clear. So the pane stayed in list-agents, at none and at its shell,
+// for as long as it lived.
 func harnessAfterReport(w *WindowState, r AgentReport) string {
-	if r.Harness != "" || r.State == AgentStateNone {
+	if r.State == AgentStateNone {
+		return ""
+	}
+	if r.Harness != "" {
 		return r.Harness
 	}
 	return w.AgentHarness
@@ -840,10 +866,17 @@ func (s *Session) releaseAgentBlockerOverride(windowID string) bool {
 		clearAgentNote(w)
 		w.AgentHarness = claim.prior.harness
 		w.AgentStateAt = time.Now().UnixNano()
+		// auto and sawProcess are the blocker's, not the displaced claim's:
+		// both are facts about the pane rather than about who held it, and the
+		// detector may have seen the agent while the prompt was up. The
+		// prompt is often painted over by the agent's own exit, so a claim
+		// handed back without sawProcess kept the pane at its prior state for
+		// as long as the pane lived.
 		s.setAgentClaim(w.ID, agentClaim{
 			source:       claim.prior.source,
 			harness:      claim.prior.harness,
 			auto:         claim.auto,
+			sawProcess:   claim.sawProcess,
 			herdrAt:      claim.prior.herdrAt,
 			herdrAnchors: claim.prior.herdrAnchors,
 			screenWins:   claim.prior.screenWins,

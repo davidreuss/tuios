@@ -47,7 +47,7 @@ type colorSetting struct {
 	namedColor func(keyword string, ground color.Color) color.Color
 }
 
-// colorSettings are the three, in the order they appear in the panel.
+// colorSettings are the colour rows, in the order they appear in the panel.
 var colorSettings = []colorSetting{
 	{
 		Path:  "appearance.border_focused_color",
@@ -57,6 +57,26 @@ var colorSettings = []colorSetting{
 		apply: func(m *OS, _ string) { m.applyBorderColors() },
 		effective: func(color.Color, *config.Settings) color.Color {
 			return theme.BorderFocusedWindow()
+		},
+	},
+	{
+		Path:  "appearance.border_focused_color_window",
+		Label: "Window mode border",
+		Desc:  "Colour of the focused pane's border in window mode",
+		Unset: "(focused border)",
+		apply: func(m *OS, _ string) { m.applyBorderColors() },
+		effective: func(color.Color, *config.Settings) color.Color {
+			return theme.BorderFocusedWindow()
+		},
+	},
+	{
+		Path:  "appearance.border_focused_color_terminal",
+		Label: "Terminal mode border",
+		Desc:  "Colour of the focused pane's border in terminal mode",
+		Unset: "(focused border)",
+		apply: func(m *OS, _ string) { m.applyBorderColors() },
+		effective: func(color.Color, *config.Settings) color.Color {
+			return theme.BorderFocusedTerminal()
 		},
 	},
 	{
@@ -114,6 +134,27 @@ var colorSettings = []colorSetting{
 		backgroundFollowsAll,
 		func(s *config.Settings, v string) { s.SidebarBackground = v },
 		(*config.Settings).SidebarBackgroundResolved),
+
+	// The rail's cursor row: a band on the rail, so it is a plain colour with
+	// none of the background keywords. Unset, the swatch shows the ground the
+	// palette gives the cursor.
+	{
+		Path:  "appearance.sidebar.cursor_background",
+		Label: "Sidebar cursor",
+		Desc:  "Background of the row under the cursor while the sidebar has the keyboard",
+		Unset: "(theme)",
+		apply: func(m *OS, v string) {
+			m.Settings.SidebarCursorBackground = v
+			m.MarkAllDirty()
+		},
+		effective: func(_ color.Color, s *config.Settings) color.Color {
+			pal := theme.GroundUI()
+			if c := railCursorBg(s.SidebarCursorBackground, pal); c != nil {
+				return c
+			}
+			return pal.Surface
+		},
+	},
 
 	// [appearance.selection]: the marks a pane paints over its own output.
 	//

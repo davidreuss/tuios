@@ -14,9 +14,10 @@ Over the socket every failure carries a stable code in the error envelope:
 `agent_blocked`, `prompt_stalled`, `loop_refused`, `rate_limited`,
 `no_keyboard`, `forbidden`, `not_human`, `prompt_changed`, `not_resumable`,
 `no_shell_integration`, `not_at_prompt`, `confirm_required`, `no_transcript`,
+`full_screen`,
 `unsupported_harness`,
 `protocol_mismatch`, `unknown_host`, `host_unreachable`, `host_refused`,
-`unknown_pane`, `not_worktree`, `worktree_dirty`, `git_failed`, `fan_exists`,
+`unknown_pane`, `not_worktree`, `worktree_dirty`, `worktree_detached`, `worktree_nested`, `git_failed`, `fan_exists`,
 `repo_not_found`, `not_repo`, `no_notes`, `hunk_changed`, `index_changed`,
 `whole_file_only`, `no_checkpoint`, `nothing_to_commit`,
 `merge_conflict`, `checkout_dirty`, `no_remote`, `gh_unavailable`, `queue_full`,
@@ -30,10 +31,21 @@ the same information into its messages.
 
 ## What each asks of you
 
-Not one of these is a timeout. Retrying one unchanged fails the same way, except `busy` and `too_many_connections`, which clear when other requests finish or other connections close.
+A retry without a change fails the same way, except for `busy`, `too_many_connections` and `timeout`. The first two clear when other requests finish or other connections close.
 
 | Code | What to do |
 | --- | --- |
+| `invalid_request` | The line was not a valid request, or the connection was in the wrong state for the verb. Check the JSON envelope (`tuios --skill events`). |
+| `unknown_verb` | The daemon has no such verb. The hint names the closest one. `tuios list-verbs` lists them all. |
+| `session_not_found` | No session has that name. The hint lists the live ones. Run `tuios ls`, or pass `-s "$TUIOS_SESSION"` for your own. |
+| `session_exists` | A session already has that name. Pick another name. Do not assume you own the old session. |
+| `window_not_found` | The `-w` target matched no pane. The hint lists the panes. Run `tuios list-windows -s "$TUIOS_SESSION"` and use a name or an id from it. |
+| `no_windows` | The session has no panes. Open one with `tuios new-window`. |
+| `pty_not_found` | The pane's program has exited, so nothing can read or type there. Close the pane, or open a new one. |
+| `command_failed` | The attached client could not do what the verb asked. The message says why. |
+| `timeout` | A `wait-for` condition did not match in time. Read the pane with `capture-pane` before you wait again, then wait with a larger `--timeout`. |
+| `risk_unacknowledged` | An allow for an approval that matches a risk rule did not name those rules in `risk_ack`. Nothing was answered. Read the rules with `get-approval`, or let the person answer. |
+| `internal` | The daemon failed in a way no other code names. The message says what went wrong. Run `tuios logs`, and tell the person. |
 | `invalid_params` | The daemon does not take a parameter you sent. If you believed in it, the daemon is older than you think: ask `list-verbs`. |
 | `option_not_found` | The hint carries the closest option; `list-options` describes them all. |
 | `needs_client` | Splitting, tiling, directional focus and popups need an attached client. Reading, writing, waiting, creating and moving never do. |
@@ -64,6 +76,7 @@ Not one of these is a timeout. Retrying one unchanged fails the same way, except
 | `prompt_changed` | The prompt moved or was answered before `respond` landed. Nothing was pressed. |
 | `not_resumable` | The pane has no conversation `resume-agent` can bring back. Nothing was typed. |
 | `no_shell_integration`, `not_at_prompt` | From `run`: the shell sends no OSC 133 marks, or is busy. Nothing was typed. Use `send-text` and a marker, or `wait-for command-finished`. |
+| `full_screen` | From `clear-history`: a full-screen program uses the pane. Nothing was cleared. Wait for the program to exit. |
 | `confirm_required` | A write by selector, or a `ship-push` or `ship-pr`. The hint lists the panes, or what would be sent, and a token. Check them, then call again with the token. |
 | `no_transcript`, `unsupported_harness` | From `agent-transcript`: the pane is not joined to a transcript, or its harness keeps none this daemon reads. Read the pane with `capture-pane`. |
 | `protocol_mismatch` | The caller's protocol version is outside what this daemon accepts. Use a matching tuios. |
@@ -71,7 +84,7 @@ Not one of these is a timeout. Retrying one unchanged fails the same way, except
 | `host_unreachable` | The host is not answering: its link is down or does not answer. Nothing was queued except mail. `tuios hosts` says why. |
 | `host_refused` | The link is up and cannot take another connection. Close one. |
 | `unknown_pane` | A pane id on the far machine is gone. Drop it. |
-| `not_worktree`, `worktree_dirty`, `git_failed`, `repo_not_found` | From the worktree verbs and `start-agent`. A dirty worktree is left alone until you pass `--stash` or `--force`. `repo_not_found` means that machine has no checkout of the origin: pass `--clone`. |
+| `not_worktree`, `worktree_dirty`, `worktree_detached`, `worktree_nested`, `git_failed`, `repo_not_found` | From the worktree verbs and `start-agent`. A dirty worktree is left alone until you pass `--stash` or `--force`. A worktree on a detached HEAD holding commits no branch has is refused — removing it would lose those commits; commit them onto a branch, or pass `--force` to lose them. A worktree holding a nested git repository in an ignored or untracked path is refused — removing it would delete that repository with its history, and no stash can save it; remove the nested repository first, or pass `--force` to lose it. `repo_not_found` means that machine has no checkout of the origin: pass `--clone`. |
 | `fan_exists` | From `fan`: a fan by that name is in that repository. Nothing was started. Pick another name, or pass `--join` with a session of that fan to add attempts to it. |
 | `no_file`, `file_exists`, `no_permission` | From the file verbs and `transfer-start`: the path is not there, the destination is there and the call did not say what to do with it, or the user the daemon runs as may not touch it. Nothing was changed. For `file_exists`, ask the person, then pass `conflict`. |
 | `hash_mismatch` | A copy's bytes did not match the original's sha256. The copy was removed, and the transfer copies that file once more by itself. A second mismatch fails the transfer: the disk or the file may be changing. `tuios cp` exits 6. |

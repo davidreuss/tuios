@@ -32,6 +32,8 @@ type Daemon struct {
 	manager *Manager
 	// tml holds the open TML surfaces. See tml_surface.go.
 	tml tmlHost
+	// artifacts is what each pane has shown the person. See artifacts.go.
+	artifacts artifactLog
 	// instance names this daemon run, fresh on every start. hello reports
 	// it, and a hub records it for each host, so a client attached to a
 	// session on another machine can tell which of that machine's hosts is
@@ -306,6 +308,13 @@ type Daemon struct {
 	// queue holds the messages waiting to be typed to an agent when it comes
 	// to rest. Its zero value is ready. See agent_queue.go.
 	queue agentQueues
+	// mailWake types the one-line wake prompt into an agent at rest that has
+	// mail. Its zero value is ready, and off until SetMailWake. See
+	// mail_wake.go.
+	mailWake mailWaker
+	// askTurns keeps one ask-agent typing at a pane at a time. See
+	// ask_turns.go.
+	askTurns askTurns
 
 	// reviewNotes holds the review notes left on panes' changes. Its zero
 	// value is ready; Start loads what the last daemon saved. See
@@ -923,6 +932,9 @@ type DaemonConfig struct {
 	// QueueMax is [agents.queue] max: how many messages one pane's delivery
 	// queue holds. Zero means the default. See agent_queue.go.
 	QueueMax int
+	// MailWakeOff is [agents.mail] wake = false: an agent at rest is not
+	// told about its mail by a typed prompt. See mail_wake.go.
+	MailWakeOff bool
 	// Checkpoints is [agents.checkpoints]: whether a pane's work tree is
 	// saved when its agent finishes a turn, and how many are kept. The zero
 	// value is on with the default keep. See checkpoints.go.
@@ -978,6 +990,7 @@ func NewDaemon(cfg *DaemonConfig) *Daemon {
 	d.SetLinkPolicies(cfg.LinkPolicies)
 	d.manager.SetPanePermissions(cfg.Permissions)
 	d.SetQueueMax(cfg.QueueMax)
+	d.SetMailWake(!cfg.MailWakeOff)
 	d.SetCheckpoints(cfg.Checkpoints)
 	d.outbox = newHostOutbox(d)
 	// The socket path is read through a closure rather than copied, because the
@@ -1269,6 +1282,10 @@ func (d *Daemon) onSessionCreated(s *Session) {
 			d.noteQueueEvent(name, ev)
 		}
 		d.reviewNotes.noteSessionEvent(ev)
+		if ev.Type == EventWindowClosed {
+			d.agents.forgetNotices(name, ev.Window)
+		}
+		d.noteMailWakeEvent(ev)
 		d.events.publish(streamEvent{
 			Type:       ev.Type,
 			Session:    name,

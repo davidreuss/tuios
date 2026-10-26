@@ -153,28 +153,54 @@ type sidebarRowState struct {
 	Cursor  bool // the keyboard cursor is on this row
 	Hover   bool // the pointer is over this row
 	Focused bool // the rail owns the keyboard
+	// CursorBg is appearance.sidebar.cursor_background as written, empty
+	// when unset. It is a string so a row state stays cheap to build per row;
+	// sidebarRowBg resolves it against the palette the row is drawn with.
+	CursorBg string
 }
 
 // lit reports whether the row is drawing any band at all, which is what the
 // parts of a row that only care about being on a ground ask.
 func (st sidebarRowState) lit() bool { return st.Cursor || st.Hover }
 
-// mark applies the 16-colour form of the row's state to a finished row (see
-// overlay.RowState). At other depths the row's ground already says it.
+// mark applies the row's state to a finished row in attributes (see
+// overlay.RowState). At 16 colours that is the whole cursor treatment. At
+// other depths the ground says it, and the cursor row also underlines its
+// text in the cursor's colour, since a see-through terminal or a rail with
+// its background off can show that ground as almost nothing. The underline
+// starts after the gutter and the state glyph, so the focus mark, the
+// severity mark and the foreign tint in the gutter keep their own meaning.
 func (st sidebarRowState) mark(pal overlay.Palette, row string) string {
-	return pal.Mark(row, overlay.RowState{Cursor: st.Cursor, Focused: st.Focused, Hover: st.Hover})
+	rs := overlay.RowState{Cursor: st.Cursor, Focused: st.Focused, Hover: st.Hover}
+	return pal.CursorText(pal.Mark(row, rs), rs, sidebarNameCol-1)
 }
 
 // railRowState reads the rail's focus once so a row site does not have to.
 func (m *OS) railRowState(hover, cursor bool) sidebarRowState {
-	return sidebarRowState{Cursor: cursor, Hover: hover, Focused: m.sidebarRailFocused()}
+	return sidebarRowState{Cursor: cursor, Hover: hover, Focused: m.sidebarRailFocused(), CursorBg: m.Settings.SidebarCursorBackground}
 }
 
-// sidebarRowBg keeps every part of a row on the same ground. Keyboard focus
-// takes priority when the pointer also rests on the cursor row.
+// railCursorBg is the ground appearance.sidebar.cursor_background asks for on
+// pal, or nil when it is unset, not a colour, or the depth is 16 colours. At
+// 16 colours every ground is the terminal's own and the focused cursor is
+// reverse video (see sidebarRowState.mark), so a colour there would paint a
+// band the reverse video then inverts into something nobody chose.
+func railCursorBg(v string, pal overlay.Palette) color.Color {
+	if v == "" || pal.Depth == overlay.Depth16 {
+		return nil
+	}
+	return theme.ConfigColorOn(v, &pal)
+}
+
+// sidebarRowBg keeps every part of a row on the same ground. The cursor on a
+// focused rail takes appearance.sidebar.cursor_background when that is set,
+// falling through to the band, and the cursor always wins over the mouse wash.
 func (m *OS) sidebarRowBg(st sidebarRowState, pal overlay.Palette) color.Color {
 	if !st.lit() {
 		return nil
+	}
+	if c := railCursorBg(st.CursorBg, pal); c != nil && st.Cursor && st.Focused {
+		return c
 	}
 	bg := m.sidebarBand(pal, st.Cursor && st.Focused)
 	if st.Cursor || pal.Depth == overlay.Depth16 {
@@ -545,9 +571,8 @@ type sidebarAgentEntry struct {
 	Foreign bool
 	// Host is the machine the pane's session is on, empty for this one.
 	Host string
-	// Focused marks the attached session's focused pane. On a compact rail the
-	// terminals section leaves agent panes to this section, so the focus mark
-	// goes on this row.
+	// Focused marks the attached session's focused pane. When the terminals
+	// section does not draw that pane's row, the focus mark goes on this row.
 	Focused bool
 	// Fold is set on the one entry that stands for the rows at rest the
 	// section folded away: how many, and FoldNames names them. It is no pane.
@@ -679,9 +704,9 @@ var chromeGlyphs = func() map[rune]bool {
 
 // printableTitle strips what a terminal cannot be trusted to render out of a
 // title before it is shown as chrome (sidebar rows, the window title badge, the
-// command palette, the dock): control characters and private-use codepoints
-// (nerd-font icons shells love to put in titles, which show as tofu boxes
-// without the right font), decorative symbol and emoji codepoints (an agent
+// command palette, the dock): control characters, private-use codepoints
+// while Nerd Fonts are off (nerd-font icons, which show as tofu boxes without
+// the right font; see printableRune), decorative symbol and emoji codepoints (an agent
 // setting a dingbat or emoji in its title otherwise tofus wherever we echo it),
 // plus everything non-ASCII when ASCII-only rendering is on. Titles are foreign
 // data; our own chrome glyphs are audited, so they are kept by codepoint.
@@ -725,12 +750,16 @@ func printableRune(r rune, ascii bool) bool {
 		// override reorders what follows it, so a name holding one reads as
 		// something it is not.
 		return false
-	case r >= 0xe000 && r <= 0xf8ff:
-		// BMP private use area.
-		return false
-	case r >= 0xf0000:
-		// Plane 15/16 private use.
-		return false
+	case r >= 0xe000 && r <= 0xf8ff, r >= 0xf0000:
+		// The private use area: the BMP block and planes 15 and 16. Nerd
+		// Font icons live here, and a person puts them in a session or
+		// workspace name on purpose. They are kept while Nerd Fonts are on,
+		// which is when tuios draws its own icons from the same font, so a
+		// terminal that shows those shows these. Each is one cell to
+		// ansi.StringWidth, the emulator and the host terminal alike, so
+		// keeping them moves no column. With Nerd Fonts off (ASCII mode, or
+		// a font with none) they would be tofu boxes, so they go.
+		return overlay.UseNerdFonts()
 	case r >= 0x25a0 && r <= 0x2bff && !chromeGlyphs[r]:
 		// Geometric Shapes through Miscellaneous Symbols and Arrows. Agents
 		// park spinners and status ornaments in here (Claude Code alone uses
@@ -1887,6 +1916,21 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 	}
 	m.sidebarRecordAgentAnchor(agents, start[sidebarSectionAgents], count[sidebarSectionAgents])
 	m.sidebarRecordReveal()
+	// Whether this frame draws the focused pane's terminals row, which is the
+	// row that carries the focus mark. When it does not, the agents row of that
+	// pane carries the mark instead, so the rail never loses the pane you are
+	// in: the layout may leave terminals out, the compact rule may take the
+	// pane out of it, a short rail may scroll the row away, and a peek shows
+	// another session's panes in its place.
+	focusDrawn := false
+	if !peeking && !emptyPeek {
+		for i := range count[sidebarSectionTerminals] {
+			if terminals[start[sidebarSectionTerminals]+i].Focused {
+				focusDrawn = true
+				break
+			}
+		}
+	}
 
 	// The scroll thumb of every section with rows out of view, drawn in the
 	// edge rule's own cell beside the section's rows. It takes no column from
@@ -2302,7 +2346,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			st := m.railRowState(idx == hoverRow[sidebarSectionAgents], isCursor(sidebarRowAgent, e.SessionID, e.WindowID))
 			tall := rowH[sidebarSectionAgents] > 1
 			recordHit(sidebarRowAgent, e.SessionID, e.WindowID, e.WindowIndex, rowH[sidebarSectionAgents])
-			row, bodyW := m.sidebarAgentRow(e, variant, cw, pal, st, tall)
+			row, bodyW := m.sidebarAgentRow(e, variant, cw, pal, st, tall, e.Focused && !focusDrawn)
 			// A working agent's name is where the shimmer sweeps. Recorded
 			// only for that state, so a rail with no working agent records
 			// nothing and the motion clock never starts. See shimmer.go.
@@ -3356,7 +3400,10 @@ func sidebarNoteSentence(name string) bool {
 //
 // It also returns how many columns the name and the tokens around it take, from
 // sidebarNameCol, which is the span the working shimmer sweeps.
-func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.Palette, st sidebarRowState, tall bool) (string, int) {
+//
+// focusMark puts the focus mark in the row's gutter. The caller sets it on the
+// focused pane's row when no terminals row on the rail marks that pane.
+func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.Palette, st sidebarRowState, tall, focusMark bool) (string, int) {
 	var rowBg color.Color
 	fg := pal.FgDim
 	if e.State == "done" && !e.DoneSeen || e.Focused {
@@ -3460,7 +3507,7 @@ func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.P
 		right += sidebarStyle(rowBg, pal.AccentBright).Render(mail)
 	}
 	// An agent row is only ever "current" through the pane it points at, which
-	// the terminals section already marks, so its gutter carries severity, and
+	// the terminals section usually marks, so its gutter carries severity, and
 	// below that the fact that the pane is somewhere else. The mark is drawn on
 	// foreign rows only, so it says "not from here" on a terminal with no colour
 	// and says which session on one with colour. It is the answer the prefix
@@ -3471,10 +3518,10 @@ func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.P
 			gutter = sidebarStyle(rowBg, tint).Render(accentMark())
 		}
 	}
-	// The focused pane's row wears the same tinted gutter mark the terminals
-	// row wears, on every rail width: the two sections then agree on what the
-	// active agent looks like instead of the compact rail alone saying it.
-	if e.Focused && sidebarLayoutHas(sidebarSectionTerminals, &m.Settings) {
+	// When no terminals row marks the focused pane, this row carries the mark
+	// the terminals row would have. The state glyph and the bold name still
+	// say that the pane wants a human.
+	if focusMark {
 		gutter = sidebarGutterTinted(true, e.State, m.sessionTint(e.SessionID, m.rowGround(rowBg)), rowBg, pal, &m.Settings)
 	}
 	body := shown +

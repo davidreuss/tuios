@@ -300,6 +300,7 @@ func validateNotificationsConfig(cfg *UserConfig, result *ValidationResult) {
 	check("duration", cfg.Notifications.Duration)
 	check("warning_duration", cfg.Notifications.WarningDuration)
 	check("error_duration", cfg.Notifications.ErrorDuration)
+	warnEnum(result, "notifications", "bell", cfg.Notifications.Bell, BellModes, BellToast)
 
 	agent := &cfg.Notifications.Agent
 	if _, _, err := ParseQuietHours(agent.QuietHours); err != nil {
@@ -426,6 +427,8 @@ func validateAppearanceEnums(cfg *UserConfig, result *ValidationResult) {
 	validateScrollbar(cfg, result)
 	validateDockModeIcons(cfg, result)
 	validateBackgrounds(cfg, result)
+	warnColours(result, "appearance", "The cursor row keeps the theme's background",
+		"sidebar.cursor_background", cfg.Appearance.Sidebar.CursorBackground)
 }
 
 // validateBackgrounds warns about a background option that is neither a
@@ -588,6 +591,8 @@ func validateBorderColors(cfg *UserConfig, result *ValidationResult) {
 	a := &cfg.Appearance
 	warnColours(result, "appearance", "The border uses the theme colour",
 		"border_focused_color", a.BorderFocusedColor,
+		"border_focused_color_window", a.BorderFocusedColorWindow,
+		"border_focused_color_terminal", a.BorderFocusedColorTerminal,
 		"border_unfocused_color", a.BorderUnfocusedColor)
 	if a.BorderFocusedGradient == "" {
 		return

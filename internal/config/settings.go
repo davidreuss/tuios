@@ -41,6 +41,10 @@ type Settings struct {
 	// screen, which is the affordance that it is waiting for you.
 	NotificationErrorSticky bool
 
+	// Bell is notifications.bell: what a pane's BEL does. Only the Update
+	// goroutine reads it.
+	Bell string
+
 	// NormalFPS is the normal refresh rate during regular operation.
 	// Set via appearance.max_fps config (default 60, up to MaxFPSCap).
 	NormalFPS int
@@ -124,6 +128,10 @@ type Settings struct {
 	// BorderStyle controls which border style to use for windows
 	// Set via --border-style flag or appearance.border_style config
 	BorderStyle string
+
+	// FramePanels frames every overlay panel in OverlayBorder, not only the
+	// panels at 16 colours that need a frame. Set via appearance.frame_panels.
+	FramePanels bool
 
 	// TilingScheme is the BSP insertion scheme a workspace starts with the
 	// first time it is tiled: one of the TilingScheme* constants (spiral,
@@ -633,6 +641,9 @@ type Settings struct {
 	// rather than the binding tables. Empty is the default of each.
 	KeyboardLayout string
 	OptionGlyphs   string
+	// Lock is keybindings.lock: terminal mode gives every key but the leader
+	// to the focused pane.
+	Lock bool
 
 	// PaneGap is the cells of empty space the tiler keeps between two neighbouring
 	// panes: i3's inner gap, and about the only spacing a terminal window manager
@@ -787,6 +798,12 @@ type Settings struct {
 	DockBackground         string
 	SidebarBackground      string
 
+	// SidebarCursorBackground is the ground of the rail's cursor row while
+	// the rail has the keyboard. Empty keeps the palette's Surface. It is
+	// a colour only, with no off or theme: the row is a band on the rail,
+	// not a surface of its own. See sidebarRowBg.
+	SidebarCursorBackground string
+
 	// ClockFormat is the Go time layout the clock overlay draws with. Empty takes
 	// DefaultClockFormat.
 	//
@@ -825,12 +842,29 @@ const ImageSymbolsAuto = "auto"
 // than auto are mosaic.Kind names.
 var ImageSymbolModes = []string{ImageSymbolsAuto, "octant", "sextant", "quadrant", "half", "off"}
 
+// The values of notifications.bell.
+const (
+	// BellToast shows a message in the dock. It is the default, and what
+	// tuios did before the option existed.
+	BellToast = "toast"
+	// BellForward writes the BEL to the terminal tuios runs in.
+	BellForward = "forward"
+	// BellBoth does both.
+	BellBoth = "both"
+	// BellOff does neither.
+	BellOff = "off"
+)
+
+// BellModes is what notifications.bell accepts.
+var BellModes = []string{BellToast, BellForward, BellBoth, BellOff}
+
 func DefaultSettings() Settings {
 	return Settings{
 		NotificationDuration:        6 * time.Second,
 		NotificationWarningDuration: 8 * time.Second,
 		NotificationErrorDuration:   15 * time.Second,
 		NotificationErrorSticky:     true,
+		Bell:                        BellToast,
 		NormalFPS:                   DefaultFPS,
 		UseASCIIOnly:                false,
 		Motion:                      MotionFull,

@@ -860,10 +860,20 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 		},
 		// Scrollback
 		{
-			Name:     "Edit scrollback in $EDITOR",
+			Name:     "Edit the scrollback in the editor",
+			Shortcut: "prefix+E",
+			Bind:     config.ActionEditScrollback,
 			Category: "Window",
 			Action: func(m *OS) (*OS, tea.Cmd) {
 				return m, m.EditScrollbackInEditor()
+			},
+		},
+		{
+			Name:     "Clear the scrollback",
+			Bind:     config.ActionClearScrollback,
+			Category: "Window",
+			Action: func(m *OS) (*OS, tea.Cmd) {
+				return m, m.ClearScrollback()
 			},
 		},
 		// Floating

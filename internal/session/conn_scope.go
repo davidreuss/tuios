@@ -163,14 +163,18 @@ var verbScopes = map[string]scopeKind{
 	"set-agent-session": scopeSelf,
 	// set-agent-state's activity with no state: the same record.
 	"report-agent-activity": scopeSelf,
+	// It marks the pane's own mail announced, so it is the pane's record.
+	"agent-mail-notice": scopeSelf,
 
 	"send-agent-message": scopeMail,
 	"stash-put":          scopeMail,
 
 	"send-text": scopeWrite,
 	"send-keys": scopeWrite,
-	"ask-agent": scopeWrite,
-	"respond":   scopeWrite,
+	// Clearing a pane's history changes what every viewer of it sees.
+	"clear-history": scopeWrite,
+	"ask-agent":     scopeWrite,
+	"respond":       scopeWrite,
 
 	"fan":         scopeLaunch,
 	"start-agent": scopeLaunch,
@@ -188,12 +192,13 @@ var verbScopes = map[string]scopeKind{
 	"open-host-connection": scopeDeny,
 	// retry-host is the person's act from the rail or from 'tuios hosts
 	// signin'. A restricted caller has no reason to make a link dial.
-	"retry-host":  scopeDeny,
-	"open-pane":   scopeDeny,
-	"resize-pane": scopeDeny,
-	"pane-cwd":    scopeDeny,
-	"pane-agent":  scopeDeny,
-	"pane-calls":  scopeDeny,
+	"retry-host":        scopeDeny,
+	"open-pane":         scopeDeny,
+	"resize-pane":       scopeDeny,
+	"pane-cwd":          scopeDeny,
+	"pane-agent":        scopeDeny,
+	"pane-calls":        scopeDeny,
+	"pane-kitty-medium": scopeDeny,
 	// paste-image is the person's act and paste-pane-image the owning
 	// daemon's. Neither is for a restricted caller.
 	"paste-image":      scopeDeny,
@@ -235,12 +240,16 @@ var verbScopes = map[string]scopeKind{
 	"tml-open":    scopeWrite,
 	"tml-close":   scopeWrite,
 	"tml-input":   scopeDeny,
+	"tml-place":   scopeDeny,
 	"tml-patch":   scopeWrite,
 	"tml-replace": scopeWrite,
 	// tml-get checks the surface's session and the read grant itself
 	// (tmlReach), so the pane that opened a surface reads it with write.
 	"tml-get":  scopeOpen,
 	"tml-list": scopeRead,
+	// artifact-list checks the pane and the read grant itself, so a pane
+	// reads its own artifacts with no grant.
+	"artifact-list": scopeOpen,
 	// tml-validate reads only the document it is given.
 	"tml-validate":         scopeOpen,
 	"split-window":         scopeDeny,

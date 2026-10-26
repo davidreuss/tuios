@@ -163,6 +163,11 @@ var optionSpecs = []Option{
 		Accepted:    BorderStyles, Default: "rounded",
 	},
 	{
+		Path: "appearance.frame_panels", Type: OptionBool, Section: "appearance",
+		Description: "Frame the larger overlay panels, such as the command palette, in the border style",
+		Default:     "false",
+	},
+	{
 		Path: "appearance.zen_mode", Type: OptionString, Section: "appearance",
 		Description: "When window borders are hidden: never, always, or while the mouse is idle",
 		Accepted:    ZenModeModes, Default: ZenModeDisabled,
@@ -373,6 +378,16 @@ var optionSpecs = []Option{
 	{
 		Path: "appearance.border_focused_color", Type: OptionString, Section: "appearance",
 		Description: "Colour overriding the focused pane's border: #89b4fa, a slot name such as bright_cyan, or a role such as accent",
+		Default:     "", Color: true,
+	},
+	{
+		Path: "appearance.border_focused_color_window", Type: OptionString, Section: "appearance",
+		Description: "Colour of the focused pane's border in window mode. It wins over border_focused_color",
+		Default:     "", Color: true,
+	},
+	{
+		Path: "appearance.border_focused_color_terminal", Type: OptionString, Section: "appearance",
+		Description: "Colour of the focused pane's border in terminal mode. It wins over border_focused_color",
 		Default:     "", Color: true,
 	},
 	{
@@ -900,6 +915,11 @@ var optionSpecs = []Option{
 		Accepted:    Backgrounds, Default: "", Color: true,
 	},
 	{
+		Path: "appearance.sidebar.cursor_background", Type: OptionString, Section: "sidebar",
+		Description: "Background of the row under the cursor while the rail has the keyboard: a colour (#rrggbb, 0-255, a slot name or a role name); empty keeps the theme's",
+		Default:     "", Color: true,
+	},
+	{
 		Path: "appearance.sidebar.sections", Type: OptionString, Section: "sidebar",
 		Description: "Section names in the order the rail stacks them, each with an optional percent share. A name left out is a section the rail does not draw, and \"spacer\" is an empty block you may repeat.",
 		Default:     SidebarDefaultSections,
@@ -1091,6 +1111,11 @@ var optionSpecs = []Option{
 		Path: "notifications.error_sticky", Type: OptionBool, Section: "notifications",
 		Description: "Make errors wait for esc instead of expiring",
 		Default:     "true",
+	},
+	{
+		Path: "notifications.bell", Type: OptionString, Section: "notifications",
+		Description: "What a pane's bell does: a dock message, a bell in your terminal, both, or nothing",
+		Accepted:    BellModes, Default: BellToast,
 	},
 
 	// [notifications.agent]. The sounds table is absent: its two keys are paths

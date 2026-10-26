@@ -155,6 +155,7 @@ var verbCapabilities = map[string][]string{
 
 	"send-agent-message":  {config.LinkAllowMail},
 	"read-agent-messages": {config.LinkAllowMail},
+	"agent-mail-notice":   {config.LinkAllowMail},
 	"stash-put":           {config.LinkAllowMail},
 	"stash-list":          {config.LinkAllowMail},
 	"stash-get":           {config.LinkAllowMail},
@@ -170,20 +171,25 @@ var verbCapabilities = map[string][]string{
 	// default policy does not give: a surface names its owner on its frame,
 	// and a surface opened from another machine would need that machine's
 	// name there. tml-input acts as the person on this machine.
-	"tml-open":     {capRelay},
-	"tml-close":    {capRelay},
-	"tml-input":    {capRelay},
-	"tml-patch":    {capRelay},
-	"tml-replace":  {capRelay},
-	"tml-get":      {capRelay},
-	"tml-list":     {capRelay},
-	"tml-validate": nil,
-	"open-pane":    {config.LinkAllowOpen},
-	"resize-pane":  {config.LinkAllowOpen},
-	"close-pane":   {config.LinkAllowOpen},
-	"pane-cwd":     {config.LinkAllowOpen},
-	"pane-agent":   {config.LinkAllowOpen},
-	"pane-calls":   {config.LinkAllowOpen},
+	"tml-open":      {capRelay},
+	"tml-close":     {capRelay},
+	"tml-input":     {capRelay},
+	"tml-place":     {capRelay},
+	"tml-patch":     {capRelay},
+	"tml-replace":   {capRelay},
+	"tml-get":       {capRelay},
+	"tml-list":      {capRelay},
+	"artifact-list": {capRelay},
+	"tml-validate":  nil,
+	"open-pane":     {config.LinkAllowOpen},
+	"resize-pane":   {config.LinkAllowOpen},
+	"close-pane":    {config.LinkAllowOpen},
+	"pane-cwd":      {config.LinkAllowOpen},
+	"pane-agent":    {config.LinkAllowOpen},
+	"pane-calls":    {config.LinkAllowOpen},
+	// pane-kitty-medium carries the bytes of a file a hosted pane named in a
+	// kitty graphics command: a file read, so it needs files.
+	"pane-kitty-medium": {config.LinkAllowFiles},
 
 	// paste-pane-image writes a file for a hosted pane, which the peer
 	// opened, and needs the pane's token as well. paste-image writes a file
@@ -212,6 +218,7 @@ var verbCapabilities = map[string][]string{
 	"close-workspace":  {config.LinkAllowWrite},
 	"send-keys":        {config.LinkAllowWrite},
 	"send-text":        {config.LinkAllowWrite},
+	"clear-history":    {config.LinkAllowWrite},
 	// The paste buffers hold what the person copied on this machine. A
 	// link reads them only where it may also capture a pane, and changes
 	// or pastes them only where it may type.

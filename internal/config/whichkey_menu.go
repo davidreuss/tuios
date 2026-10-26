@@ -96,6 +96,7 @@ var windowMenuRows = []menuRow{
 	{parts: []menuPart{{"window_prefix_next", "Next window"}}, desc: "Next window"},
 	{parts: []menuPart{{"window_prefix_prev", "Previous window"}}, desc: "Previous window"},
 	{parts: []menuPart{{"window_prefix_tiling", "Toggle tiling mode"}}, desc: "Toggle tiling mode"},
+	{parts: []menuPart{{"window_prefix_float", "Float or tile the pane"}}, desc: "Float or tile the pane"},
 	{parts: []menuPart{{"split_vertical", "Split right"}}, desc: "Split right"},
 	{parts: []menuPart{{"split_horizontal", "Split down"}}, desc: "Split down"},
 	{parts: []menuPart{{"prefix_fullscreen", "Toggle zoom"}}, desc: "Toggle zoom"},
@@ -293,7 +294,7 @@ func menuSections(prefixType string, st MenuState) []menuSection {
 		copyRow,
 		// The scrollback browser and the paste buffer list share one for
 		// the same reason.
-		pair("Scrollback/buffers", part("prefix_scrollback", "Scrollback browser"), part("choose_buffer", "Paste buffers")),
+		pair("Scrollback/editor/buffers", part("prefix_scrollback", "Scrollback browser"), part(ActionEditScrollback, "Scrollback in editor"), part("choose_buffer", "Paste buffers")),
 		// One row for two keys: the leader's menu fills an 80x24 screen,
 		// and a row more pushes it off the bottom.
 		sidebarRow,

@@ -88,8 +88,8 @@ var errorCodeCatalog = []struct {
 	{ErrVerbOptionNotFound, "No option by that path exists. The hint carries the closest match and the full path list. list-options describes them."},
 	{ErrVerbCommandFailed, "The verb was routed to the attached client and came back failed."},
 	{ErrVerbTimeout, "A wait-for condition did not match before its timeout elapsed."},
-	{ErrVerbNotReady, "The target agent was mid-turn, so the call declined to type at it. Wait for it, leave a message instead, or force it. resume-agent raises it for a pane whose shell is not at its prompt."},
-	{ErrVerbAgentBlocked, "The target agent is on needs_input, waiting on an approval or a question, and text typed now would answer it. Nothing was typed. Read the prompt with capture-pane, then answer it yourself or ask the person. allow_blocked overrides it."},
+	{ErrVerbNotReady, "The target agent was mid-turn, so the call declined to type at it. Nothing was typed. Wait for it, queue the text with queue-prompt, or leave a message with send-agent-message. resume-agent raises it for a pane whose shell is not at its prompt."},
+	{ErrVerbAgentBlocked, "The target agent is on needs_input, waiting on an approval or a question, and text typed now would answer it. Nothing was typed. Read the prompt with peek-prompt. Do not type at it: only the person answers another agent's prompt. Tell the person which pane waits and on what. allow_blocked overrides it, for a prompt that takes free text."},
 	{ErrVerbLoopRefused, "The call was refused because it would loop: a pane addressing itself, or an ask that closes a cycle with one in flight."},
 	{ErrVerbRateLimited, "The sender is over the cross-agent message rate cap."},
 	{ErrVerbPromptStalled, "The prompt was pasted and Enter was sent, and within the stall window the pane did not turn working or needs_input, or, for an agent that cannot show working, print anything. The text was typed. Look at the pane with capture-pane before doing anything else: if the prompt sits in the input box, press Enter there with send-keys; if the agent is still starting, wait for it and ask again. Sending the prompt again without looking can type it twice."},
@@ -103,6 +103,7 @@ var errorCodeCatalog = []struct {
 	{ErrVerbNoKeyboard, "The target is the person's inbox, human, which has no pane to type into. Leave a message with send-agent-message -w human and wait for the reply on your own inbox."},
 	{ErrVerbNoShellIntegration, "The pane's shell has not sent the OSC 133 marks that say where a command starts and ends, so the daemon cannot run a command in it and report its exit code, or say what the last command printed. Nothing was typed. Enable the shell's prompt integration, or use send-text and wait-for window-output."},
 	{ErrVerbNotAtPrompt, "run typed nothing because the pane's shell is not at its prompt: a command is running in it. The message names the command. Wait for it with wait-for command-finished, or run in another pane."},
+	{ErrVerbFullScreen, "clear-history cleared nothing because a full-screen program, such as an editor or a pager, uses the pane's alternate screen. Quit the program, then call again."},
 	{ErrVerbProtocolMismatch, "The caller's protocol version is outside the range this daemon accepts."},
 	{ErrVerbUnknownHost, "No host by that name is configured. The hint lists the hosts that are. A host name is matched exactly, so nothing is guessed."},
 	{ErrVerbHostUnreachable, "The host is configured and is not answering. Nothing was queued. Read the host's status with list-hosts."},
@@ -110,6 +111,8 @@ var errorCodeCatalog = []struct {
 	{ErrVerbUnknownPane, "This daemon is not running a pane with that id. The pane was real and is gone, so drop it rather than correct it."},
 	{ErrVerbNotWorktree, "The session is not in a git worktree, so there is nothing to remove or diff."},
 	{ErrVerbWorktreeDirty, "remove-worktree refused: the worktree holds uncommitted changes and neither stash nor force was passed. Nothing was removed."},
+	{ErrVerbWorktreeDetached, "remove-worktree refused: the worktree sits on a detached HEAD holding commits no branch has. Nothing was removed."},
+	{ErrVerbWorktreeNested, "remove-worktree refused: an ignored or untracked path in the worktree holds a nested git repository, whose history no stash can save. Nothing was removed."},
 	{ErrVerbGitFailed, "A git command failed. The message is git's own. The repository is as it was."},
 	{ErrVerbRepoNotFound, "No checkout on this machine has the origin repo_url names, and clone was not passed. Pass clone to clone it, repos_root to look somewhere else, or repo to name the directory."},
 	{ErrVerbNotRepo, "No git repository is under the pane or session named, so there is nothing to review. Nothing was read."},
@@ -372,8 +375,8 @@ func (d *Daemon) sessionNames() []string {
 }
 
 // windowTargets returns the addressable identifiers of a session's windows (id
-// and display name for each), sorted, for a window_not_found hint. Ids and names
-// are both accepted by the window parameter, so both belong in the list.
+// and display name for each), sorted. They are the candidates a did-you-mean
+// suggestion is picked from, since the window parameter accepts both.
 func windowTargets(state *SessionState) []string {
 	if state == nil {
 		return nil
@@ -393,6 +396,78 @@ func windowTargets(state *SessionState) []string {
 	}
 	sort.Strings(targets)
 	return targets
+}
+
+// windowChoices lists a session's windows for the available list of a
+// window_not_found hint: one entry a window, its name with the short id after
+// it ("review (523518d9)"), or the short id alone for a window with no name.
+// A list of ids and names side by side named every window twice and was hard
+// to read.
+func windowChoices(state *SessionState) []string {
+	if state == nil {
+		return nil
+	}
+	out := make([]string, 0, len(state.Windows))
+	for _, w := range state.Windows {
+		short := shortWindowID(w.ID)
+		name := w.CustomName
+		if name == "" {
+			name = w.Title
+		}
+		switch {
+		case name == "" || name == w.ID:
+			out = append(out, short)
+		case strings.Contains(name, short):
+			out = append(out, name)
+		default:
+			out = append(out, name+" ("+short+")")
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// cliWord is s as one shell word for a hint command: as it is when it holds
+// only characters a shell leaves alone, else in single quotes.
+func cliWord(s string) string {
+	if s != "" && strings.IndexFunc(s, func(r rune) bool {
+		return !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || strings.ContainsRune("-_.:/@%+=,", r))
+	}) < 0 {
+		return s
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+// sessionArg is "-s SESSION" for a hint command. Without it the command runs
+// against the most recently active session, which need not be the one the
+// failed call named.
+func sessionArg(sess *Session) string {
+	if sess == nil {
+		return ""
+	}
+	return "-s " + cliWord(sess.Name())
+}
+
+// paneArgs is "-s SESSION -w WINDOW" for a hint command, so the command
+// reaches the pane the failed call was about. The window is named by its name
+// when that name picks it out alone, else by its short id.
+func paneArgs(sess *Session, windowID string) string {
+	window := shortWindowID(windowID)
+	if sess != nil {
+		windows := sess.GetState().Windows
+		if i, err := findWindowStateIndex(windows, windowID); err == nil {
+			if name := windows[i].CustomName; name != "" {
+				if j, err := findWindowStateIndex(windows, name); err == nil && j == i {
+					window = name
+				}
+			}
+		}
+	}
+	args := "-w " + cliWord(window)
+	if s := sessionArg(sess); s != "" {
+		args = s + " " + args
+	}
+	return args
 }
 
 // VerbErrorCodes returns every stable error code in the protocol's catalogue,

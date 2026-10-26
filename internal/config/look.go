@@ -103,7 +103,10 @@ var lookKeys = []string{
 	"appearance.session_colors",
 	// Borders and the window frame.
 	"appearance.border_style",
+	"appearance.frame_panels",
 	"appearance.border_focused_color",
+	"appearance.border_focused_color_window",
+	"appearance.border_focused_color_terminal",
 	"appearance.border_unfocused_color",
 	"appearance.border_focused_gradient",
 	"appearance.border_gradient_angle",
@@ -157,6 +160,7 @@ var lookKeys = []string{
 	"appearance.sidebar.position",
 	"appearance.sidebar.width",
 	"appearance.sidebar.background",
+	"appearance.sidebar.cursor_background",
 	"appearance.sidebar.density",
 	"appearance.sidebar.row_style",
 	"appearance.sidebar.header_style",

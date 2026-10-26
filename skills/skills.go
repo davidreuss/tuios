@@ -16,6 +16,7 @@
 // fails while the archive is stale.
 package skills
 
+//go:generate go run gentml.go
 //go:generate go run gen.go
 
 import (
@@ -32,7 +33,8 @@ import (
 )
 
 // archive is skills/tuios/*.md packed by gen.go, each file under its base
-// name.
+// name. Two branches that both regenerate it conflict on a rebase, so rebase
+// with scripts/rebase.sh, which regenerates it at each such commit.
 //
 //go:embed tuios.tar.gz
 var archive []byte

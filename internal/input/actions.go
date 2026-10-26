@@ -638,6 +638,13 @@ func handleToggleTiling(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	return o, nil
 }
 
+// handleToggleFloating floats the focused pane or tiles it. A TML surface
+// moves between a popup and a tiled pane, and keeps its state.
+func handleToggleFloating(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+	o.ToggleFloating()
+	return o, nil
+}
+
 func handleSwapLeft(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	if o.AutoTiling && o.FocusedWindow >= 0 {
 		if o.UseScrollingLayout {
@@ -1181,8 +1188,7 @@ func handleSettingsSidebar(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 // The other two kill rows say what becomes of this client and so can only mean
 // the session it is in; this one is the row every other session's menu carries.
 func handleKillSession(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
-	o.OpenSessionCloseFor(o.TakeMenuSession())
-	return o, nil
+	return o, o.OpenSessionCloseFor(o.TakeMenuSession())
 }
 
 // handleRenameSession opens the rename editor on the session whose row the menu

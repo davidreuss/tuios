@@ -175,6 +175,10 @@ var (
 	// (Nerd Font: nf-fa-keyboard)
 	DockModeIconPrefix string
 
+	// DockModeIconLocked and DockModeIconUnlocked follow the mode icon while
+	// keybindings.lock is on (Nerd Font: nf-fa-lock, nf-fa-unlock).
+	DockModeIconLocked, DockModeIconUnlocked string
+
 	// DockIconTerminalCount is the icon for terminal count (Nerd Font: nf-fa-terminal)
 	DockIconTerminalCount string
 
@@ -213,6 +217,8 @@ func init() {
 	DockModeIconTerminal = " " + fa.Terminal.String() + " "
 	DockModeIconTiling = " " + fa.Th.String() + " "
 	DockModeIconPrefix = " " + fa.Keyboard.String() + " "
+	DockModeIconLocked = fa.Lock.String()
+	DockModeIconUnlocked = fa.Unlock.String()
 	DockIconTerminalCount = fa.Terminal.String()
 	DockIconWorkspaceCount = fa.ThLarge.String()
 	DockIconLeaveRunning = fa.SignOut.String()
@@ -249,6 +255,10 @@ const (
 
 	// DockModeIconPrefixASCII is the ASCII fallback for the armed leader
 	DockModeIconPrefixASCII = " P "
+	// DockModeIconLockedASCII and DockModeIconUnlockedASCII are the lock
+	// state without Nerd Fonts.
+	DockModeIconLockedASCII   = "LOCK"
+	DockModeIconUnlockedASCII = "UNLOCK"
 
 	// DockIconTerminalCountASCII is the ASCII fallback for terminal count
 	DockIconTerminalCountASCII = "win"
@@ -936,6 +946,20 @@ func (s *Settings) GetDockModeIconPrefix() string {
 	return DockModeIconPrefix
 }
 
+// GetDockLockIcon returns the lock state the mode pill shows while
+// keybindings.lock is on, for the current glyph set.
+func (s *Settings) GetDockLockIcon(locked bool) string {
+	switch {
+	case locked && s.NerdFontsOff():
+		return DockModeIconLockedASCII
+	case locked:
+		return DockModeIconLocked
+	case s.NerdFontsOff():
+		return DockModeIconUnlockedASCII
+	}
+	return DockModeIconUnlocked
+}
+
 // GetDockIconLeaveRunning returns the leave-running icon for the current glyph set.
 func (s *Settings) GetDockIconLeaveRunning() string {
 	if s.NerdFontsOff() {
@@ -1093,6 +1117,33 @@ func (s *Settings) GetBorderForStyle() lipgloss.Border {
 		return lipgloss.InnerHalfBlockBorder()
 	case "rounded":
 		fallthrough
+	default:
+		return lipgloss.RoundedBorder()
+	}
+}
+
+// OverlayBorder is the border a dialog is drawn with, and a panel when it is
+// framed. It follows border_style, except that the block styles draw the
+// rounded border: a solid or half-block frame round a three-row dialog
+// outweighs what it holds. The hidden style draws spaces, so a dialog keeps
+// its size and every hit rectangle in it.
+func (s *Settings) OverlayBorder() lipgloss.Border {
+	if s.UseASCIIOnly {
+		return lipgloss.ASCIIBorder()
+	}
+	switch s.BorderStyle {
+	case "normal":
+		return lipgloss.NormalBorder()
+	case "thick":
+		return lipgloss.ThickBorder()
+	case "double":
+		return lipgloss.DoubleBorder()
+	case "ascii":
+		return lipgloss.ASCIIBorder()
+	case "hidden":
+		return lipgloss.HiddenBorder()
+	case BorderStyleGlyphs:
+		return s.glyphSetBorder()
 	default:
 		return lipgloss.RoundedBorder()
 	}

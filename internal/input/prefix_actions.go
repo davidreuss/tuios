@@ -72,6 +72,8 @@ func (d *ActionDispatcher) registerPrefixHandlers() {
 	d.Register("prefix_quit", handlePrefixQuit)
 	d.Register("hints", handleOpenHints)
 	d.Register("toggle_scratch", handleToggleScratch)
+	d.Register(config.ActionEditScrollback, handleEditScrollback)
+	d.Register(config.ActionClearScrollback, handleClearScrollback)
 	d.Register("hints_all_panes", handleOpenHintsAllPanes)
 	d.Register("display_panes", handleDisplayPanes)
 	d.Register(config.ActionCopyModeSearchForward, handleCopyModeSearchForward)
@@ -94,6 +96,7 @@ func (d *ActionDispatcher) registerPrefixHandlers() {
 	d.Register("window_prefix_next", handlePrefixNextWindow)
 	d.Register("window_prefix_prev", handlePrefixPrevWindow)
 	d.Register("window_prefix_tiling", handleToggleTiling)
+	d.Register("window_prefix_float", handleToggleFloating)
 	d.Register("window_prefix_cancel", handlePrefixCancel)
 	d.registerPrefixTreeHandlers()
 
@@ -364,6 +367,16 @@ func handlePrefixScrollback(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	return o, nil
 }
 
+// handleClearScrollback clears the focused pane's scrollback.
+func handleClearScrollback(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+	return o, o.ClearScrollback()
+}
+
+// handleEditScrollback opens the focused pane's scrollback in the editor.
+func handleEditScrollback(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+	return o, o.EditScrollbackInEditor()
+}
+
 // handlePrefixScreenshot opens capture mode from the leader. The entry is
 // treated as mouse-less: the leader was reached from the keyboard, so the hint
 // strip offers tab and enter rather than a drag nobody asked for. Moving the
@@ -483,8 +496,7 @@ func handlePrefixDetach(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 // It raises the same confirmation rather than closing outright, so the two
 // devices cannot disagree about how much warning the action carries.
 func handlePrefixCloseSession(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
-	o.OpenSessionClose()
-	return o, nil
+	return o, o.OpenSessionClose()
 }
 
 func handlePrefixExitMode(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {

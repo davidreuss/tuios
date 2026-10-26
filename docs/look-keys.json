@@ -28,6 +28,20 @@
       "color": true
     },
     {
+      "path": "appearance.border_focused_color_terminal",
+      "type": "string",
+      "description": "Colour of the focused pane's border in terminal mode. It wins over border_focused_color",
+      "default": "",
+      "color": true
+    },
+    {
+      "path": "appearance.border_focused_color_window",
+      "type": "string",
+      "description": "Colour of the focused pane's border in window mode. It wins over border_focused_color",
+      "default": "",
+      "color": true
+    },
+    {
       "path": "appearance.border_focused_gradient",
       "type": "string",
       "description": "Two or more colours, separated by spaces, that the focused pane's border steps through. Empty draws one colour",
@@ -198,6 +212,12 @@
         "outline",
         "off"
       ]
+    },
+    {
+      "path": "appearance.frame_panels",
+      "type": "bool",
+      "description": "Frame the larger overlay panels, such as the command palette, in the border style",
+      "default": "false"
     },
     {
       "path": "appearance.gap",
@@ -471,6 +491,13 @@
         "off",
         "theme"
       ],
+      "color": true
+    },
+    {
+      "path": "appearance.sidebar.cursor_background",
+      "type": "string",
+      "description": "Background of the row under the cursor while the rail has the keyboard: a colour (#rrggbb, 0-255, a slot name or a role name); empty keeps the theme's",
+      "default": "",
       "color": true
     },
     {

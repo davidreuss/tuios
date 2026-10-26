@@ -89,9 +89,10 @@ the absence of a hint never changes what `code` means.
 Every `result` carries a `type` discriminator string so a generic client can
 dispatch on the result shape without tracking which verb it sent.
 
-Most verbs that name a session accept an empty or omitted `session`, which
-resolves to the most recently active session. The exceptions say so in their
-own `session` parameter description in `list-verbs`:
+Most verbs that name a session accept an empty or omitted `session`. From a
+caller inside a pane, it resolves to the pane's own session. From a caller
+outside every pane, it resolves to the most recently active session. The
+exceptions say so in their own `session` parameter description in `list-verbs`:
 
 - `subscribe` reads an omitted `session` as every session. Its `session` is a
   filter, not a target.
@@ -100,7 +101,7 @@ own `session` parameter description in `list-verbs`:
   `session` and watches every session.
 - `kill-session` and `remove-worktree` require `session` and never guess.
 - `list-hooks`, `list-options`, `list-themes` and `list-glyphs` fall back to the
-  most recently active session, and to the daemon's defaults when there is no
+  caller's session or the most recently active one, and to the daemon's defaults when there is no
   session at all, rather than failing.
 
 ## Versioning and introspection
@@ -185,6 +186,16 @@ Changes that alter what an existing verb does, for a caller that relied on the
 old behaviour. None of them bumps the protocol integer: every field keeps its
 name and type, and a caller that sends nothing new keeps working. What changes
 is an answer, and each entry says which.
+
+**Asks of one agent take turns.** An `ask-agent` that comes while another
+ask of the same target runs no longer types over it, and no longer fails with
+`not_ready` once `ready_timeout` passes. It waits for its turn, first come
+first served, for up to `timeout`, and then goes on as before. A turn that
+does not come in time is `not_ready`, and nothing is typed. An ask whose
+caller closes its connection while it waits leaves the line and types
+nothing. The reply gains
+`queued_behind` and `waited_turn_ms`. A queued prompt (`queue-prompt`) is not
+typed while an ask holds the target's turn.
 
 **list-host-sessions rows carry agents.** A remote session row gains
 `agents`, one entry per agent pane: `id`, `title`, `state`, `state_at`,
@@ -1577,7 +1588,7 @@ Response (abridged):
       "verb": "capture-pane",
       "description": "Capture a pane's content.",
       "params": [
-        {"name": "session", "type": "string", "description": "Session name. Omit to target the most recently active session."},
+        {"name": "session", "type": "string", "description": "Session name. Omit from a pane for the pane's own session, and from outside every pane for the most recently active one."},
         {"name": "source", "type": "string", "description": "Which buffer to capture.",
          "accepted": ["visible", "recent"], "default": "visible"}
       ],
@@ -1834,7 +1845,7 @@ What a restricted connection may call:
 | open | `hello`, `list-verbs`, `unsubscribe`, `restrict-connection` | allowed | allowed |
 | across sessions | `list-sessions`, `list-clients`, `list-attention`, `list-worktrees`, `list-hosts`, `list-host-sessions`, `list-host-agents`, `list-themes`, `list-glyphs`, `list-hooks` | `forbidden` | allowed |
 | read one session | `session-info`, `list-windows`, `get-window`, `list-workspaces`, `capture-pane`, `get-agent-state`, `list-agents`, `wait-for`, `subscribe`, `peek-prompt`, `read-agent-messages`, `explain-agent-screen`, `list-options`, `get-option`, `stash-list`, `stash-get`, `ssh-agent-path`, `display-env` | session in reach | allowed |
-| own pane's record | `set-agent-state`, `set-agent-meta`, `set-agent-session`, `report-agent-activity`, `ask-human` | own pane only | allowed |
+| own pane's record | `set-agent-state`, `set-agent-meta`, `set-agent-session`, `report-agent-activity`, `agent-mail-notice`, `ask-human` | own pane only | allowed |
 | mail and stash | `send-agent-message`, `stash-put` | session in reach, sent as the own pane | allowed |
 | type into a pane | `send-text`, `send-keys`, `ask-agent`, `respond`, `run` | session in reach | `forbidden` |
 | start sessions | `fan`, `start-agent` | needs a pane; `start-agent` opens its pane in a session in reach | `forbidden` |
@@ -2631,6 +2642,25 @@ reaches only that session. Each refusal is `forbidden`.
 List the open surfaces of a session. Params: `session`. Answers `surfaces`,
 each with `surface`, `window_id`, `title`, `owner` and `version`.
 
+### tml-place
+
+Move a surface between a popup and a tiled pane, as the person chose.
+Params: `surface`, `target` (`popup` or `pane`) and `human_nonce`, the
+client's attach nonce. The window and its surface stay, so the state does
+too. A `tml-patch` or `tml-replace` from the owner does not move it back.
+Answers `{"type": "tml_placed", "surface", "window_id", "target"}`.
+
+### artifact-list
+
+List what one pane has shown the person, newest first. Params: `window`, the
+pane's window id. Each artifact has `id`, `kind` (`tml` or `screenshot`),
+`title`, `at` (Unix nanoseconds) and `window_id`. A `tml` artifact adds
+`surface`, `target`, `open`, `doc` and `state`; a closed one adds `reason`
+and `value`. A `screenshot` adds `path` and `format`. The daemon keeps the
+last 20 of each pane, for the last 128 panes that showed something, until it
+restarts. A pane reads its own list with no grant. Another pane's list needs
+the `read` grant and the pane's session in scope.
+
 ### tml-validate
 
 Check a document as `tml-open` would, with no session. Params: `doc`. Answers
@@ -2638,7 +2668,10 @@ Check a document as `tml-open` would, with no session. Params: `doc`. Answers
 
 The daemon sends each surface to a TUI client whose hello sets
 `tml_surfaces`, as a `MsgTMLSurface` frame: when it opens, when it changes,
-when it closes, and for every open surface right after the attach reply. A
+when it closes, and for every open surface right after the attach reply.
+`Caller` in the frame is the window id of the pane that opened the surface,
+empty for the person's own. The agents view lists the surface under that
+pane's agent. A
 push carries the tree only when the client may not have it: on open, on attach
 and after a replace. A push that a patch made carries the patch and no state:
 a client one version behind applies it, and a client further behind reads the
@@ -4123,7 +4156,9 @@ is in it, else the repository holding the pane's directory; none is
 working state, committed or not, untracked files included and ignored files
 left out, is written as a git tree through a temporary copy of the worktree's
 index, so its index, its files and what the agent staged are not changed.
-Every git call of one diff together is bounded at 10 seconds (`git_failed`
+An untracked file larger than `[agents.checkpoints] max_untracked_mb` is left
+out of the tree and never read; it is listed with status `U`, `skipped` true
+and no counts or hunks. Every git call of one diff together is bounded at 10 seconds (`git_failed`
 past it). [AGENT_STATE.md](AGENT_STATE.md#reviewing-an-agents-changes) has the
 whole contract.
 
@@ -6277,6 +6312,11 @@ Claude and Codex credential files, the package and database credentials
 (`.npmrc`, `.pypirc`, `.gem/credentials`, `.cargo/credentials`,
 `.vault-token`, `.pgpass`, `.my.cnf`, the Terraform credentials,
 `~/.config/rclone`, `~/.config/hub`, `~/.config/op`), `~/.local/share/keyrings`,
+shell and program histories, browser profiles (also the snap Firefox and
+Chromium profiles and every flatpak's `~/.var/app`), mail and chat state
+(Thunderbird, Signal, Discord, Slack, Telegram), the VS Code state folder,
+crypto wallets (Bitcoin, Electrum, Ethereum, Monero, Litecoin, Solana,
+Exodus), password managers,
 the Windows credential stores and DPAPI keys,
 `/proc` (every process's environment and memory), and the daemon's socket
 folder apart from its drop folder. On
@@ -6349,7 +6389,7 @@ the one before. The configuration is in
 | --- | --- |
 | none | `hello`, `list-verbs`, `link-peer`, `restrict-connection`, `pane-grants` (which says no pane grants apply over a link) |
 | `list` | `list-*`, `session-info`, `ssh-agent-path`, `display-env`, `get-window`, `capture-pane`, `screenshot`, `get-option`, `get-agent-state`, `resolve-pane`, `explain-agent-*`, `wait-for`, `subscribe`, `unsubscribe`, `peek-prompt`, `read-dir`, `wait-dir`, `compare-fan`, `agent-activity`, `get-approval`, `file-stat`, `file-list` |
-| `mail` | `send-agent-message`, `read-agent-messages`, `stash-put`, `stash-list`, `stash-get` |
+| `mail` | `send-agent-message`, `read-agent-messages`, `agent-mail-notice`, `stash-put`, `stash-list`, `stash-get` |
 | `open` | `new-session`, `new-window`, `split-window`, `popup`, `new-worktree`, `fan`, `start-agent`, `open-pane`, `resize-pane`, `close-pane`, `pane-cwd`, `pane-agent`, `pane-calls` |
 | `write` | `send-keys`, `send-text`, `ask-agent`, `run-command`, `switch-session`, `detach-client`, `close-window`, `close-workspace`, `kill-session`, `focus-window`, `move-window`, `set-window`, `select-workspace`, `set-layout`, `resize`, `set-option`, `set-session-*`, `set-workspace-*`, `set-agent-*`, `resume-agent`, `request-approval`, `refresh-dock`, `pip`, `remove-worktree`, `bundle-worktree`, `run`, `ask-human` (whose handler refuses a link caller anyway), `review-diff` (it returns file contents), `review-note`, `review-stage`, `send-review`, `queue-prompt`, `cancel-queued`, `keep-fan` |
 | `open` and `write` | `verify-fan` |
@@ -6426,6 +6466,39 @@ held message the ring still holds, is `invalid_params`. A window that closed
 while the message was held is `window_not_found`.
 
 Result: `held_id`, `message_id`, `to`, `to_name`, `thread_id`.
+
+### agent-mail-notice
+
+```json
+{"id": 1, "verb": "agent-mail-notice", "params": {"session": "work", "window": "$TUIOS_PANE_ID"}}
+```
+
+Answers with one line that tells a pane's agent about its unread mail.
+`tuios agent-hook` calls it for Claude Code and Codex on `SessionStart`,
+`UserPromptSubmit` and `PostToolUse`, and the harness adds the line to the
+agent's context. The line holds the count, the senders' names cut to letters,
+digits and `. _ - : @`, and the `read-agent-messages` command to run. It never
+holds a subject or a body: those are written by another program.
+
+Each message is announced once. The call marks the unread mail it describes as
+announced, and the next call answers with an empty `notice` until newer mail
+arrives. `reset: true` announces all unread mail again; the hook sets it on a
+`SessionStart`, since a new, resumed or compacted conversation no longer holds
+the earlier line. The marks live in daemon memory and go with the pane.
+
+A hook asks with `lease: true` and its `harness`, `agent_session_id` and
+`harness_pid`. The guard of `report-agent-activity` applies: a pane attributed
+to another harness or conversation, or a harness outside the pane, gets no
+notice and the `reason`. With a lease, the mail counts as announced for 3
+seconds, and the answer carries a `lease` token. The hook sends it back in
+`commit` once it wrote the line. A hook that missed its deadline sends nothing,
+the lease runs out, and the next hook announces the mail again.
+
+From a pane it is the pane's own record: `window` must be the caller's pane.
+
+Result: `window_id`, `unread` (seen messages included), `notice` (empty for
+nothing new), `lease` for a call with a lease that gave a notice, `committed`
+for a call with `commit`, and `reason` when the guard gave no notice.
 
 ### agent-activity
 
