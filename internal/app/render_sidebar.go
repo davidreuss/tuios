@@ -2088,6 +2088,18 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			}
 		}
 		sessionIdx := localSessionIndexes(sessions)
+		// The switch numbers follow the same section-wide rule as the counts:
+		// on when any session wears one, so a rail mixing sessions 1..9 with
+		// 10 and up keeps a single name column instead of letting each row
+		// place its own mark. A worktree group straddling the 9 boundary is
+		// where per-row placement shows, as its tree marks drift apart.
+		showNumbers := false
+		for _, v := range sessionIdx {
+			if v > 0 && v <= 9 {
+				showNumbers = true
+				break
+			}
+		}
 		for i := range count[sidebarSectionSessions] {
 			idx := start[sidebarSectionSessions] + i
 			s := sessionRows[idx]
@@ -2117,7 +2129,7 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 			dragged := m.SidebarDrag.Dragging && s.ID == m.SidebarDrag.SessionID
 			st := m.railRowState(idx == hoverRow[sidebarSectionSessions], isCursor(sidebarRowSession, s.ID, ""))
 			recordHit(sidebarRowSession, s.ID, "", -1, 1)
-			lines = append(lines, compose(st.mark(pal, m.sidebarSessionRow(s, sessionIdx[s.ID], variant, cw, pal, st, dragged, showCounts))))
+			lines = append(lines, compose(st.mark(pal, m.sidebarSessionRow(s, sessionIdx[s.ID], showNumbers, variant, cw, pal, st, dragged, showCounts))))
 		}
 		if h := hidden[sidebarSectionSessions]; h > 0 {
 			lines = append(lines, overflowRow(h, m.sidebarRowIndent()))
@@ -2886,7 +2898,7 @@ func (m *OS) windowIndexByID(id string) int {
 // sidebarSessionRow keeps the attached session visible when the rail does not
 // own the keyboard. The cursor and a dragged row retain the stronger band,
 // while attention keeps its severity gutter and glyph.
-func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw int, pal overlay.Palette, st sidebarRowState, dragged, showCounts bool) string {
+func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx int, showNumbers bool, variant, cw int, pal overlay.Palette, st sidebarRowState, dragged, showCounts bool) string {
 	rowBg := m.sidebarRowBg(st, pal)
 	if node.IsCurrent && !(st.Cursor && st.Focused) {
 		rowBg = m.sidebarActiveBand(pal)
@@ -2968,16 +2980,24 @@ func (m *OS) sidebarSessionRow(node sessiontree.Node, sessionIdx, variant, cw in
 	titleW := lipgloss.Width(title)
 	// With show_numbers on, the session index leads the name: a muted number,
 	// the one switch_session_N opens, styled like the other chrome the row
-	// carries. Only switch_session_1..9 exist, so a tenth session wears none,
-	// and remote sessions have no number on this machine either. The armed
-	// prefix does not ask for the numbers: the default keys bind the digits
-	// under the prefix to select_window_N, so a session number there would
-	// name a key that opens something else.
+	// carries. The column is the section's, not the row's: when any session
+	// wears a number, every row reserves its two cells, because a worktree
+	// group whose rows mix numbered sessions with sessions past nine would
+	// otherwise draw its tree marks at two depths. Only switch_session_1..9
+	// exist, so a tenth session's cells are blank rather than numbered, and a
+	// row without the setting reserves nothing. Remote sessions have no number
+	// on this machine either. The armed prefix does not ask for the numbers:
+	// the default keys bind the digits under the prefix to select_window_N, so
+	// a session number there would name a key that opens something else.
 	mark, markW := "", 0
-	if m.Settings.SidebarShowNumbers && sessionIdx > 0 && sessionIdx <= 9 {
-		mark = sidebarStyle(rowBg, pal.FgMute).Bold(node.IsCurrent).
-			Render(strconv.Itoa(sessionIdx) + " ")
-		markW = len(strconv.Itoa(sessionIdx)) + 1
+	if showNumbers && m.Settings.SidebarShowNumbers {
+		markW = 2
+		if sessionIdx > 0 && sessionIdx <= 9 {
+			mark = sidebarStyle(rowBg, pal.FgMute).Bold(node.IsCurrent).
+				Render(strconv.Itoa(sessionIdx) + " ")
+		} else {
+			mark = sidebarStyle(rowBg, nil).Render("  ")
+		}
 	}
 	nameMarked, capsW := railNameMarked(&m.Settings)
 	nameMarked = nameMarked && node.IsCurrent
