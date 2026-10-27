@@ -190,7 +190,7 @@ func (m *OS) sidebarWorktreeLabel(node sessiontree.Node) (string, bool) {
 // its rows are not on screen, so the parent carries the worst of them and the
 // count of what it is hiding.
 func (m *OS) sidebarRepoRow(node sessiontree.Node, cw int, pal overlay.Palette, st sidebarRowState) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 	collapsed := m.SidebarRepoCollapsed(node.ID)
 
 	right, rightW := "", 0

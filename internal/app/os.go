@@ -230,8 +230,15 @@ type OS struct {
 	// last motion that did reach it, which is what the filter's "moved a
 	// cell" tests are written against, so the two cannot be one field. See
 	// NotePointerSeen.
-	pointerSeenX    int
-	pointerSeenY    int
+	pointerSeenX int
+	pointerSeenY int
+	// HoverEvalX/Y is the raw position of the last motion whose hover shape
+	// UpdatePointerForPosition evaluated. A motion that reports the same
+	// position again is the host re-emitting on a focus change or trackpad
+	// idle, and re-arming a resize shape over a divider the pointer is
+	// resting on is exactly what it must not do.
+	HoverEvalX      int
+	HoverEvalY      int
 	ShowHelp        bool
 	InteractionMode bool              // True when actively dragging/resizing
 	WindowExitChan  chan string       // Channel to signal window closure
@@ -1034,7 +1041,9 @@ type OS struct {
 	// KeyboardFlags is the flag set the host answered the enhancement query
 	// with, so tuios knows what it actually got rather than what it asked for.
 	// Zero means the terminal never answered, which is not the same as a refusal.
-	KeyboardFlags int
+	KeyboardFlags            int
+	detaching                bool
+	lastKeyboardEnhancements tea.KeyboardEnhancements
 	// hostGrantedAllKeys is set once the host has answered with report-all-keys
 	// in effect. See AllKeysPending.
 	hostGrantedAllKeys bool
@@ -1399,6 +1408,9 @@ type OS struct {
 	// navLayoutPick is the navigator layout the v key last chose, kept for
 	// the next time the navigator opens. Empty is the configured one.
 	navLayoutPick string
+	// navSortPick is the navigator sort the s key last chose, kept for the
+	// next time the navigator opens. Empty is the configured one.
+	navSortPick string
 	// Workspace switcher overlay, scoped to the attached session
 	ShowWorkspaceSwitcher     bool
 	WorkspaceSwitcherQuery    string
@@ -1449,6 +1461,9 @@ type OS struct {
 	UseBSPLayout     bool            // true = BSP tiling, false = master-stack
 	// announceDepth counts the open settleSizes holds. See announce_batch.go.
 	announceDepth int
+	// Stacked tiling (zellij-like): panes stack vertically and every pane but
+	// the focused one collapses to its top bar.
+	UseStackedLayout bool // true = stacked mode
 	// Scrolling tiling (niri-like) layout
 	UseScrollingLayout        bool                            // true = scrolling columns mode
 	WorkspaceScrollingLayouts map[int]*layout.ScrollingLayout // per-workspace scrolling layouts
@@ -1660,6 +1675,12 @@ type OS struct {
 	filesTree fileTreeState
 	// filesRows is the files section's rows, kept until the listing moves.
 	filesRows fileRowsCache
+	// fileBack is the listing's back stack: the directories shown before the
+	// one on screen, most recent last, and the origin pane the stack belongs
+	// to. A listing from another pane empties it, since back through someone
+	// else's walk is not anywhere. See FileViewBack.
+	fileBack       []string
+	fileBackOrigin string
 
 	// gitView is the rail's git section: the repository the focused pane is in
 	// and how far its branch has drifted. Derived state, never persisted and
@@ -1782,6 +1803,13 @@ type OS struct {
 	// is the moment they looked away: where "while you were away" starts.
 	// Persisted beside SidebarAgentSeenSeq, and per client for the same reason.
 	SidebarAgentSeenAt map[string]int64
+	// WindowViewedAt is, by window ID, when this client's user last had the
+	// pane in front of them (Unix nanoseconds): focused it, or typed into it
+	// from their own terminal. It is written into WindowState.LastViewed on
+	// the session sync, so the navigator can sort by it on every client. The
+	// daemon keeps the later of the two sides, so a restart that restores an
+	// older stamp cannot pull the value backwards.
+	WindowViewedAt map[string]int64
 	// sidebarStateSocket is the daemon socket the persisted window-keyed maps
 	// were written against, and the guard on pruning them: window IDs mean
 	// nothing outside the daemon that issued them.
@@ -2206,6 +2234,10 @@ func (m *OS) SwitchToSession(targetSession string) error {
 	m.SessionName = m.DaemonClient.SessionName()
 	m.rebuildForSession(state, savedWidth, savedHeight)
 	m.leftSession(from)
+	// The pointer shape was set by whatever the old session had under the
+	// cursor, and a switch fires no blur or focus to reset it. Default it and
+	// let the next motion event describe the new session.
+	m.ResetPointerShape()
 	// The components tell their commands which session they are drawing for,
 	// and that answer just changed.
 	m.SyncDockContext()

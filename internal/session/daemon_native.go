@@ -399,6 +399,14 @@ func windowStateToData(state *SessionState, idx int) map[string]any {
 	if w.AgentStateAt != 0 {
 		info["agent_state_at"] = w.AgentStateAt
 	}
+	// Recency stamps, omitted when never: last_viewed is when the person
+	// had the pane in front of them, last_output when the pane last wrote.
+	if w.LastViewed != 0 {
+		info["last_viewed"] = w.LastViewed
+	}
+	if w.LastOutput != 0 {
+		info["last_output"] = w.LastOutput
+	}
 	// The grants the pane was given, omitted for a pane that holds the
 	// default, so the person sees in one listing which panes were narrowed.
 	// pane-grants says what the default is. See pane_grants.go.

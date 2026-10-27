@@ -7,10 +7,12 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/overlay"
 	"github.com/Gaurav-Gosain/tuios/internal/theme"
 	"github.com/Gaurav-Gosain/tuios/pkg/fuzzy"
@@ -65,6 +67,7 @@ func (m *OS) navigatorHints() []overlay.Hint {
 		hints = append(hints, overlay.Hint{Key: "h/l", Label: "fold"})
 	}
 	return append(hints,
+		overlay.Hint{Key: "s", Label: "sort: " + m.navigator.sort},
 		overlay.Hint{Key: "v", Label: "layout"},
 		overlay.Hint{Key: "esc", Label: "close"},
 	)
@@ -197,7 +200,7 @@ func (m *OS) navigatorListNote() string {
 	if m.navSearch() {
 		return "results"
 	}
-	return m.navigator.layout
+	return m.navigator.layout + " · " + m.navigator.sort
 }
 
 // navigatorSessionColors settles the session colours for the sessions the
@@ -427,6 +430,64 @@ func navTreePlace(s *navSession, r navRow) (wsLast, paneLast bool) {
 // edge, its workspaces hang from a trunk under its first cell, and a
 // workspace's panes hang from a trunk under its own first cell. A trunk runs
 // down past a row only while a later sibling follows it.
+// navAgo is a recency stamp as a short relative age: now, 42m, 3h, 2d, 5w,
+// 3mo, 2y. A pane with no stamp has no age, and a stamp ahead of now is a
+// clock skew on another machine, read as now.
+func navAgo(stamp, now int64) string {
+	if stamp <= 0 {
+		return ""
+	}
+	d := time.Duration(now - stamp)
+	if d < 0 {
+		d = 0
+	}
+	switch {
+	case d < 2*time.Minute:
+		return "now"
+	case d < time.Hour:
+		return strconv.Itoa(int(d.Minutes())) + "m"
+	case d < 24*time.Hour:
+		return strconv.Itoa(int(d.Hours())) + "h"
+	case d < 7*24*time.Hour:
+		return strconv.Itoa(int(d.Hours()/24)) + "d"
+	case d < 30*24*time.Hour:
+		return strconv.Itoa(int(d.Hours()/(24*7))) + "w"
+	case d < 365*24*time.Hour:
+		return strconv.Itoa(int(d.Hours()/(24*30))) + "mo"
+	default:
+		return strconv.Itoa(int(d.Hours()/(24*365))) + "y"
+	}
+}
+
+// navAgeCol is a row's age under a recency sort: the stamp the sort reads,
+// right aligned in a fixed four-wide column that is always reserved. The
+// column hangs off the row's right edge, after the count or the current
+// mark, so ages read down the list and the counts line up beside them
+// whether or not the row has an age. A row the client holds no stamp for
+// leaves the column blank. Position, the default, and a search, which is
+// about finding rather than recency, show no column.
+func (m *OS) navAgeCol(stamp int64, k navInks) string {
+	if m.navigator.sort == config.NavigatorSortPosition || m.navSearch() {
+		return ""
+	}
+	age := navAgo(stamp, time.Now().UnixNano())
+	return k.ink(k.mute).Render(strings.Repeat(" ", max(4-lipgloss.Width(age), 0)) + age)
+}
+
+// navRowRight hangs the age column off the end of a row's right span. The
+// separator is drawn in the row's ground, like every other cell, so the
+// column reads as part of the row rather than a hole in it.
+func navRowRight(right, age string, k navInks) string {
+	if age == "" {
+		return right
+	}
+	sep := k.ink(k.mute).Render("  ")
+	if right == "" {
+		return age
+	}
+	return right + sep + age
+}
+
 func (m *OS) navigatorItem(r navRow, st overlay.RowState, width int, pal overlay.Palette) []string {
 	k := navRowInks(navGround(st, pal), pal)
 	bar := k.ink(k.accent).Render(" ")
@@ -438,6 +499,7 @@ func (m *OS) navigatorItem(r navRow, st overlay.RowState, width int, pal overlay
 	switch {
 	case r.Kind == navRowSession:
 		left, right := m.navSessionSpans(s, k)
+		right = navRowRight(right, m.navAgeCol(m.navSessionStampOf(s), k), k)
 		if m.navCards() {
 			return []string{
 				navSpans(width, bar+left, "", k),
@@ -453,13 +515,16 @@ func (m *OS) navigatorItem(r navRow, st overlay.RowState, width int, pal overlay
 			guide = last
 		}
 		n := 0
-		for _, p := range s.Panes {
+		var pis []int
+		for pi, p := range s.Panes {
 			if p.Workspace == r.Workspace {
 				n++
+				pis = append(pis, pi)
 			}
 		}
 		left := k.ink(k.edge).Render(guide) + m.navWorkspaceLabel(s, r.Workspace, k)
-		return []string{navSpans(width, bar+left, k.ink(k.mute).Render(strconv.Itoa(n)), k)}
+		right := navRowRight(k.ink(k.mute).Render(strconv.Itoa(n)), m.navAgeCol(m.navGroupStamp(r.Session, pis), k), k)
+		return []string{navSpans(width, bar+left, right, k)}
 	}
 
 	p := &s.Panes[r.Pane]
@@ -485,6 +550,7 @@ func (m *OS) navigatorItem(r navRow, st overlay.RowState, width int, pal overlay
 	case p.Focused && s.Current:
 		right = k.ink(k.current).Render("current")
 	}
+	right = navRowRight(right, m.navAgeCol(m.navPaneStamp(r.Session, r.Pane), k), k)
 	folder := ""
 	if p.Cwd != "" && !byFolder {
 		folder = k.ink(k.mute).Render("  " + printableTitle(navFolder(p.Cwd)))

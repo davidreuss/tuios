@@ -216,7 +216,7 @@ func (m *OS) gitRows() []gitRowSpec {
 // cut to "feature/long-nam…" still says which branch, where "↑12" cut to "↑1"
 // says something false.
 func (m *OS) sidebarGitRow(row gitRowSpec, cw int, pal overlay.Palette, st sidebarRowState) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 
 	right, rightW := "", 0
 	if row.Right != "" {

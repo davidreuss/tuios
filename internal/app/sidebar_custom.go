@@ -116,7 +116,7 @@ func (m *OS) railCustomRows() []string {
 // cut to the rail's columns and closed with a reset so a colour the command
 // left open cannot run into the padding or the row below.
 func (m *OS) sidebarCustomRow(text string, cw int, pal overlay.Palette, st sidebarRowState) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 	body := overlay.Truncate(strings.TrimRight(text, " "), max(cw-1, 0)) + "\x1b[0m"
 	return sidebarFit(sidebarStyle(rowBg, nil).Render(" ")+body, cw, rowBg)
 }

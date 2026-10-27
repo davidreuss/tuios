@@ -71,7 +71,7 @@ var _ = sessiontree.Tree{}
 func framePeek(t *testing.T, m *OS, tree sessiontree.Tree) string {
 	t.Helper()
 	lines := railPlain(t, m, tree)
-	h := lineOf(lines, " terminals")
+	h := lineOf(lines, " TERMINALS")
 	if h < 0 {
 		t.Fatalf("no terminals header:\n%s", strings.Join(lines, "\n"))
 	}
@@ -91,6 +91,7 @@ func framePeek(t *testing.T, m *OS, tree sessiontree.Tree) string {
 // some sessions, not others"; the last two are the same gesture reaching the
 // same row by two paths, which must agree.
 func TestPeekFollowsTheHoveredRow(t *testing.T) {
+	withSidebarHeaderCase(t)
 	m, tree := sectionsTestOS(t, 120, 30)
 	m.sidebarPanelLinesForTree(tree)
 	main, api, docs := sessionRowY(t, m, "main"), sessionRowY(t, m, "api"), sessionRowY(t, m, "docs")

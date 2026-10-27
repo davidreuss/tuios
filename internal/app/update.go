@@ -2258,6 +2258,8 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		// through a suspend shows the time now rather than after its next
 		// dockWallCheck. Focus coming back is often the first sign of a wake.
 		m.dockEngine.replan()
+		// A host can report focus-in without the preceding focus-out.
+		m.ResetPointerShape()
 		return m, m.noteHostFocus(true)
 
 	case tea.BlurMsg:
@@ -3334,6 +3336,11 @@ func (m *OS) reportActivity(msg tea.Msg) {
 		// routed send-keys or a tape presses arrive as other messages and
 		// are not reported. See session.MsgSessionUsed.
 		m.DaemonClient.ReportUsed(m.msgClock)
+		// Typing into a pane is having it in front of you, so the same test
+		// that guards the report guards the viewed stamp.
+		if m.FocusedWindow >= 0 && m.FocusedWindow < len(m.Windows) {
+			m.markWindowViewed(m.Windows[m.FocusedWindow])
+		}
 	}
 	// The policy is unknown against a daemon that does not name it in the
 	// attach reply, and during a session switch until the reply lands. Such

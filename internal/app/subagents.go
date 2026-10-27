@@ -615,7 +615,7 @@ func sidebarSubagentNames(list []sessiontree.Subagent) string {
 // appearance.sidebar.subagent_fields says which of those it draws, and the
 // heading line and the "+N more" line are drawn here too.
 func (m *OS) sidebarChildRow(e sidebarAgentEntry, cw int, pal overlay.Palette, st sidebarRowState, second bool) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 	pad := sidebarStyle(rowBg, nil)
 	fields := m.Settings.SidebarSubagents.Fields
 	lead := m.sidebarChildLead(e, rowBg, pal, second)

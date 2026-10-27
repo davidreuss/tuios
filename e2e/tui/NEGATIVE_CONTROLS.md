@@ -164,6 +164,135 @@ excluded from size ownership and rail PTY resize removed it passes. The
 historical rail-only resize and shell-row normalization controls below record
 the original feature contract; their assertions were changed in this review
 to preserve the shared PTY and display the guest's real leading blank rows.
+## Native activity text fills an empty agent-row message
+
+On 2026-10-14, `TestProgramStatusFillsEmptyRailMessage` failed against a binary
+built from the same tree with the message token's native fallback removed. Both
+the attached and the foreign case timed out on the first rail assertion: the
+pane had stored the `Compacting context` record and kept the hook-owned working
+state, but the row drew only the name and state word. The gap was the renderer's,
+not a missing report.
+
+The fixed binary passed all nine checks in both cases: native text shows, an
+update replaces it, clear removes it, a title or message equal to the pane name
+does not repeat it, title and message join with a colon, a nonempty hook
+message still wins, a native report cannot change hook-owned state, and the
+files footer stays intact.
+
+Run from `e2e/tui` with `TUIOS_E2E=1 TUIOS_E2E_BIN=<binary> go test -count=1
+-timeout 2m -run '^TestProgramStatusFillsEmptyRailMessage$' -v .` For the
+negative control, use a binary with the fallback removed from the `message`
+case in `internal/app/sidebar_agent_tokens.go`.
+
+## Current session remains visible outside rail focus
+
+On 2026-10-14, `TestCurrentSessionStaysHighlighted` failed against the
+session-row renderer from `98413afd`. The left-dark truecolor case found no
+bold name or persistent background. The left-dark 16-colour case found no
+bold name or underline. Both cases completed hover, keyboard navigation,
+session switching and foreign-session attention before reporting failure.
+
+The updated renderer passed all 12 combinations of rail edge, light/dark
+look and colour depth twice. The test checks actual terminal cell attributes,
+row padding, hover removal and keyboard cursor priority. Expected-state waits
+precede frame capture. It saves plain text, styled text and PNGs under
+`$TUIOS_E2E_FRAMES`.
+
+Run from `e2e/tui` with `TUIOS_E2E=1 TUIOS_E2E_BIN=<binary> go test -count=2
+-run '^TestCurrentSessionStaysHighlighted$' -v .`. For the negative control,
+use the old renderer and restrict the test to
+`'^TestCurrentSessionStaysHighlighted$/^left-dark-(truecolor|16)$'`.
+
+## Rail active and hover contrast
+
+On 2026-10-14, the persistent-session renderer above failed the stronger
+active/hover assertions in all eight 256-colour and truecolor cases. Row
+background contrast ranged from 1.39:1 to 1.74:1 against the resting rail.
+The four 16-colour cases passed their attribute checks.
+
+`TestCurrentSessionStaysHighlighted` now requires 2:1 for active/hover bands,
+4.5:1 for session names, 3:1 for row marks and 1.2:1 between keyboard and
+active bands. Its 18 cases cover both rail edges, dark and Latte themes,
+a terminal-reported background, and all three colour depths.
+`TestRailContextTokenContrast` checks overridden context-token ink at 256
+colours and truecolor in Latte. Both tests passed twice. The token test also
+passed five times per depth after adding explicit hover-transition waits.
+
+The intermediate renderer reproduced three additional failures:
+
+- A 2.5:1 focused-band target on dark grounds left keyboard/active separation
+  at 1.18:1. The target is now 3:1 on dark grounds and 2.5:1 on light grounds.
+- Using `pal.Canvas` instead of `m.railGround()` left active/hover contrast at
+  1:1 on the terminal-reported background.
+- Applying token foreground overrides after contrast correction left Latte
+  context tokens at 1.98:1 on hover and 1.55:1 with keyboard focus in truecolor.
+  The final override now receives the filled-row ink correction.
+
+To repeat those controls, restore each old behaviour separately, rebuild,
+and run the matching case from `e2e/tui` with `TUIOS_E2E=1
+TUIOS_E2E_BIN=<binary> go test -count=1 -v -run <case> .`:
+
+- `'^TestCurrentSessionStaysHighlighted$/^left-dark-truecolor$'`
+- `'^TestCurrentSessionStaysHighlighted$/^left-host-truecolor$'`
+- `'^TestRailContextTokenContrast$/^truecolor$'`
+
+The recorded intermediate run contained all three defects. Separate
+single-mutation runs were not performed.
+
+## Faint hover below the active session
+
+Later on 2026-10-14, the active-band target changed to 1.75:1 and hover
+became a separate faint wash. Name and mark contrast floors stayed unchanged.
+`TestCurrentSessionStaysHighlighted` now also bounds active and hover strength
+and checks that hovering the active session preserves its background.
+
+The earlier shared-fill renderer failed all three selected left-rail
+truecolor cases. Active/hover separation was 1:1. Dark and Latte active bands
+also exceeded the new 2.05:1 ceiling at 2.13:1 and 2.21:1.
+
+The intermediate 65% hover blend failed the faint-hover ceiling in dark,
+Latte and host truecolor, and host 256-colour cases. Hover contrast was
+1.22:1, 1.53:1, 1.60:1 and 1.67:1 respectively. That renderer also left the
+indexed host active band at 2.22:1, above its 2.2:1 ceiling. Softening indexed
+bands already above 2:1 fixed that overshoot without changing truecolor.
+
+A 30% hover blend without a visibility floor failed on both dark rails.
+It rounded to the resting background at 256 colours and reached only 1.02:1
+in truecolor. Applying the 1.03:1 floor fixed both cases. All 18 combinations
+of rail edge, background and depth then passed, as did both context-token
+contrast cases.
+
+Run from `e2e/tui` with `TUIOS_E2E=1 TUIOS_E2E_BIN=<binary> go test -count=1
+-v -run <case> .`. Use the corresponding earlier renderer for each control:
+
+- Shared fill: `'^TestCurrentSessionStaysHighlighted$/^left-(dark|light|host)-truecolor$'`.
+- 65% blend: `'^TestCurrentSessionStaysHighlighted$/^left-((dark|light|host)-truecolor|host-256)$'`.
+- No hover floor: `'^TestCurrentSessionStaysHighlighted$/^(left|right)-dark-(256|truecolor)$'`.
+
+The 65% blend control contained both excessive hover and indexed active
+overshoot. These were observed together, without separate mutation runs.
+
+## Active fill just above hover
+
+On 2026-10-14, the persistent active fill changed to a 1.1:1 contrast step
+from hover. The hover calculation stayed unchanged. Before this change, the
+three left-rail truecolor controls failed the new active-strength bounds.
+Dark, Latte and host active/rest contrast was 1.79:1, 1.96:1 and 2.02:1,
+above the 1.6:1 ceiling. Active/hover contrast was 1.66:1, 1.62:1 and 1.62:1,
+above the 1.2:1 truecolor ceiling.
+
+To repeat the control, restore the current-session call to
+`sidebarBand(pal, false)`, rebuild, and run from `e2e/tui`:
+
+```sh
+TUIOS_E2E=1 TUIOS_E2E_BIN=<binary> go test -count=1 -v \
+  -run '^TestCurrentSessionStaysHighlighted$/^left-(dark|light|host)-truecolor$' .
+```
+
+The adjusted renderer passed all 18 cases and both context-token cases.
+Saved before/after frames had identical hover backgrounds in all 18 cases.
+The 12 coloured cases had active/hover contrast from 1.097:1 to 1.170:1.
+Bold names, 16-colour attributes and keyboard priority checks still passed.
 
 ## Two rules for every control
 
@@ -197,6 +326,75 @@ because all eight cut the handler and the fault was the switch above it.
 
 Cut the wiring, run the named test, and watch it fail. If it does not fail, the
 test enters the code below the fault, and the fault is what nobody is testing.
+
+## Resize pointer entering a rail
+
+On 2026-10-14, `TestRailHoverRetiresTheResizePointer` failed twice per case
+against revision `98413afd`: right, left, and secondary-left rails all kept
+`ew-resize` after button-free motion crossed from the adjacent pane border.
+The test waits for the resize shape before sending the rail-entry event. It
+sends no press, release, or blur that could reset the shape independently.
+
+Adding `ResetPointerShape` before the consumed-sidebar return in
+`handleMouseMotion` made all three cases pass three times. Their saved OSC 22
+traces contain `ew-resize` followed by `default`. The existing blur and
+`TestDualRailResizeEdges` tests also passed three times each.
+
+Run from `e2e/tui` with `TUIOS_E2E=1 TUIOS_E2E_BIN=<binary> go test -count=3
+-run '^TestRailHoverRetiresTheResizePointer$' -v .`. The test saves the screen
+and `pointer-shapes.txt` under `$TUIOS_E2E_FRAMES`.
+
+The rail-only candidate still failed `TestAPressRestatesThePointerShape`.
+That test also failed twice against the unchanged installed `98413afd`
+binary, with `nwse-resize` then `grabbing` and no intervening `default`.
+The refocus correction below resolves this separate failure. Logs are under
+`/Users/dreuss/tmp/logs/rail-pointer-{red,green}-2026-10-14.log` and
+`/Users/dreuss/tmp/logs/pointer-press-baseline-2026-10-14.log`.
+
+## Resize pointer on refocus without blur
+
+On 2026-10-14, `TestRefocusRestatesThePointerWithoutBlur` failed twice per
+case against `98413afd`. Both focus-in alone and a content press alone left
+`ew-resize` active. The test first establishes the resize shape, then sends
+no blur, release or intervening motion that could reset it independently.
+
+Resetting on focus-in and updating the pointer from pane press coordinates
+made both cases pass three times. The existing press and blur tests also
+passed. The combined cursor and detach candidate passed all 17 selected
+E2E functions three times, including rail hover, rail resize, shared-divider
+drag, title drag, session exit and keyboard protocol tests.
+
+Run with `TUIOS_E2E=1 TUIOS_E2E_BIN=<binary> go test -count=3
+-run '^TestRefocusRestatesThePointerWithoutBlur$' -v .`. Frames and OSC 22
+traces are saved under `$TUIOS_E2E_FRAMES`. Logs:
+`/Users/dreuss/tmp/logs/refocus-pointer-red-2026-10-14.log` and
+`/Users/dreuss/tmp/logs/detach-cursor-matrix-2026-10-14.log`.
+
+## Keyboard query during detach
+
+On 2026-10-14, `TestDetachDoesNotQueryKeyboardFlags` failed twice each for
+leader and quit-menu detach against `98413afd`. After the detach key, both
+routes requested flags 7 and queried the host. Dock-button detach passed
+both runs because it started with flags 7 already requested.
+
+The test requires settled flags 7 and 31 negotiations before keyboard
+detach. It rejects a query after the detach action, requires the host reset
+to flags 0, and checks the session survives. Retaining the last rendered
+keyboard request once detach begins made all three routes pass three times.
+The dock case catches a correction that always requests flags 31 on exit.
+
+Run with `TUIOS_E2E=1 TUIOS_E2E_BIN=<binary> go test -count=3
+-run '^TestDetachDoesNotQueryKeyboardFlags$' -v .`. The test saves the
+pre-detach screen and `host-stream.bin` under `$TUIOS_E2E_FRAMES`. Logs:
+`/Users/dreuss/tmp/logs/detach-query-red-2026-10-14.log` and
+`/Users/dreuss/tmp/logs/detach-cursor-matrix-2026-10-14.log`.
+
+A separate isolated PTY probe answered only actual host queries, delaying
+post-detach replies by 50 ms. Its parent read input after client exit without
+flushing. All nine baseline trials captured `ESC[?7u`. All eight candidate
+trials captured empty input and no post-detach query. This covers the
+exit-generated query. It does not cover arbitrary replies already pending
+before detach. Probe and results: `/Users/dreuss/tmp/tuios-detach-repro/`.
 
 ## Dual-edge sidebar foundation
 

@@ -57,6 +57,7 @@ func (m *OS) RebuildBSPTreeFromPositions() {
 const (
 	LayoutModeBSP         = config.LayoutModeBSP
 	LayoutModeMasterStack = config.LayoutModeMasterStack
+	LayoutModeStacked     = config.LayoutModeStacked
 	LayoutModeScrolling   = config.LayoutModeScrolling
 )
 
@@ -68,6 +69,8 @@ func (m *OS) LayoutModeName() string {
 		return LayoutModeScrolling
 	case m.UseBSPLayout:
 		return LayoutModeBSP
+	case m.UseStackedLayout:
+		return LayoutModeStacked
 	default:
 		return LayoutModeMasterStack
 	}
@@ -176,6 +179,10 @@ func (m *OS) ApplyLayoutModeName(name string) {
 	case LayoutModeBSP:
 		m.UseScrollingLayout, m.UseBSPLayout = false, true
 	case LayoutModeMasterStack:
+		m.UseStackedLayout = false
+		m.UseScrollingLayout, m.UseBSPLayout = false, false
+	case LayoutModeStacked:
+		m.UseStackedLayout = true
 		m.UseScrollingLayout, m.UseBSPLayout = false, false
 	}
 }
@@ -210,7 +217,7 @@ func (m *OS) adoptSessionLayoutMode(state *session.SessionState) {
 	}
 }
 
-// ToggleLayoutMode cycles through layout modes: BSP -> master-stack -> scrolling -> BSP.
+// ToggleLayoutMode cycles through layout modes: BSP -> master-stack -> stacked -> scrolling -> BSP.
 func (m *OS) ToggleLayoutMode() {
 	m.settleSizes(func() { m.toggleLayoutMode() })
 }
@@ -231,13 +238,18 @@ func (m *OS) toggleLayoutMode() {
 		// BSP -> master-stack
 		m.UseBSPLayout = false
 		m.ShowNotification("Layout: master-stack", "info", m.Settings.NotificationDuration)
-	} else {
-		// master-stack -> scrolling
+	} else if m.UseStackedLayout {
+		// stacked -> scrolling
+		m.UseStackedLayout = false
 		m.UseScrollingLayout = true
 		delete(m.WorkspaceScrollingLayouts, m.CurrentWorkspace)
 		m.ShowNotification("Layout: scrolling (niri)", "info", m.Settings.NotificationDuration)
+	} else {
+		// master-stack -> stacked
+		m.UseStackedLayout = true
+		m.ShowNotification("Layout: stacked", "info", m.Settings.NotificationDuration)
 	}
-	if !m.AutoTiling && (m.UseScrollingLayout || m.UseBSPLayout) {
+	if !m.AutoTiling && (m.UseScrollingLayout || m.UseBSPLayout || m.UseStackedLayout) {
 		m.AutoTiling = true
 	}
 	m.recordWorkspaceLayoutMode()
@@ -277,6 +289,7 @@ func (m *OS) enableScrollingLayout() {
 	m.resetTiledFlags()
 	m.UseScrollingLayout = true
 	m.UseBSPLayout = false
+	m.UseStackedLayout = false
 	if !m.AutoTiling {
 		m.AutoTiling = true
 	}
@@ -298,6 +311,7 @@ func (m *OS) enableBSPLayout() {
 	m.resetTiledFlags()
 	m.UseScrollingLayout = false
 	m.UseBSPLayout = true
+	m.UseStackedLayout = false
 	if !m.AutoTiling {
 		m.AutoTiling = true
 	}
@@ -312,6 +326,25 @@ func (m *OS) enableBSPLayout() {
 	m.FireLayoutChanged()
 }
 
+// EnableStackedLayout directly enables stacked layout mode.
+func (m *OS) EnableStackedLayout() {
+	m.settleSizes(func() { m.enableStackedLayout() })
+}
+
+// enableStackedLayout is EnableStackedLayout with the announcements already held.
+func (m *OS) enableStackedLayout() {
+	m.resetTiledFlags()
+	m.UseStackedLayout = true
+	m.UseScrollingLayout = false
+	m.UseBSPLayout = false
+	if !m.AutoTiling {
+		m.AutoTiling = true
+	}
+	m.TileAllWindows()
+	m.ShowNotification("Layout: stacked", "info", m.Settings.NotificationDuration)
+	m.FireLayoutChanged()
+}
+
 // EnableMasterStackLayout directly enables master-stack layout mode.
 func (m *OS) EnableMasterStackLayout() {
 	m.settleSizes(func() { m.enableMasterStackLayout() })
@@ -322,6 +355,7 @@ func (m *OS) enableMasterStackLayout() {
 	m.resetTiledFlags()
 	m.UseScrollingLayout = false
 	m.UseBSPLayout = false
+	m.UseStackedLayout = false
 	if !m.AutoTiling {
 		m.AutoTiling = true
 	}

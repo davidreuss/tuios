@@ -46,6 +46,9 @@ func (m *OS) sidebarAgentTokenValue(name string, e sidebarAgentEntry, variant in
 	tk := sidebarAgentToken{Name: name}
 	switch name {
 	case "session":
+		// Foreign rows say which session they came from; the attached
+		// session's own rows say nothing, because every row already belongs
+		// to it.
 		if e.Foreign {
 			tk.Text = printableTitle(e.SessionLabel)
 		}
@@ -87,16 +90,56 @@ func (m *OS) sidebarAgentTokenValue(name string, e sidebarAgentEntry, variant in
 		}
 	case "message":
 		tk.Text = printableTitle(e.Message)
+		if tk.Text != "" {
+			break
+		}
+		sum, ok := programSummary(e.Program)
+		if !ok {
+			break
+		}
+		title, message := printableTitle(sum.Title), printableTitle(sum.Msg)
+		paneName := sidebarAgentName(e)
+		if strings.EqualFold(title, paneName) {
+			title = ""
+		}
+		if strings.EqualFold(message, paneName) || strings.EqualFold(message, title) {
+			message = ""
+		}
+		switch {
+		case title == "":
+			tk.Text = message
+		case message == "":
+			tk.Text = title
+		default:
+			tk.Text = title + ": " + message
+		}
 	case "need":
 		tk.Text = m.sidebarAgentNeedText(e, variant, now)
 	case "host":
 		tk.Text = printableTitle(e.Host)
+	case "workspace":
+		// The workspace tag is empty for a pane whose workspace the wire did
+		// not name, so an older daemon's rows stay untagged.
+		if e.Workspace > 0 {
+			tk.Text = m.workspaceTag(e.Workspace)
+		}
+	case "location":
+		// The pane's address as the switch keys name it: session then
+		// workspace, [1:5] opening session 1 and workspace 5. Empty when
+		// either half is unknown, so a foreign pane's row stays untagged.
+		if e.SessionIndex > 0 && e.Workspace > 0 {
+			tk.Text = "[" + strconv.Itoa(e.SessionIndex) + ":" + strconv.Itoa(e.Workspace) + "]"
+		}
 	case "now":
 		// What a working agent is doing. The daemon clears it at rest, and a
 		// pane blocked on a prompt says what it asks in its need and message,
-		// so it draws only while the agent works.
+		// so it draws only while the agent works. A harness that reports no
+		// tool detail (pi names the turn's task instead) says the task.
 		if e.State == "working" {
 			tk.Text = printableTitle(sidebarAgentMetaValue(e.Meta, "now"))
+			if tk.Text == "" {
+				tk.Text = printableTitle(sidebarAgentMetaValue(e.Meta, "prompt"))
+			}
 		}
 	case "prompt":
 		tk.Text = printableTitle(sidebarAgentMetaValue(e.Meta, "prompt"))
@@ -412,6 +455,9 @@ func sidebarTokenColor(name string, pal overlay.Palette) color.Color {
 func (m *OS) sidebarTokenStyle(base lipgloss.Style, tk sidebarAgentToken, pal overlay.Palette) lipgloss.Style {
 	look := sidebarTokenDefaultLook(tk).Overlay(m.Settings.SidebarAgentRow.Style(tk.Name).Resolve(tk.Text, tk.Number, tk.HasNumber))
 	if c := sidebarTokenColor(look.Fg, pal); c != nil {
+		if bg := base.GetBackground(); bg != (lipgloss.NoColor{}) {
+			c = overlay.ReadableAt(c, bg, overlay.MarkFloor)
+		}
 		base = base.Foreground(c)
 	}
 	if look.Bold != nil {

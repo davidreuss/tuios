@@ -24,6 +24,10 @@ import (
 // nothing; a link is different in that crossing one is already drawing the
 // underline, so a delayed label would be a second thing arriving late to
 // explain the first.
+//
+// The label is the one part of the link hover that some screens have no room
+// for, so appearance.link_label turns it off and leaves the underline, the
+// pointer and the click to carry the feature.
 
 // linkLabelHint is what the label says about acting on the run. It is the only
 // place in the interface that names the gesture, so it follows

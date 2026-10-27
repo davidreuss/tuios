@@ -78,12 +78,10 @@ func (m *OS) WorktreePromptBranch() string { return strings.TrimSpace(m.worktree
 func (m *OS) WorktreePromptSessionName() string { return strings.TrimSpace(m.worktreePrompt.Name) }
 
 // BeginWorktreePromptForSession opens the dialog on the repository a session's
-// worktree record names. A session with no record — an ordinary session, whose
-// full directory the listing does not carry — is refused with a word, which is
-// what the dimmed menu row says too: this release offers the dialog only where
-// the repository is known. The refusal says what is missing and not "not a
-// worktree", because a plain session can be in a repository's main checkout;
-// what the rail lacks is the path to it.
+// worktree record names. A session with no record — a session whose directory
+// no git repository covers — is refused with a word, which is what the dimmed
+// menu row says too: this release offers the dialog only where the repository
+// is known.
 func (m *OS) BeginWorktreePromptForSession(name string) {
 	info := m.sessionWorktreeInfo(name)
 	if info == nil {
@@ -189,6 +187,15 @@ func (m *OS) sessionDeletableWorktree(name string) *session.WorktreeInfo {
 		return nil
 	}
 	return info
+}
+
+// sessionWorktreeLacksRepo reports whether the session's worktree record names
+// no repository, which is when the new-worktree row is dimmed: the record the
+// daemon keeps for a session in no repository is nil, and one from before the
+// RepoRoot field is empty.
+func (m *OS) sessionWorktreeLacksRepo(name string) bool {
+	info := m.sessionWorktreeInfo(name)
+	return info != nil && info.RepoRoot == ""
 }
 
 // worktreeRepoRoot finds the main checkout a repository's group header stands

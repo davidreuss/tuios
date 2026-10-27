@@ -238,6 +238,14 @@ type WindowState struct {
 	// value is an ordinary window, which is what every older client and older
 	// state reads as.
 	Popup bool `json:"popup,omitempty"`
+	// PopupPlaced marks a popup the user moved or resized. The computed box
+	// stops being authoritative: a client applies the rectangle as it stands,
+	// clamped into its own content region, instead of restamping the box the
+	// PopupWidth/PopupHeight request resolves to. It travels for the reason
+	// the request does — a peer that did not know would snap the pane back on
+	// its next retile. The zero value is a popup whose box is computed, which
+	// is what every older client and older state reads as.
+	PopupPlaced bool `json:"popup_placed,omitempty"`
 	// PopupWidth and PopupHeight are the size the caller asked for, as the
 	// caller wrote it: "60" for cells, "60%" for a share of the content region.
 	// The request travels rather than the resolved box because the box is
@@ -334,6 +342,23 @@ type WindowState struct {
 	// it, and it is saved so a restored pane keeps it. Older peers and older
 	// state read it as absent.
 	StartedBy *PaneRef `json:"started_by,omitempty"`
+	// LastViewed is the unix-nano time the person last had this pane in
+	// front of them: focused it, or typed into it from their own terminal.
+	// It is client-owned, on the same terms as session.lastUsed (see
+	// session_used.go): input that arrives through another client, a tape
+	// or an agent never counts, because only the client can tell whose
+	// keystrokes they are. The client writes it in its state sync, and the
+	// merge keeps the later of the two sides so one client's older snapshot
+	// cannot pull a stamp backwards. The zero value, which is what older
+	// state and older clients read as, means never viewed.
+	LastViewed int64 `json:"last_viewed,omitempty"`
+	// LastOutput is the unix-nano time the pane last produced output. It is
+	// daemon-owned and stamped in the PTY read loop, whatever wrote to the
+	// pane: the person, an agent, a script. The zero value, which is what
+	// older state and older clients read as, means the pane has never been
+	// seen to output. It travels like AgentStateAt, so a listing can order
+	// panes by liveness on any machine.
+	LastOutput int64 `json:"last_output,omitempty"`
 }
 
 // PaneRef names a pane by its session and window id.
@@ -2864,6 +2889,18 @@ func (s *Session) fillLiveFacts(state *SessionState) {
 			w.Cwd = place.seed
 		}
 	}
+
+	// Fill when the pane last produced output, straight from the live PTY.
+	// Nothing stored holds this, for the same reason HostLink is not stored:
+	// it is true only while it is true, and a client push cannot lie about
+	// it, because the next snapshot reads it off the PTY again.
+	s.ptysMu.RLock()
+	for i := range state.Windows {
+		if pty, ok := s.ptys[state.Windows[i].PTYID]; ok {
+			state.Windows[i].LastOutput = pty.LastOutput()
+		}
+	}
+	s.ptysMu.RUnlock()
 
 	// A window on another machine whose link is lost says so, and until
 	// when the far machine keeps its process. Nothing stored holds this: it

@@ -72,8 +72,11 @@ func (m *OS) BuildSessionState() *session.SessionState {
 			// Display text is clamped the way the daemon clamps it, so the
 			// two agree and a long title cannot push the session past the
 			// daemon's limit on a state update.
-			Title:        session.ClampDisplayText(w.Title()),
-			CustomName:   session.ClampDisplayText(w.CustomName),
+			Title:      session.ClampDisplayText(w.Title()),
+			CustomName: session.ClampDisplayText(w.CustomName),
+			// Client-owned recency: when this client's user last had the pane
+			// in front of them. See WindowState.LastViewed.
+			LastViewed:   m.WindowViewedAt[w.ID],
 			X:            x,
 			Y:            y,
 			Width:        width,
@@ -100,6 +103,7 @@ func (m *OS) BuildSessionState() *session.SessionState {
 			// the caller asked for are the session's, the box above is this
 			// client's and a peer declines it. See WindowState.Popup.
 			Popup:       w.IsPopup,
+			PopupPlaced: w.PopupPlaced,
 			PopupWidth:  w.PopupWidth,
 			PopupHeight: w.PopupHeight,
 			PopupDim:    w.PopupDim,
@@ -370,6 +374,7 @@ func (m *OS) RestoreFromState(state *session.SessionState) error {
 		window.DisableCallbacks()
 
 		m.Windows = append(m.Windows, window)
+		m.seedWindowViewedAt(&ws)
 		m.LogInfo("[RESTORE] Window %d created: DaemonMode=%v, PTYID=%s", i, window.DaemonMode, shortID(window.PTYID))
 	}
 
@@ -1318,6 +1323,7 @@ func (m *OS) updateWindowFromState(w *terminal.Window, ws *session.WindowState) 
 	// A popup is layout intent too. Its box is declined above for the reason the
 	// zoom box is, and applyPopupRects recomputes it here.
 	w.IsPopup = ws.Popup
+	w.PopupPlaced = ws.PopupPlaced
 	w.IsScratch = ws.Scratch
 	w.ScratchName = ws.ScratchName
 	w.Stack, w.StackIndex = ws.Stack, ws.StackIndex
@@ -1543,6 +1549,7 @@ func (m *OS) createWindowFromSync(ws *session.WindowState) *terminal.Window {
 	}
 
 	window := m.newWindowFromState(ws)
+	m.seedWindowViewedAt(ws)
 
 	// Set up PTY handlers if we have a daemon client
 	if m.DaemonClient != nil {

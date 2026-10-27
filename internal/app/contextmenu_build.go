@@ -326,7 +326,7 @@ func (m *OS) dockItemMenu(windowIndex int) (string, []ContextMenuItem) {
 func (m *OS) workspacePillMenu(ws int) (string, []ContextMenuItem) {
 	closeItem := m.item(glyphClose, "Close", "close_workspace", len(m.workspacePanes(ws)) == 0)
 	closeItem.Warn = true
-	return printableTitle(m.WorkspaceLabel(ws)), []ContextMenuItem{
+	return printableTitle(withWorkspaceIndex(m.WorkspaceLabel(ws), ws)), []ContextMenuItem{
 		m.item(glyphSwitch, "Switch to", "workspace_pill_switch", ws == m.CurrentWorkspace),
 		m.item(glyphRename, "Rename", "workspace_prefix_rename", false),
 		separator(),
@@ -419,11 +419,11 @@ func (m *OS) sessionMenu(sessionID string) (string, []ContextMenuItem) {
 		// which is a row naming one session and acting on another.
 		m.item(glyphSwitch, "Switch workspace...", "prefix_workspace_switcher", !attached),
 		// A worktree of the session's repository. The dialog and the verb behind
-		// it need the repository's main checkout, which the rail only knows for
-		// a session that is itself a worktree, so that is the only row it is
-		// live on — dimmed elsewhere, saying the action exists, the way the
-		// pane menu dims a paste it cannot reach.
-		m.item(glyphNew, "New worktree...", "session_new_worktree", m.sessionWorktreeInfo(sessionID) == nil),
+		// it need the repository's main checkout, which the worktree record
+		// carries: a session in a linked worktree has always had it, and a
+		// session in the main checkout itself has one now that detection
+		// covers it. The row is dimmed only where no repository is known.
+		m.item(glyphNew, "New worktree...", "session_new_worktree", m.sessionWorktreeLacksRepo(sessionID)),
 		separator(),
 	}, kill...)
 }

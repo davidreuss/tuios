@@ -2,6 +2,10 @@ package app
 
 import (
 	"fmt"
+	"path/filepath"
+	"runtime"
+
+	"github.com/Gaurav-Gosain/tuios/internal/debuglog"
 )
 
 // PointerShape represents a CSS cursor shape name for OSC 22.
@@ -31,12 +35,22 @@ func (m *OS) SetPointerShape(shape PointerShape) {
 	if shape == m.currentPointer {
 		return
 	}
+	if _, file, line, ok := runtime.Caller(1); ok {
+		m.LogInfo("[POINTER] %s from %s:%d", shape, filepath.Base(file), line)
+		debuglog.Internal{}.Printf("[POINTER] %s from %s:%d", shape, filepath.Base(file), line)
+	}
 	m.currentPointer = shape
 	m.writeHostSequence(fmt.Appendf(nil, "\x1b]22;%s\x1b\\", string(shape)))
 }
 
 // ResetPointerShape sets the pointer back to default.
+//
+// It writes unconditionally rather than through SetPointerShape's dedup: the
+// last write can be lost while the host terminal is switching away or
+// repainting, and a stale resize shape that tuios believes was already reset
+// then sticks until real mouse motion changes it.
 func (m *OS) ResetPointerShape() {
+	m.currentPointer = ""
 	m.SetPointerShape(PointerDefault)
 }
 

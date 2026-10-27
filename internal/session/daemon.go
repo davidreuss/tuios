@@ -88,6 +88,12 @@ type Daemon struct {
 	// focus at once cannot both see the session's focus flip. See
 	// handleClientFocus.
 	hostFocusMu sync.Mutex
+	// lastPresence records when a client last attached to or detached from a
+	// session, by session ID. Bare attach prefers it: the session someone was
+	// last looking at is the one they mean to come back to, and keystrokes
+	// agents and scripts type into other sessions' panes must not outrank
+	// it. See findTargetSession.
+	lastPresence map[string]time.Time
 
 	// The read budgets large frames and large verb request lines are
 	// charged to, and the connections served now on the main socket and the
@@ -955,6 +961,7 @@ func NewDaemon(cfg *DaemonConfig) *Daemon {
 
 	d := &Daemon{
 		manager:            NewManager(),
+		lastPresence:       make(map[string]time.Time),
 		instance:           uuid.NewString(),
 		ctx:                ctx,
 		cancel:             cancel,

@@ -426,10 +426,13 @@ func (m *OS) FocusWindow(i int) *OS {
 	// Leaving an agent pane is when the person looked away from it.
 	if oldFocused >= 0 && oldFocused < len(m.Windows) {
 		m.markAgentSeenAt(m.Windows[oldFocused])
+		m.PrevFocusedID = m.Windows[oldFocused].ID
 	}
 
 	// ATOMIC: Set focus and Z-index in one operation
 	m.FocusedWindow = i
+	// The person just put this pane in front of them.
+	m.markWindowViewed(m.Windows[i])
 	m.FocusHistory = session.RecordFocus(m.FocusHistory, m.Windows[i].Workspace, m.Windows[i].ID)
 	// A pane that never got a report still assumes it has focus, as a
 	// program does when it turns 1004 on, so leaving it reports the loss.
@@ -472,6 +475,12 @@ func (m *OS) FocusWindow(i int) *OS {
 	if m.AutoTiling && m.UseScrollingLayout && !m.scrollingFocusSyncing {
 		m.LogInfo("[SCROLL-FOCUS] FocusWindow(%d) -> triggering ScrollingOnFocusChange (old=%d)", i, oldFocused)
 		m.ScrollingOnFocusChange()
+	}
+	// Stacked mode retiles on focus by design: the focused pane owns the
+	// remaining height, so a focus move re-cuts the stack. TileAllWindows
+	// never changes focus, so this cannot recurse.
+	if m.AutoTiling && m.UseStackedLayout && oldFocused != i {
+		m.TileAllWindows()
 	}
 
 	return m

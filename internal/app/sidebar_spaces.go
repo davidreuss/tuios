@@ -15,10 +15,13 @@ import (
 // the rows it always did. See sessiontree.GroupBySpace.
 
 // sidebarNodeIndent is the step a sessions-section row takes: the section's own
-// step, and one group step more for a row drawn under a space's heading.
+// step, one group step more under a space's heading or a repository's row.
 func (m *OS) sidebarNodeIndent(node sessiontree.Node) int {
 	indent := m.sidebarRowIndent()
 	if node.Space != "" && node.Kind != sessiontree.KindSpace {
+		indent += sidebarGroupIndent
+	}
+	if node.Kind == sessiontree.KindSession && node.Worktree != nil {
 		indent += sidebarGroupIndent
 	}
 	return indent

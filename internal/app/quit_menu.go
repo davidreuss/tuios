@@ -200,6 +200,7 @@ func (m *OS) DetachClient() tea.Cmd {
 		return nil
 	}
 	m.cancelHostOpen()
+	m.detaching = true
 	m.SyncStateToDaemon()
 	m.FireDetached()
 	// Deliberately no Cleanup: the session outlives this client.

@@ -80,6 +80,11 @@ type navPane struct {
 	// draws a pane at rest as waiting. Known for the panes of this
 	// machine's sessions.
 	Subagents int
+	// LastViewed and LastOutput are the pane's recency stamps, unix nano:
+	// when the person last had the pane in front of them, and when it last
+	// wrote output. Zero, which is what an older daemon sends, means never.
+	LastViewed int64
+	LastOutput int64
 	// Text is the last lines of the pane's screen, oldest first. For a pane
 	// this client draws, the preview reads the live screen instead.
 	Text []string
@@ -215,6 +220,9 @@ type navigatorState struct {
 	// (panes.navigator_search). esc with nothing typed then closes it, as
 	// esc in the list does.
 	typeFirst bool
+	// sort is the order the list is in: config.NavigatorSortPosition,
+	// Viewed or Activity.
+	sort string
 }
 
 // NavigatorLoadedMsg is the answer of a detail load.
@@ -250,6 +258,7 @@ func (m *OS) OpenNavigator() tea.Cmd {
 		expanded:  map[string]bool{},
 		sessions:  m.navigatorSessions(),
 		layout:    m.navigatorLayoutChoice(),
+		sort:      m.navigatorSortChoice(),
 		searching: typeFirst,
 		typeFirst: typeFirst,
 	}
@@ -274,6 +283,18 @@ func (m *OS) navigatorLayoutChoice() string {
 	return m.UserConfig.Panes.NavigatorLayoutInUse()
 }
 
+// navigatorSortChoice is the sort the navigator opens in: the one the s key
+// last chose on this client, else the configured one.
+func (m *OS) navigatorSortChoice() string {
+	if m.navSortPick != "" {
+		return m.navSortPick
+	}
+	if m.UserConfig == nil {
+		return config.NavigatorSortPosition
+	}
+	return m.UserConfig.Panes.NavigatorSortInUse()
+}
+
 // NavigatorCycleLayout steps the list to the next layout: tree, flat, cards.
 // The cursor stays on the row it was on, or on its pane when the tree row it
 // was on is not listed in the new layout. This client keeps the choice for
@@ -294,6 +315,26 @@ func (m *OS) NavigatorCycleLayout() {
 	m.MarkAllDirty()
 }
 
+// NavigatorCycleSort steps the list to the next sort: position, viewed,
+// activity. The cursor stays on the row it was on, or on its pane when the
+// sort moves it. This client keeps the choice for the next time the
+// navigator opens.
+func (m *OS) NavigatorCycleSort() {
+	nav := &m.navigator
+	before, had := m.navigatorSelectedKey()
+	i := slices.Index(config.NavigatorSorts, nav.sort)
+	nav.sort = config.NavigatorSorts[(i+1)%len(config.NavigatorSorts)]
+	m.navSortPick = nav.sort
+	nav.cursor, nav.scroll = 0, 0
+	switch {
+	case had && m.navigatorHasKey(before):
+		m.navigatorSelectKey(before)
+	case !m.navSearch():
+		m.navigatorCursorToCurrent()
+	}
+	m.MarkAllDirty()
+}
+
 // NavigatorLayout is the layout the list is drawn in.
 func (m *OS) NavigatorLayout() string { return m.navigator.layout }
 
@@ -302,6 +343,16 @@ func (m *OS) NavigatorLayout() string { return m.navigator.layout }
 // folds.
 func (m *OS) navFlat() bool {
 	return m.navSearch() || m.navigator.layout == config.NavigatorLayoutFlat || m.navigator.layout == config.NavigatorLayoutCards
+}
+
+// navStampOf is the recency stamp the sort in force reads: when the person
+// last had the pane in front of them, or when it last wrote output. Zero
+// means never, which is what sorts last.
+func navStampOf(sort string, p *navPane) int64 {
+	if sort == config.NavigatorSortViewed {
+		return p.LastViewed
+	}
+	return p.LastOutput
 }
 
 // navCards reports whether a pane takes two lines of the list.
@@ -425,6 +476,7 @@ func (m *OS) navigatorCurrentSession() navSession {
 			AgentState: state,
 			DoneSeen:   seen,
 			Subagents:  w.AgentSubagents,
+			LastViewed: m.WindowViewedAt[w.ID],
 		})
 		s.Panes[len(s.Panes)-1].setText(navScreenText(w, navTextLines))
 	}
@@ -488,7 +540,9 @@ func navLastLines(lines []string, n int) []string {
 
 // navigatorLoad reads what the tree does not hold yet, off the UI goroutine:
 // for every session but the current one, its panes with their folders and
-// commands, its workspace names, and each pane's last lines.
+// commands, its workspace names, and each pane's last lines. The current
+// session is read too, but for its recency stamps alone: its panes' text is
+// already live here.
 //
 // Each machine is read in a goroutine of its own, so a slow machine costs its
 // own rows and not the others'. All of them share one deadline, navLoadBudget,
@@ -504,7 +558,7 @@ func (m *OS) navigatorLoad() tea.Cmd {
 	var order []string
 	var jobs []navSession
 	for _, s := range m.navigator.sessions {
-		if s.Current || s.Note != "" {
+		if s.Note != "" {
 			continue
 		}
 		machine := s.Host
@@ -578,6 +632,14 @@ func (m *OS) navigatorLoad() tea.Cmd {
 						continue
 					}
 					if c == nil {
+						mu.Lock()
+						done[job.key()] = s
+						mu.Unlock()
+						continue
+					}
+					// The current session's rows keep their live screen text,
+					// so a capture of them is wasted work.
+					if s.Current {
 						mu.Lock()
 						done[job.key()] = s
 						mu.Unlock()
@@ -708,6 +770,8 @@ func navLoadSession(ctx context.Context, c *session.VerbClient, host, name strin
 			Workspace  int    `json:"workspace"`
 			Scratch    bool   `json:"scratch"`
 			AgentState string `json:"agent_state"`
+			LastViewed int64  `json:"last_viewed"`
+			LastOutput int64  `json:"last_output"`
 		} `json:"windows"`
 	}
 	if json.Unmarshal(raw, &list) != nil {
@@ -725,6 +789,7 @@ func navLoadSession(ctx context.Context, c *session.VerbClient, host, name strin
 		s.Panes = append(s.Panes, navPane{
 			ID: w.ID, Name: w.Display, Title: w.Title, Cwd: w.Cwd, Command: w.Command, Cmdline: w.Cmdline,
 			Workspace: w.Workspace, Focused: w.ID == list.Focused, AgentState: state,
+			LastViewed: w.LastViewed, LastOutput: w.LastOutput,
 		})
 	}
 	s.Count = len(s.Panes)
@@ -801,6 +866,25 @@ func (m *OS) ApplyNavigatorLoaded(msg NavigatorLoadedMsg) {
 			if loaded.Host == "" {
 				loaded.keepAgentMarks(s)
 			}
+			if s.Current {
+				// The current session's rows are live state; the load only
+				// freshens the recency stamps a live pane cannot know.
+				for i := range s.Panes {
+					for _, p := range loaded.Panes {
+						if p.ID != s.Panes[i].ID {
+							continue
+						}
+						if p.LastViewed > s.Panes[i].LastViewed {
+							s.Panes[i].LastViewed = p.LastViewed
+						}
+						if p.LastOutput > s.Panes[i].LastOutput {
+							s.Panes[i].LastOutput = p.LastOutput
+						}
+						break
+					}
+				}
+				break
+			}
 			*s = loaded
 			s.Title = title
 			s.Note = note
@@ -865,6 +949,137 @@ func (m *OS) navExpanded(key string, def bool) bool {
 
 // navigatorRows is the list as it is drawn: the tree, or with a search the
 // panes that match, best first.
+// navPaneStamp is the recency stamp the sort in force reads for one pane.
+func (m *OS) navPaneStamp(si, pi int) int64 {
+	return navStampOf(m.navigator.sort, &m.navigator.sessions[si].Panes[pi])
+}
+
+// navSessionOrder lists the session indices in the order the sort in force
+// asks for: position, or most recently used first.
+func (m *OS) navSessionOrder() []int {
+	idx := make([]int, len(m.navigator.sessions))
+	for i := range idx {
+		idx[i] = i
+	}
+	if m.navigator.sort == config.NavigatorSortPosition {
+		return idx
+	}
+	slices.SortStableFunc(idx, func(a, b int) int {
+		sa, sb := m.navSessionStamp(a), m.navSessionStamp(b)
+		switch {
+		case sa > sb:
+			return -1
+		case sa < sb:
+			return 1
+		}
+		return 0
+	})
+	return idx
+}
+
+// navSessionStampOf is the most recent stamp among a session's panes, for
+// the drawing code that holds the session rather than its index.
+func (m *OS) navSessionStampOf(s *navSession) int64 {
+	var best int64
+	for pi := range s.Panes {
+		if st := navStampOf(m.navigator.sort, &s.Panes[pi]); st > best {
+			best = st
+		}
+	}
+	return best
+}
+
+// navSessionStamp is the most recent stamp among a session's panes.
+func (m *OS) navSessionStamp(si int) int64 {
+	return m.navSessionStampOf(&m.navigator.sessions[si])
+}
+
+// navGroupStamp is the most recent stamp among panes, for ordering the
+// groups that hold them. Zero means nothing is known yet.
+func (m *OS) navGroupStamp(si int, pis []int) int64 {
+	var best int64
+	for _, pi := range pis {
+		if st := m.navPaneStamp(si, pi); st > best {
+			best = st
+		}
+	}
+	return best
+}
+
+// navDescByStamp orders pane indices most recently used first. The sort is
+// stable, so position is the tie break, and an unstamped pane sits last.
+func (m *OS) navDescByStamp(si int, pis []int) {
+	slices.SortStableFunc(pis, func(a, b int) int {
+		sa, sb := m.navPaneStamp(si, a), m.navPaneStamp(si, b)
+		switch {
+		case sa > sb:
+			return -1
+		case sa < sb:
+			return 1
+		}
+		return 0
+	})
+}
+
+// navRowsSortedByStamp orders pane rows most recently used first, by the
+// sort in force. The sort is stable, so the position order the rows were
+// built in is the tie break, and a pane with no stamp yet sits at the end.
+func (m *OS) navRowsSortedByStamp(rows []navRow) []navRow {
+	stamp := func(r navRow) int64 {
+		if r.Kind != navRowPane {
+			return 0
+		}
+		return navStampOf(m.navigator.sort, &m.navigator.sessions[r.Session].Panes[r.Pane])
+	}
+	slices.SortStableFunc(rows, func(a, b navRow) int {
+		sa, sb := stamp(a), stamp(b)
+		switch {
+		case sa > sb:
+			return -1
+		case sa < sb:
+			return 1
+		}
+		return 0
+	})
+	return rows
+}
+
+// navPaneOrder lists a workspace's pane indices in the order the sort in
+// force asks for: position order, or most recently used first.
+func (m *OS) navPaneOrder(s *navSession, si, ws int) []int {
+	var idx []int
+	for pi := range s.Panes {
+		if s.Panes[pi].Workspace == ws {
+			idx = append(idx, pi)
+		}
+	}
+	if m.navigator.sort != config.NavigatorSortPosition {
+		m.navDescByStamp(si, idx)
+	}
+	return idx
+}
+
+// navWorkspaceOrder lists a session's workspaces in the order the sort in
+// force asks for: numeric, or most recently used first.
+func (m *OS) navWorkspaceOrder(s *navSession, si int) []int {
+	out := s.workspaces()
+	if m.navigator.sort == config.NavigatorSortPosition {
+		return out
+	}
+	slices.SortStableFunc(out, func(a, b int) int {
+		sa := m.navGroupStamp(si, m.navPaneOrder(s, si, a))
+		sb := m.navGroupStamp(si, m.navPaneOrder(s, si, b))
+		switch {
+		case sa > sb:
+			return -1
+		case sa < sb:
+			return 1
+		}
+		return 0
+	})
+	return out
+}
+
 func (m *OS) navigatorRows() []navRow {
 	if m.navSearch() {
 		return m.navigatorSearchRows()
@@ -887,23 +1102,26 @@ func (m *OS) navigatorRows() []navRow {
 				}
 			}
 		}
+		if m.navigator.sort != config.NavigatorSortPosition {
+			// Most recently used first. The stable sort keeps the position
+			// order for ties, and a pane with no stamp yet sits at the end.
+			rows = m.navRowsSortedByStamp(rows)
+		}
 		return rows
 	}
-	for si := range m.navigator.sessions {
+	for _, si := range m.navSessionOrder() {
 		s := &m.navigator.sessions[si]
 		rows = append(rows, navRow{Kind: navRowSession, Session: si})
 		if !m.navExpanded(s.key(), s.Current) {
 			continue
 		}
-		for _, ws := range s.workspaces() {
+		for _, ws := range m.navWorkspaceOrder(s, si) {
 			rows = append(rows, navRow{Kind: navRowWorkspace, Session: si, Workspace: ws})
 			if !m.navExpanded(s.key()+"\x00ws"+strconv.Itoa(ws), true) {
 				continue
 			}
-			for pi, p := range s.Panes {
-				if p.Workspace == ws {
-					rows = append(rows, navRow{Kind: navRowPane, Session: si, Workspace: ws, Pane: pi})
-				}
+			for _, pi := range m.navPaneOrder(s, si, ws) {
+				rows = append(rows, navRow{Kind: navRowPane, Session: si, Workspace: ws, Pane: pi})
 			}
 		}
 	}

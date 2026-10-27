@@ -794,6 +794,14 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 			},
 		},
 		{
+			Name:     "Layout: stacked",
+			Category: "Layout",
+			Action: func(m *OS) (*OS, tea.Cmd) {
+				m.EnableStackedLayout()
+				return m, nil
+			},
+		},
+		{
 			Name:     "Layout: scrolling (niri-style)",
 			Category: "Layout",
 			Action: func(m *OS) (*OS, tea.Cmd) {
@@ -1028,7 +1036,7 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 					state = "on"
 				}
 				m.ShowNotification("Sidebar "+state, "success", s.NotificationDuration)
-				return m, nil
+				return m, m.persistSettings()
 			},
 		},
 		{

@@ -219,6 +219,15 @@ func withSidebar(t *testing.T, enabled bool, pos string, width int) {
 	})
 }
 
+// withSidebarHeaderCase makes the rail's section headings uppercase for one
+// test and puts it back.
+func withSidebarHeaderCase(t *testing.T) {
+	t.Helper()
+	prev := config.Global.RailHeaderCase
+	config.Global.RailHeaderCase = config.RailHeaderUppercase
+	t.Cleanup(func() { config.Global.RailHeaderCase = prev })
+}
+
 // railFixtureWidth is the rail width the rail's row tests were measured at,
 // the shipped width before v0.8.0. The shipped width is now 24, where an
 // agent row's second line and the files section's read-only mark are cut

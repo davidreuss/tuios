@@ -25,6 +25,10 @@ type PanesConfig struct {
 	// type, so prefix / then the name finds a pane (default: false, the list).
 	// esc with nothing typed then closes it.
 	NavigatorSearch bool `toml:"navigator_search"`
+	// NavigatorSort is the order the navigator lists panes in when it
+	// opens: position, viewed or activity (default: position). The s key
+	// changes it while the navigator is open.
+	NavigatorSort string `toml:"navigator_sort"`
 }
 
 // The pane navigator's layouts.
@@ -44,6 +48,23 @@ const (
 // v key steps through them.
 var NavigatorLayouts = []string{NavigatorLayoutTree, NavigatorLayoutFlat, NavigatorLayoutCards}
 
+// The pane navigator's sorts.
+const (
+	// NavigatorSortPosition is the arrangement on screen, the default: the
+	// order the panes sit in.
+	NavigatorSortPosition = "position"
+	// NavigatorSortViewed is most recently viewed first: when the person
+	// last had each pane in front of them.
+	NavigatorSortViewed = "viewed"
+	// NavigatorSortActivity is most recently active first: when each pane
+	// last wrote output, whatever wrote it.
+	NavigatorSortActivity = "activity"
+)
+
+// NavigatorSorts is the accepted navigator_sort values, in the order the s
+// key steps through them.
+var NavigatorSorts = []string{NavigatorSortPosition, NavigatorSortViewed, NavigatorSortActivity}
+
 // NavigatorLayoutInUse is the effective navigator layout. An unknown value
 // is the tree.
 func (p PanesConfig) NavigatorLayoutInUse() string {
@@ -56,6 +77,18 @@ func (p PanesConfig) NavigatorLayoutInUse() string {
 	return NavigatorLayoutTree
 }
 
+// NavigatorSortInUse is the effective navigator sort. An unknown value is
+// the position sort.
+func (p PanesConfig) NavigatorSortInUse() string {
+	v := strings.ToLower(strings.TrimSpace(p.NavigatorSort))
+	for _, s := range NavigatorSorts {
+		if v == s {
+			return s
+		}
+	}
+	return NavigatorSortPosition
+}
+
 // PanesDefaultLabelKeys is the default label keys. Digits, as tmux's
 // display-panes uses, so the first nine labels are the numbers
 // select_window_1 to select_window_9 already give the same panes.
@@ -63,7 +96,10 @@ const PanesDefaultLabelKeys = "1234567890"
 
 // defaultPanesConfig returns the section DefaultConfig carries.
 func defaultPanesConfig() PanesConfig {
-	return PanesConfig{LabelKeys: PanesDefaultLabelKeys, NavigatorLayout: NavigatorLayoutTree}
+	return PanesConfig{
+		LabelKeys: PanesDefaultLabelKeys, NavigatorLayout: NavigatorLayoutTree,
+		NavigatorSort: NavigatorSortPosition,
+	}
 }
 
 // fillMissingPanes fills an absent value with its default.
@@ -73,6 +109,9 @@ func fillMissingPanes(cfg, defaultCfg *UserConfig) {
 	}
 	if strings.TrimSpace(cfg.Panes.NavigatorLayout) == "" {
 		cfg.Panes.NavigatorLayout = defaultCfg.Panes.NavigatorLayout
+	}
+	if strings.TrimSpace(cfg.Panes.NavigatorSort) == "" {
+		cfg.Panes.NavigatorSort = defaultCfg.Panes.NavigatorSort
 	}
 }
 

@@ -86,6 +86,8 @@ func handleNavigatorInput(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		o.NavigatorToggle()
 	case "v":
 		o.NavigatorCycleLayout()
+	case "s":
+		o.NavigatorCycleSort()
 	}
 	return o, nil
 }

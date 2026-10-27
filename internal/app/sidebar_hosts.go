@@ -791,7 +791,7 @@ func (m *OS) drawHostRow(
 			labelW := sidebarHeaderLabelW(m.Settings.GetRailFoldOpenGlyph()+" "+node.Title, nil)
 			if tok, span, ok := sidebarHeaderAdd(sidebarRowGlobalNew, cw, labelW, pal,
 				headerHoverX, isCursor(sidebarRowGlobalNew, GlobalSessionName, ""), &m.Settings,
-				sidebarRowBg(st, pal)); ok {
+				m.sidebarRowBg(st, pal)); ok {
 				add = tok
 				recordToken(span, GlobalSessionName)
 			}
@@ -816,7 +816,7 @@ func (m *OS) drawHostRow(
 			if kind != sidebarRowNewSession || canCreate {
 				if tok, span, ok := sidebarHeaderAdd(kind, cw, labelW, pal,
 					headerHoverX, isCursor(kind, id, ""), &m.Settings,
-					sidebarRowBg(st, pal)); ok {
+					m.sidebarRowBg(st, pal)); ok {
 					add = tok
 					recordToken(span, id)
 				}
@@ -1007,7 +1007,7 @@ func (m *OS) sidebarHostRow(node sessiontree.Node, cw int, pal overlay.Palette, 
 // keyboard cursor or the pointer when lit is true. It is then underlined, as
 // a link is, and keeps its colour.
 func (m *OS) sidebarHostRowLit(node sessiontree.Node, cw int, pal overlay.Palette, add string, st sidebarRowState, collapsed, lit bool) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 	up := node.HostStatus == string(federation.StatusUp)
 
 	blocked, worst := m.hostAttention(node.Host)
@@ -1125,7 +1125,7 @@ func (m *OS) sidebarHostRowLit(node sessiontree.Node, cw int, pal overlay.Palett
 // The count takes the same gate a local session row's count takes: a rail too
 // narrow for a name and a number keeps the name.
 func (m *OS) sidebarRemoteSessionRow(node sessiontree.Node, cw, variant int, pal overlay.Palette, st sidebarRowState, showCounts bool) string {
-	rowBg := sidebarRowBg(st, pal)
+	rowBg := m.sidebarRowBg(st, pal)
 	right, rightW := "", 0
 	if m.Settings.SidebarShowCounts && showCounts && node.WindowCount > 0 && variant == sidebarVariantFull {
 		count := strconv.Itoa(node.WindowCount)

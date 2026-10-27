@@ -61,7 +61,7 @@ import (
 // gh, and nothing when there is none. $now, $prompt and $context draw the raw
 // value on any row. progress draws "40%", the progress of the pane's OSC 7501
 // report, while the program works or waits, on the identity line.
-var SidebarAgentRowTokens = []string{"harness", "name", "state", "progress", "elapsed", "need", "now", "prompt", "context", "subagents", "pr", "meta", "message", "session", "host"}
+var SidebarAgentRowTokens = []string{"harness", "name", "state", "progress", "elapsed", "need", "now", "prompt", "context", "subagents", "pr", "meta", "message", "session", "host", "workspace", "location"}
 
 // SidebarAgentRowDefaultTokens is the row as it ships. state and host are left
 // out because both have a value on every row and the glyph already says the
@@ -73,8 +73,13 @@ var SidebarAgentRowTokens = []string{"harness", "name", "state", "progress", "el
 // session's branch and its checks, meta whatever else the pane
 // reported through set-agent-meta, which is nothing unless a hook or
 // statusline feed writes it, and now what a working agent is doing ("Bash: go
-// test ./..."). now comes last because the line cuts its last token first,
-// and a long command is what can best lose its tail.
+// test ./..."). workspace and location stay off the shipped row: workspace
+// earns its cells only on a workspace that has a name, and location prints the
+// [session:workspace] address the switch keys use, numbers that churn as
+// sessions come and go. Add either back to the token list when they mean
+// something to you. now comes last because the
+// line cuts its last token first, and a long command is what can best lose its
+// tail.
 var SidebarAgentRowDefaultTokens = []string{"session", "need", "harness", "name", "progress", "elapsed", "context", "subagents", "pr", "meta", "now", "message"}
 
 // SidebarContextWarnAt is the percent of its context window an agent must be

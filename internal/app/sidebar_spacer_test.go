@@ -127,6 +127,7 @@ func TestSpacerGivesUpItsLinesFirst(t *testing.T) {
 // across its lines in sidebarPanelLinesForTree. The wheel over the gap scrolls
 // nothing and the offset stays at 0.
 func TestWheelOverASpacerScrollsTheSectionAboveIt(t *testing.T) {
+	withSidebarHeaderCase(t)
 	dir := fileViewTree(t)
 	// The spacer is above the section the rail pins to its bottom edge, so the
 	// gap it makes is not the pinned block's floating blank: that one already
@@ -143,7 +144,7 @@ func TestWheelOverASpacerScrollsTheSectionAboveIt(t *testing.T) {
 
 	// The middle of the gap the spacer made, which is the run of blanks under
 	// the sessions section.
-	at := lineOf(plain, "terminals")
+	at := lineOf(plain, "TERMINALS")
 	if at < 0 {
 		t.Fatalf("no terminals section:\n%s", strings.Join(plain, "\n"))
 	}

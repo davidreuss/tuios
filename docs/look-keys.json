@@ -998,6 +998,7 @@
       "accepted": [
         "bsp",
         "master-stack",
+        "stacked",
         "scrolling"
       ]
     },

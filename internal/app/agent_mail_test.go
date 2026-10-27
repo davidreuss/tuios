@@ -83,13 +83,14 @@ func TestMailToThePersonIsAnnouncedAndCounted(t *testing.T) {
 // TestRailShowsUnreadMail: the agents header carries the person's count, and
 // an agent row carries its own.
 func TestRailShowsUnreadMail(t *testing.T) {
+	withSidebarHeaderCase(t)
 	m, tree := sectionsTestOS(t, 120, 30)
 	m.noteAgentMail(session.AgentMailPayload{Message: mail(1, "cccccccc3333", "build", session.AgentInboxHuman, "human", "q", "q?")})
 	m.noteAgentMail(session.AgentMailPayload{Message: mail(2, "cccccccc3333", "build", "bbbbbbbb2222", "refactor", "retest", "please")})
 	m.noteAgentMail(session.AgentMailPayload{Message: mail(3, "cccccccc3333", "build", "bbbbbbbb2222", "refactor", "again", "please")})
 
 	lines := railPlain(t, m, tree)
-	header := lineOf(lines, "agents")
+	header := lineOf(lines, "AGENTS")
 	if header < 0 {
 		t.Fatalf("no agents header:\n%s", strings.Join(lines, "\n"))
 	}

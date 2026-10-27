@@ -1243,7 +1243,11 @@ func (m *OS) View() tea.View {
 	view.ReportFocus = true
 	m.notePaneFocus()
 	view.DisableBracketedPasteMode = false
-	view.KeyboardEnhancements = m.keyboardEnhancements()
+	// A new query during detach can deliver its reply to the outer shell.
+	if !m.detaching {
+		m.lastKeyboardEnhancements = m.keyboardEnhancements()
+	}
+	view.KeyboardEnhancements = m.lastKeyboardEnhancements
 	// With no cursor shown, the cursor is parked hidden at the caret, so an
 	// input method opens its window there. See cursor_park.go.
 	var cursorShown bool
