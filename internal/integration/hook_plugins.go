@@ -165,11 +165,12 @@ func piTurnStart(id, event string, p fields) (Decision, bool) {
 //	agent_start             working
 //	agent_settled           done
 //	tool_call               working, activity: the tool and what it acts on.
-//	                        Sent by version 3 installs only; version 4
-//	                        reports the task instead of tool churn.
+//	                        Sent by per-tool installs (upstream's version 3);
+//	                        the task-reporting install (version 5) sends
+//	                        the prompt instead of tool churn.
 //	tool_result             working, activity: tool_done or, when isError,
-//	                        tool_failed with the first error text (version
-//	                        3 installs only)
+//	                        tool_failed with the first error text (same
+//	                        per-tool installs only)
 //	prompt                  working, activity: the task the turn is on, from
 //	                        before_agent_start's prompt
 //	ui_prompt_start         needs_input: kind approval for a confirm, kind
