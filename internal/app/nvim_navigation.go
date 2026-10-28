@@ -121,9 +121,9 @@ func (m *OS) FocusTerminalDirection(direction string) int {
 		if focused := m.GetFocusedWindow(); focused != nil {
 			focused.InvalidateCache()
 		}
-	} else {
-		m.enterRailAtEdge(direction)
 	}
+	// Fork: the rail is entered by its own binding, never by a focus key
+	// running out of panes at the layout edge.
 	return previous
 }
 

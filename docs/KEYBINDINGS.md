@@ -153,8 +153,7 @@ on a terminal too.
 
 ## Editing sidebar files
 
-Focus the sidebar with `s` in window mode or `Ctrl+B e`, or walk into it with
-the terminal-mode focus keys from the outermost window (see Moving focus), then
+Focus the sidebar with `s` in window mode or `Ctrl+B e`, then
 select a file.
 With both sidebar edges visible, `e` while the sidebar has keyboard focus
 switches focus to the other edge; press it again to return. `Ctrl+B H` toggles

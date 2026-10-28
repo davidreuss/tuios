@@ -8,22 +8,22 @@ import (
 	"github.com/Gaurav-Gosain/tuitest"
 )
 
-// The terminal focus keys walk from the outermost pane into the rail on that
-// edge, and the opposite key walks back out to the panes. Before, the key did
-// nothing at the edge and the rail took a leader chord or window mode's s.
+// The terminal focus keys stop at the layout edge and never hand the keyboard
+// to the rail; the rail is entered by its own binding (Ctrl+B e), and the
+// opposite focus key walks back out to the panes. Before the fork, the edge
+// keys walked on into the rail, which made pane navigation land on the rail by
+// accident.
 //
 // The dock's mode pill says SIDEBAR while the rail owns the keyboard, which is
 // what this reads. A command typed after leaving proves the keyboard is back on
 // a pane rather than swallowed by the rail.
 //
-// NEGATIVE CONTROL: with the enterRailAtEdge call cut from
-// FocusTerminalDirection, alt+right on the rightmost pane leaves the pill on
-// Terminal mode and the test fails waiting for SIDEBAR. With the
+// NEGATIVE CONTROL: with the enterRailAtEdge call restored to
+// FocusTerminalDirection, alt+right on the rightmost pane turns the pill to
+// SIDEBAR and the test fails waiting for it to stay on Terminal mode. With the
 // LeaveRailToward check cut from handleSidebarKey, alt+left is swallowed by the
-// rail and the test fails waiting for the pill to drop SIDEBAR. With it cut
-// from FocusTerminalDirection, ctrl+b left moves pane focus while the rail
-// keeps the keyboard, and the test fails the same way.
-func TestFocusKeysWalkIntoAndOutOfRail(t *testing.T) {
+// rail and the test fails waiting for the pill to drop SIDEBAR.
+func TestFocusKeysStopAtEdgeAndRailNeedsItsBinding(t *testing.T) {
 	const session = "focus-rail-edge"
 	term, base := railClient(t, session, "[appearance.sidebar]\nenabled = true\nposition = \"right\"\nwidth = 28\n", startOpts{cols: 140, rows: 40})
 	newWindow(t, term)
@@ -61,23 +61,27 @@ func TestFocusKeysWalkIntoAndOutOfRail(t *testing.T) {
 	}
 	railStaysOut(t, term, "alt+right into a pane also entered the rail")
 
-	// Into the rail: the rightmost pane runs into the rail's edge.
+	// The edge the rail sits on stops the key too: focus stays on the pane and
+	// the keyboard stays in terminal mode.
 	send(t, term, tuitest.Alt(tuitest.Right))
-	waitText(t, term, "the mode pill after alt+right on the rightmost pane", "SIDEBAR")
+	railStaysOut(t, term, "alt+right on the rightmost pane entered the rail")
 	if _, f := focusedLayout(t, base, session); f != cur {
-		t.Fatalf("entering the rail moved pane focus from %s to %s", cur[:8], f[:8])
+		t.Fatalf("the edge key moved pane focus from %s to %s", cur[:8], f[:8])
 	}
-	saveFrame(t, term, "rail-entered")
+	saveFrame(t, term, "edge-stopped")
 
-	// And back out, onto the pane it was entered from.
+	// Into the rail by its own binding, and back out onto the pane the keys
+	// ran out from.
+	send(t, term, tuitest.Ctrl('b'), 'e')
+	waitText(t, term, "the mode pill after ctrl+b e", "SIDEBAR")
 	send(t, term, tuitest.Alt(tuitest.Left))
 	leaveRail(t, term, base, session, cur, "alt+left", "BACK")
 	saveFrame(t, term, "rail-left")
 
-	// The prefix arrows take the same path in and out. The rail swallows no
+	// The prefix arrows take the same path out. The rail swallows no
 	// prefix key, so leaving rests on FocusTerminalDirection alone.
-	send(t, term, tuitest.Ctrl('b'), tuitest.Right)
-	waitText(t, term, "the mode pill after ctrl+b right on the rightmost pane", "SIDEBAR")
+	send(t, term, tuitest.Ctrl('b'), 'e')
+	waitText(t, term, "the mode pill after the second ctrl+b e", "SIDEBAR")
 	send(t, term, tuitest.Ctrl('b'), tuitest.Left)
 	leaveRail(t, term, base, session, cur, "ctrl+b left", "PREFIX")
 	saveFrame(t, term, "rail-left-prefix")

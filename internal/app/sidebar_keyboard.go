@@ -129,28 +129,8 @@ func railEdgeToward(direction string) (sidebarEdge, bool) {
 	return 0, false
 }
 
-// enterRailAtEdge gives the keyboard to the rail on the edge a focus key ran
-// into from the outermost pane, so the focus keys walk on into the rail
-// instead of stopping. A hidden rail is not revealed: there is nothing on that
-// edge to walk into.
-func (m *OS) enterRailAtEdge(direction string) {
-	edge, ok := railEdgeToward(direction)
-	if !ok || m.sidebarWidthFor(m.sidebarPreferredWidth()) == 0 {
-		return
-	}
-	if m.legacySidebarEdge() == edge {
-		m.EnterSidebarFocus()
-		return
-	}
-	if m.secondarySidebarWidth() > 0 {
-		m.EnterSidebarFocus()
-		m.FocusOtherSidebar()
-	}
-}
-
 // LeaveRailToward returns the keyboard to the panes when a focus key points
-// from the focused rail back at them, the way enterRailAtEdge came in. It
-// reports whether it left.
+// from the focused rail back at them. It reports whether it left.
 func (m *OS) LeaveRailToward(direction string) bool {
 	if !m.SidebarFocused {
 		return false
