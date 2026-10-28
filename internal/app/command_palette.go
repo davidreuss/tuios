@@ -1225,6 +1225,16 @@ func GetCommandPaletteItems(s *config.Settings) []CommandPaletteItem {
 			},
 		},
 		{
+			Name:     "All windows: every window of every session in one panel",
+			Shortcut: "prefix+t w",
+			Bind:     "window_prefix_list",
+			Category: "Windows",
+			Action: func(m *OS) (*OS, tea.Cmd) {
+				m.OpenAggregateView()
+				return m, nil
+			},
+		},
+		{
 			Name:     "Hints: label text on the pane to copy it",
 			Shortcut: "prefix+F",
 			Bind:     "hints",

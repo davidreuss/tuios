@@ -1448,6 +1448,11 @@ func DefaultConfig() *UserConfig {
 				"window_prefix_prev":   {"shift+tab"},
 				"window_prefix_tiling": {"t"},
 				"window_prefix_float":  {"f"},
+				// w lists the windows: one panel over every session, where the
+				// panes an agent started for watches and builds sit named for
+				// their purpose. The presets' pane modes take l, j and k for
+				// focus moves, so the list goes on the letter no preset wants.
+				"window_prefix_list": {"w"},
 				"window_prefix_cancel": {"esc"},
 			},
 			MinimizePrefix: map[string][]string{
@@ -3724,6 +3729,8 @@ var yieldingDefaults = map[string]bool{
 	"new_worktree": true,
 	// I after the prefix, new with the return notes.
 	"set_note": true,
+	// w in window mode, new with the all-windows panel.
+	"window_prefix_list": true,
 	// p in window mode, new in the release after v0.8.2.
 	"toggle_pip": true,
 	// V after the prefix, new in the release after v0.8.2.
