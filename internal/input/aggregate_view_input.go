@@ -7,6 +7,12 @@ import (
 	"github.com/Gaurav-Gosain/tuios/internal/app"
 )
 
+// handleAllWindows is the window_prefix_list action: the all-windows panel.
+func handleAllWindows(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+	o.OpenAggregateView()
+	return o, nil
+}
+
 // handleAggregateViewInput handles keyboard input when the aggregate view is open.
 func handleAggregateViewInput(msg tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	// The selection moves and the renderer scrolls to keep it in view, which is

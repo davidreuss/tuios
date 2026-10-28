@@ -331,6 +331,14 @@ click on a session or a workspace opens or closes it.
 `tuios list-windows --all --text 40 --json` prints the same rows for a script.
 See [CLI_REFERENCE.md](CLI_REFERENCE.md#tuios-list-windows).
 
+### All windows
+
+`Ctrl+B t w` opens the all-windows panel, the picker the dock's overflow
+uses. It lists every window of every session with its workspace and state,
+and enter jumps to it. The action is `window_prefix_list`. Watch panes an
+agent started are named for their purpose, so the panel is where you find
+them from any session.
+
 ### Go to anything
 
 `Ctrl+B G` opens the go-to picker. It lists every place you can go in one list: agents, sessions, the workspaces of each session, and panes. The action is `goto_picker`. The command palette has it as "Go to: an agent, session, workspace or pane".

@@ -1022,6 +1022,7 @@ var ActionDescriptions = map[string]string{
 	"window_prefix_prev":   "Focus the previous window",
 	"window_prefix_tiling": "Turn tiling on or off",
 	"window_prefix_float":  "Float the pane or tile it. A TML popup becomes a pane, and a TML pane a popup",
+	"window_prefix_list":   "Show every window of every session in one panel",
 	"prefix_tuios":         "Open the tuios menu: the tuios keys a preset moved",
 	"open_keybind_presets": "Choose the keys: tuios, tmux, screen or zellij",
 }
