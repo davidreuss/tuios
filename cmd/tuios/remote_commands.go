@@ -255,6 +255,7 @@ type newWindowOptions struct {
 	keepOpen bool
 	wait     bool
 	timeout  int
+	watch    bool
 }
 
 // runNewWindow opens a window in a session and reports its id, which is the
@@ -290,6 +291,9 @@ func runNewWindow(o newWindowOptions) error {
 	}
 	if o.keepOpen {
 		params["keep_open"] = true
+	}
+	if o.watch {
+		params["watch"] = true
 	}
 	call := client.Call
 	if o.wait {

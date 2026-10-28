@@ -272,6 +272,10 @@ type WindowState struct {
 	// of type scratch. A session has at most one scratch pane per name. It is
 	// the daemon's, like Scratch.
 	ScratchName string `json:"scratch_name,omitempty"`
+	// Watch marks a pane a watch run owns: the stacked layout tiles watch
+	// panes in a column of their own beside the other panes. It is set at
+	// creation and is the daemon's, like Scratch.
+	Watch bool `json:"watch,omitempty"`
 	// Stack and StackIndex put the window in a stack: panes that share one
 	// tile of the split tree, one open and the others as title rows. Every
 	// client lays the stack out from them, as from IsFloating, so a client

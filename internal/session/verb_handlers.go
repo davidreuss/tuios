@@ -300,6 +300,9 @@ func (d *Daemon) verbNewWindow(cs *connState, params json.RawMessage) (any, *ver
 		// Kind and URI make a window a renderer draws natively.
 		Kind string `json:"kind"`
 		URI  string `json:"uri"`
+		// Watch marks a pane a watch run owns, for the stacked layout's
+		// watch column.
+		Watch bool `json:"watch"`
 	}
 	if verr := decodeParams(params, &p); verr != nil {
 		return nil, verr
@@ -402,6 +405,7 @@ func (d *Daemon) verbNewWindow(cs *connState, params json.RawMessage) (any, *ver
 		Env:         env,
 		Kind:        p.Kind,
 		URI:         p.URI,
+		Watch:       p.Watch,
 	}, onExit)
 	if bverr != nil {
 		return nil, bverr

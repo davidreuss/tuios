@@ -240,6 +240,9 @@ type NewWindowOptions struct {
 	Scratch bool
 	// ScratchName is the scratch pane's name. See WindowState.ScratchName.
 	ScratchName string
+	// Watch marks a pane a watch run owns, for the stacked layout's watch
+	// column. See WindowState.Watch.
+	Watch bool
 	// stdout, when set, is the process's standard output in place of the PTY.
 	// See createPTY. It is unexported: only the popup verb's capture sets it.
 	stdout *os.File
@@ -544,6 +547,7 @@ func (s *Session) AddDaemonWindowWith(opts NewWindowOptions, onExit func(ptyID s
 			PopupDim:    opts.PopupDim,
 			Scratch:     scratch,
 			ScratchName: scratchName,
+			Watch:       opts.Watch,
 			Kind:        opts.Kind,
 			URI:         opts.URI,
 		}

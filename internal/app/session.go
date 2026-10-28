@@ -109,6 +109,7 @@ func (m *OS) BuildSessionState() *session.SessionState {
 			PopupDim:    w.PopupDim,
 			Scratch:     w.IsScratch,
 			ScratchName: w.ScratchName,
+			Watch:       w.IsWatch,
 			Stack:       w.Stack,
 			StackIndex:  w.StackIndex,
 			Kind:        w.Kind,
@@ -1326,6 +1327,7 @@ func (m *OS) updateWindowFromState(w *terminal.Window, ws *session.WindowState) 
 	w.PopupPlaced = ws.PopupPlaced
 	w.IsScratch = ws.Scratch
 	w.ScratchName = ws.ScratchName
+	w.IsWatch = ws.Watch
 	w.Stack, w.StackIndex = ws.Stack, ws.StackIndex
 	w.Kind, w.URI = ws.Kind, ws.URI
 	w.PopupWidth = ws.PopupWidth
@@ -1468,6 +1470,7 @@ func adoptWindowState(window *terminal.Window, ws session.WindowState) {
 	window.IsPopup = ws.Popup
 	window.IsScratch = ws.Scratch
 	window.ScratchName = ws.ScratchName
+	window.IsWatch = ws.Watch
 	window.Stack, window.StackIndex = ws.Stack, ws.StackIndex
 	window.Kind, window.URI = ws.Kind, ws.URI
 	window.PopupWidth = ws.PopupWidth

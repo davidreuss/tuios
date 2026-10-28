@@ -234,6 +234,66 @@ func CalculateStackedLayout(n int, focused int, screenWidth int, usableHeight in
 	return layouts
 }
 
+// CalculateStackedWatchLayout lays the panes out as the stacked tiler does
+// when some of them are watch panes: the ordinary panes keep the accordion in
+// a column on the left, and the watch panes share a column on the right, one
+// above the other at equal heights, so every run stays visible at once. With
+// no watch panes this is CalculateStackedLayout, unchanged.
+//
+// isWatch says pane by pane, in slot order, which ones are watch panes;
+// focused is a slot index into the same order. When the focused pane is a
+// watch, the accordion in the left column expands its first pane, so the
+// column keeps a readable shape while a watch holds the focus. Watch panes
+// never expand: their column splits evenly whatever the focus does.
+func CalculateStackedWatchLayout(isWatch []bool, focused int, screenWidth int, usableHeight int, topMargin int, gap int) []TileLayout {
+	watchCount := 0
+	for _, w := range isWatch {
+		if w {
+			watchCount++
+		}
+	}
+	if watchCount == 0 || watchCount == len(isWatch) {
+		return CalculateStackedLayout(len(isWatch), focused, screenWidth, usableHeight, topMargin, gap)
+	}
+
+	ordinary := make([]int, 0, len(isWatch)-watchCount)
+	watches := make([]int, 0, watchCount)
+	for i, w := range isWatch {
+		if w {
+			watches = append(watches, i)
+		} else {
+			ordinary = append(ordinary, i)
+		}
+	}
+
+	// A third of the screen for watches, bounded so neither column starves:
+	// watch output is log lines that want width, and so does the pane a
+	// person works in.
+	watchWidth := screenWidth / 3
+	watchWidth = max(12, min(watchWidth, screenWidth-24))
+	ordinaryWidth := max(1, screenWidth-watchWidth-gap)
+	watchX := ordinaryWidth + gap
+
+	layouts := make([]TileLayout, len(isWatch))
+
+	focusedOrdinary := 0
+	if focused >= 0 && focused < len(isWatch) && !isWatch[focused] {
+		for slot, i := range ordinary {
+			if i == focused {
+				focusedOrdinary = slot
+				break
+			}
+		}
+	}
+	for slot, rect := range CalculateStackedLayout(len(ordinary), focusedOrdinary, ordinaryWidth, usableHeight, topMargin, gap) {
+		layouts[ordinary[slot]] = rect
+	}
+	for slot, s := range spans(0, usableHeight, len(watches), gap) {
+		layouts[watches[slot]] = TileLayout{X: watchX, Y: topMargin + s.Pos, Width: watchWidth, Height: s.Size}
+	}
+	return layouts
+}
+
 func CalculateMasterStackLayout(n int, screenWidth int, usableHeight int, topMargin int, masterRatio, stackRatio float64, gap int) []TileLayout {
 	return CalculateMasterLayout(n, screenWidth, usableHeight, topMargin, MasterParams{
 		Position:   config.MasterPositionLeft,

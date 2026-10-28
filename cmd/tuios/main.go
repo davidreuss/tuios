@@ -1202,6 +1202,7 @@ It also needs the respond grant.`,
 	var newWindowKind, newWindowURI string
 	var newWindowKeepOpen, newWindowWait bool
 	var newWindowTimeout int
+	var newWindowWatch bool
 	newWindowCmd := &cobra.Command{
 		Use:   "new-window [name] [command...]",
 		Short: "Open a new window in a session",
@@ -1284,6 +1285,7 @@ window as one line with its uri.`,
 				focus: !newWindowNoFocus, command: command, host: newWindowHost, grants: newWindowGrants,
 				kind: newWindowKind, uri: newWindowURI, jsonOut: newWindowJSON, printID: newWindowPrintID,
 				keepOpen: newWindowKeepOpen, wait: newWindowWait, timeout: newWindowTimeout,
+				watch: newWindowWatch,
 			})
 		},
 	}
@@ -1298,6 +1300,7 @@ window as one line with its uri.`,
 	newWindowCmd.Flags().StringVar(&newWindowKind, "kind", "", "What draws the window: terminal, or view, web or app for a native renderer (default: terminal)")
 	newWindowCmd.Flags().StringVar(&newWindowURI, "uri", "", "What a view, web or app window shows, such as tuios://review/<pane>")
 	newWindowCmd.Flags().BoolVar(&newWindowKeepOpen, "keep-open", false, "Keep the window after its program exits, with a line that shows the exit status")
+	newWindowCmd.Flags().BoolVar(&newWindowWatch, "watch", false, "Mark the window as a watch pane: the stacked layout tiles watch panes in a column beside the other panes")
 	newWindowCmd.Flags().BoolVar(&newWindowWait, "wait", false, "Wait for the program to exit, and exit with its status")
 	newWindowCmd.Flags().IntVar(&newWindowTimeout, "timeout", 0, "With --wait: milliseconds to wait before failing (default: no limit)")
 	newWindowCmd.MarkFlagsMutuallyExclusive("json", "print-id")

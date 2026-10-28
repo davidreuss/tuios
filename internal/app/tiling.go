@@ -64,7 +64,11 @@ func (m *OS) stackedTileLayouts(n int) []layout.TileLayout {
 			}
 		}
 	}
-	layouts := layout.CalculateStackedLayout(n, focused, m.PaneWidth(), m.PaneHeight(),
+	isWatch := make([]bool, len(wins))
+	for i, w := range wins {
+		isWatch[i] = w.IsWatch
+	}
+	layouts := layout.CalculateStackedWatchLayout(isWatch, focused, m.PaneWidth(), m.PaneHeight(),
 		m.PaneTop(), m.separatorGap())
 	if x := m.PaneLeft(); x != 0 {
 		for i := range layouts {

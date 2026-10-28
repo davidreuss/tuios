@@ -333,6 +333,10 @@ type Window struct {
 	// ScratchName keys a scratch pane: "scratch" (or empty, from before
 	// names) for the built-in one, the entry's name for a command entry.
 	ScratchName string
+	// IsWatch marks a pane a watch run owns. The stacked layout tiles watch
+	// panes in a column of their own beside the other panes. See
+	// session.WindowState.Watch.
+	IsWatch bool
 	PopupWidth  string
 	PopupHeight string
 	// PopupDim is nil to inherit the popup or modal dim, or an explicit override.
