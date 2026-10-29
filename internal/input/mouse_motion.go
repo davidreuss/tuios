@@ -114,7 +114,10 @@ func handleMouseMotion(msg tea.MouseMotionMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		// The sidebar band tracks hover the same way the overlays do, and
 		// consumes motion over it so the pane it sits in front of never sees it.
 		if o.SidebarActive() && o.SidebarMotion(mouse.X, mouse.Y) {
-			o.ResetPointerShape()
+			// Deduped, not the unconditional reset: motion over the band fires
+			// per event, and an unconditional OSC 22 per event is the flood
+			// that makes the host drop shape writes elsewhere.
+			o.SetPointerShape(app.PointerDefault)
 			return o, nil
 		}
 	}

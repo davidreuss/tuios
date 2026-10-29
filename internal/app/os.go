@@ -1060,6 +1060,19 @@ type OS struct {
 	// currentPointer is the last OSC 22 pointer shape written, to avoid
 	// redundant writes. Per model, since each served client has its own host.
 	currentPointer PointerShape
+	// pointerHealAt is when the next pointer heal is due. Zero arms the first
+	// one at once. See HealPointerShape.
+	pointerHealAt time.Time
+	// pointerSeenAt is when the host last reported a pointer position, set by
+	// NotePointerSeen for every motion including the dropped ones. The heal
+	// reads it as its activity clock.
+	pointerSeenAt time.Time
+	// pointerWrites counts the OSC 22 pointer writes this client sent, deduped
+	// or not. Diagnostics: the flood tests read it through PointerWriteCount.
+	pointerWrites int
+	// lastPointerSeq is the exact escape sequence the last pointer write sent.
+	// The wire-form test reads it.
+	lastPointerSeq string
 	// Keybind registry for user-configurable keybindings
 	KeybindRegistry *config.KeybindRegistry
 	// ConfigWarnings holds the problems found in the loaded config, reported to
