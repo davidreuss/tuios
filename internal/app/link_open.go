@@ -88,27 +88,26 @@ func (m *OS) OpenLink(rawURL string) tea.Cmd {
 		return nil
 	}
 
-	// Our own scheme resolves in-process, so a link tuios itself renders —
-	// in a pane, a dock cell, a pi widget — focuses the pane it names. It
-	// never reaches the desktop's URL handler, so nothing has to be
-	// registered for this to work. A dead target is already reported by the
-	// jump itself, so this branch adds no message of its own.
-	if target, ok := tuiosLinkTarget(rawURL); ok {
-		m.jumpToNotifTarget(target)
-		return nil
+	// A window link resolves the id here, so the 8-char prefix list-windows
+	// prints works and an ambiguous prefix gets its own message. This branch
+	// must answer every tuios://window/... address before the notification
+	// parse below claims it: that parse matches the same shape but resolves
+	// the id exactly, so a short prefix lands as "Source pane closed".
+	if target, ok := parseTuiosLink(rawURL); ok {
+		return m.openWindowLink(target, rawURL)
 	}
 
 	if path, ok := linkFilePath(rawURL); ok {
 		return m.openLocalPath(path, rawURL)
 	}
 
-	// A tuios:// address is an order to tuios itself, not a document for
-	// the desktop. It is handled before the scheme list, which exists to
-	// decide what may leave for the viewer's machine, and nothing about a
-	// window of this session belongs there.
-	if target, ok := parseTuiosLink(rawURL); ok {
-		return m.openWindowLink(target, rawURL)
+	// The cross-session shape goes through the same jump a dock message
+	// uses, since it names a pane of another session.
+	if target, ok := tuiosLinkTarget(rawURL); ok {
+		m.jumpToNotifTarget(target)
+		return nil
 	}
+
 	if strings.HasPrefix(strings.ToLower(rawURL), "tuios:") {
 		m.ShowNotification("tuios did not understand the link. A window link is tuios://window/<id>, or tuios://window/<id>/close.",
 			"warning", m.Settings.NotificationDuration)
