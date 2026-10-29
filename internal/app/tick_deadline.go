@@ -125,6 +125,13 @@ func (m *OS) nextWake(now time.Time) (time.Time, bool) {
 	if m.pointerMotionPending {
 		at(m.motionBudgetFrom().Add(m.framePeriod()))
 	}
+	// The pointer heal, which rewrites the shape the model believes in while
+	// the host reports motion. It follows the pointer: ticking while the
+	// pointer moved recently, dying when it rests, so an idle client keeps
+	// the sleep-until-a-message contract.
+	if !m.MouseOff && !m.pointerSeenAt.IsZero() && now.Sub(m.pointerSeenAt) <= pointerHealWindow {
+		at(m.pointerHealAt)
+	}
 	// What the idle gate finds by looking.
 	if m.tickPolledWork() {
 		at(now.Add(tickPollPeriod))

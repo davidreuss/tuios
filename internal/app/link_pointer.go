@@ -1,6 +1,8 @@
 package app
 
 import (
+	"time"
+
 	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/terminal"
 )
@@ -76,8 +78,11 @@ func (m *OS) PointerOverLink(x, y int) bool {
 // NotePointerSeen records where the host last put the pointer. The motion
 // filter calls it for every motion, including the ones it then drops, so the
 // answer is current wherever the pointer is and not only where a hover lives.
+// The stamp is the pointer-heal's activity clock: the heal ticks while the
+// pointer is in play and lets its chain die when the pointer rests.
 func (m *OS) NotePointerSeen(x, y int) {
 	m.pointerSeenX, m.pointerSeenY = x, y
+	m.pointerSeenAt = time.Now()
 }
 
 // PointerSeen is the position NotePointerSeen last recorded, falling back to

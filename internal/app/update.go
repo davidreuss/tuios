@@ -1293,6 +1293,9 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		// Maintenance tick: animations, dock stats, script playback, process cleanup.
 		// Does NOT trigger rendering unless animations/interactions are active.
 		m.tickStats.Ticks++
+		// The pointer heal runs before the idle gate: a host that lost the last
+		// shape write is exactly the idle state the gate would skip past.
+		m.pointerHealTick(time.Time(msg))
 		m.idleFrameTicker(time.Time(msg))
 		m.releaseEmulatorScratch(time.Time(msg))
 
