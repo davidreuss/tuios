@@ -50,6 +50,10 @@ type Model struct {
 	// DerivedFrom links the close-out record to the thing reviewed (the
 	// daemon copies state.derived_from into the artifact record at close).
 	DerivedFrom string   `json:"derived_from,omitempty"`
+	// BoundContent switches the diff block from baked children to
+	// content="{state.hunk}", the stage-3 binding. Render mode, not
+	// serialized model state.
+	BoundContent bool `json:"-"`
 	BaseSHA   string   `json:"base_sha"`
 	Head      string   `json:"head"`
 	Version   int      `json:"version"`

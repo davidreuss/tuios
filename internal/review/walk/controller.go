@@ -29,6 +29,7 @@ type Controller struct {
 	sock     string // nvim --listen socket
 	session  string // tuios session name
 	surface  string // adopted surface id
+	adopted  bool   // the surface pre-existed and was adopted
 	liveFile string // the baked doc the last replace used
 	log      *os.File
 
@@ -46,6 +47,7 @@ type Options struct {
 	Workspace   string // workspace to open the surface on
 	GuideJSON   []byte // optional guide (story.json shape)
 	SurfaceOnly bool   // skip the nvim pane entirely
+	BakeDoc     bool   // bake-and-replace per step, instead of bound-content patches
 	Takeover    bool   // adopt a surface whose controller is still live
 	DerivedFrom string // artifact-record link (default: the worktree name)
 	LogPath     string
@@ -156,12 +158,18 @@ func StartController(ctx context.Context, opt Options) (*Controller, error) {
 	if opt.DerivedFrom != "" {
 		m.DerivedFrom = opt.DerivedFrom
 	}
+	m.BoundContent = !opt.BakeDoc
 	c.m = m
 	c.st = DefaultState(m)
 	c.logf("model: %d steps, %d commits, base_sha=%s", len(m.Steps), len(m.Commits), m.BaseSHA)
 
 	if err := c.ensureSurface(opt); err != nil {
 		return nil, err
+	}
+	// An adopted surface can carry a stale doc from an earlier review; the
+	// bound-content walk patches state only, so install the structure once.
+	if c.adopted && !opt.BakeDoc {
+		c.replace()
 	}
 	if !opt.SurfaceOnly {
 		c.ensureNvim()
@@ -226,6 +234,7 @@ func (c *Controller) ensureSurface(opt Options) error {
 	}
 	if c.surface != "" {
 		c.logf("adopted surface %s", c.surface)
+		c.adopted = true
 		return nil
 	}
 	doc := c.render()

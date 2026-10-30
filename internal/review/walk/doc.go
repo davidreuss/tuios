@@ -48,13 +48,17 @@ func RenderDoc(m *Model, st State) string {
 	if st.Desc != "" {
 		fmt.Fprintf(&b, "      <text>%s</text>\n", escapeXML(st.Desc))
 	}
-	b.WriteString("      <diff id=\"stepdiff\" lang=\"go\" layout=\"unified\">")
-	if block := HunkLines(m.Diff, step); len(block) > 0 {
-		b.WriteString(EscapeXML(strings.Join(block, "\n")))
+	if m.BoundContent {
+		fmt.Fprintf(&b, "      <diff id=\"stepdiff\" lang=\"go\" layout=\"unified\" content=\"{state.hunk}\"/>\n")
 	} else {
-		b.WriteString("(no diff for this file in this range)")
+		b.WriteString("      <diff id=\"stepdiff\" lang=\"go\" layout=\"unified\">")
+		if block := HunkLines(m.Diff, step); len(block) > 0 {
+			b.WriteString(EscapeXML(strings.Join(block, "\n")))
+		} else {
+			b.WriteString("(no diff for this file in this range)")
+		}
+		b.WriteString("</diff>\n")
 	}
-	b.WriteString("</diff>\n")
 	b.WriteString("      <row gap=\"2\">\n")
 	b.WriteString("        <button key=\"j\" kind=\"primary\" on-press=\"emit('next')\">▸ Next step</button>\n")
 	b.WriteString("        <button key=\"k\" on-press=\"emit('prev')\">▸ Prev</button>\n")
@@ -161,6 +165,15 @@ func itoa(n int) string {
 	return fmt.Sprintf("%d", n)
 }
 
+// hunkText is the bound content for the step's diff block: the raw hunk
+// lines, or a placeholder line when the step has no diff in the range.
+func hunkText(m *Model, step Step) string {
+	if block := HunkLines(m.Diff, step); len(block) > 0 {
+		return strings.Join(block, "\n")
+	}
+	return "(no diff for this file in this range)"
+}
+
 // JSONState writes the doc's <state> payload: the rig identity, the current
 // step, and the view rows the tables bind to.
 func jsonState(m *Model, st State) []byte {
@@ -177,6 +190,7 @@ func jsonState(m *Model, st State) []byte {
 	payload := map[string]any{
 		"rig":   rig,
 		"derived_from": m.DerivedFrom,
+		"hunk":  hunkText(m, s),
 		"step":  map[string]any{"index": st.StepIdx, "file": s.File, "from": s.From, "to": s.To, "prose": s.Prose},
 		"tab":   st.Tab,
 		"stale": st.Stale,

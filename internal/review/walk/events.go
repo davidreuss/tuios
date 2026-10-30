@@ -50,6 +50,7 @@ func (c *Controller) render() string {
 	payload := map[string]any{
 		"rig":     rig,
 		"derived_from": c.m.DerivedFrom,
+		"hunk":    hunkText(c.m, step),
 		"step":    map[string]any{"index": stStepIdx(c.st), "file": step.File, "from": step.From, "to": step.To, "prose": step.Prose},
 		"tab":     c.st.Tab,
 		"stale":   c.st.Stale,
@@ -93,7 +94,9 @@ func (c *Controller) patch(ops string) {
 	c.sh("tuios", "tml", "patch", c.surface, ops)
 }
 
-// showStep walks to step i: nvim jump + baked doc.
+// showStep walks to step i: nvim jump, then the doc moves. Bound content
+// patches the state (the daemon re-renders the bound diff); bake-and-replace
+// rewrites the whole doc.
 func (c *Controller) showStep(i int) {
 	c.mu.Lock()
 	if i < 0 {
@@ -124,8 +127,36 @@ func (c *Controller) showStep(i int) {
 
 	c.nvimLua(fmt.Sprintf("ReviewGo('%s', %d, %d, '%s', '%s')",
 		step.File, step.From, step.To, c.base, escLua(c.st.Desc)))
+	if c.m.BoundContent {
+		c.patchStep()
+		c.logf("step %d: %s L%d-%d (patched)", i, step.File, step.From, step.To)
+		return
+	}
 	c.replace()
 	c.logf("step %d: %s L%d-%d", i, step.File, step.From, step.To)
+}
+
+// patchStep moves the walk through one state patch: everything showStep
+// touched in one round trip, the daemon re-renders the bound diff.
+func (c *Controller) patchStep() {
+	c.mu.Lock()
+	step := Step{Key: "empty", Label: "no steps"}
+	if c.st.StepIdx >= 0 && c.st.StepIdx < len(c.m.Steps) {
+		step = c.m.Steps[c.st.StepIdx]
+	}
+	c.mu.Unlock()
+	ops := []map[string]any{
+		{"op": "replace", "path": "/now", "value": c.st.Now},
+		{"op": "replace", "path": "/where", "value": c.st.Where},
+		{"op": "replace", "path": "/desc", "value": c.st.Desc},
+		{"op": "replace", "path": "/step", "value": map[string]any{
+			"index": c.st.StepIdx, "file": step.File, "from": step.From, "to": step.To, "prose": step.Prose,
+		}},
+		{"op": "replace", "path": "/hunk", "value": hunkText(c.m, step)},
+		{"op": "replace", "path": "/story", "value": ViewRows(c.m, c.st)},
+		{"op": "replace", "path": "/done", "value": c.st.Done},
+	}
+	c.patch(mustJSON(ops))
 }
 
 func (c *Controller) countWalked() int {

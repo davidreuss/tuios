@@ -21,6 +21,7 @@ func newReviewWalkCommand() *cobra.Command {
 		workspace   string
 		rigID       string
 		surfaceOnly bool
+		bake        bool
 		takeover    bool
 		derivedFrom string
 		logPath     string
@@ -76,6 +77,7 @@ A second controller refuses to adopt a live review.`,
 				Workspace:   opts.workspace,
 				GuideJSON:   guide,
 				SurfaceOnly: opts.surfaceOnly,
+				BakeDoc:     opts.bake,
 				Takeover:    opts.takeover,
 				DerivedFrom: opts.derivedFrom,
 				LogPath:     opts.logPath,
@@ -89,6 +91,7 @@ A second controller refuses to adopt a live review.`,
 	cmd.Flags().StringVar(&opts.workspace, "workspace", "8", "Workspace for the surface and pane")
 	cmd.Flags().StringVar(&opts.rigID, "name", "", "Rig identity (default: <dir>-review)")
 	cmd.Flags().BoolVar(&opts.surfaceOnly, "surface-only", false, "Run the walkthrough without the nvim pane")
+	cmd.Flags().BoolVar(&opts.bake, "bake", false, "Bake the step diff into the doc and replace it per step, instead of patching bound content")
 	cmd.Flags().BoolVar(&opts.takeover, "takeover", false, "Adopt the review even if another controller is live")
 	cmd.Flags().StringVar(&opts.derivedFrom, "derived-from", "", "Link the close-out artifact to this key (default: the worktree name)")
 	cmd.Flags().StringVar(&opts.logPath, "log", "", "Controller log path")
