@@ -144,6 +144,11 @@ func StartController(ctx context.Context, opt Options) (*Controller, error) {
 	}
 	c.logf("controller starting, base=%s", opt.Base)
 
+	if opt.Session == "" {
+		// The CLI refuses an empty --session; the pane's own session is the
+		// right default.
+		opt.Session = os.Getenv("TUIOS_SESSION")
+	}
 	if err := c.preflight(opt); err != nil {
 		return nil, err
 	}
