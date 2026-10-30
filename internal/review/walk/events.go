@@ -121,10 +121,8 @@ func (c *Controller) showStep(i int) {
 	c.st.Done = c.countWalked()
 	c.mu.Unlock()
 
-	c.logf("showStep: jumping nvim")
 	c.nvimLua(fmt.Sprintf("ReviewGo('%s', %d, %d, '%s', '%s')",
 		step.File, step.From, step.To, c.base, escLua(c.st.Desc)))
-	c.logf("showStep: nvim jumped, replacing doc")
 	c.replace()
 	c.logf("step %d: %s L%d-%d", i, step.File, step.From, step.To)
 }

@@ -134,12 +134,6 @@ func TestControllerWalksFeedsAndStales(t *testing.T) {
 }
 
 func TestStaleFlipsOnHeadMove(t *testing.T) {
-	// Skipped: the controller hangs silently after surface adoption under
-	// the shimmed PATH (last log line "adopted surface", no step log, no
-	// nvim call recorded). review.Build alone is fast under the same shim
-	// (probe: 137ms), so the hang is between ensureNvim and the step RPC.
-	// Next move: GIT_TRACE=1 in the shim env, or log around runNvim.
-	t.Skip("stale watch under shimmed PATH hangs; see the note above")
 	repo := testutil.GitRepo(t)
 	testutil.Git(t, repo, "config", "user.email", "t@t")
 	testutil.Git(t, repo, "config", "user.name", "t")
@@ -162,7 +156,7 @@ func TestStaleFlipsOnHeadMove(t *testing.T) {
 	go func() {
 		_, _ = StartController(ctx, Options{
 			Dir: repo, Base: "main", RigID: "stale-test", Session: "s",
-			LogPath: filepath.Join(state, "ctl.log"),
+			LogPath: filepath.Join(state, "stale-ctl.log"),
 		})
 	}()
 
@@ -172,7 +166,7 @@ func TestStaleFlipsOnHeadMove(t *testing.T) {
 	deadline := time.Now().Add(12 * time.Second)
 	staled := false
 	for time.Now().Before(deadline) {
-		log, _ := os.ReadFile(filepath.Join(state, "tui-review-stale-test.log"))
+		log, _ := os.ReadFile(filepath.Join(state, "stale-ctl.log"))
 		if strings.Contains(string(log), "stale") {
 			staled = true
 			break
@@ -181,6 +175,7 @@ func TestStaleFlipsOnHeadMove(t *testing.T) {
 	}
 	cancel()
 	if !staled {
-		t.Fatalf("controller never noticed HEAD move (head was %s)", head)
+		dump, _ := os.ReadFile(filepath.Join(state, "stale-ctl.log"))
+		t.Fatalf("controller never noticed HEAD move (head was %s); ctl log:\n%s", head, dump)
 	}
 }

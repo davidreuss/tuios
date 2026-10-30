@@ -180,15 +180,12 @@ func (c *Controller) ensureSurface(opt Options) error {
 
 // nvim driving: one --remote-expr per action, never remote-send.
 func (c *Controller) nvimLua(lua string) {
-	c.logf("nvimLua: alive=%v", c.nvimAlive())
 	if c.nvimAlive() {
 		c.runNvim(lua)
-		c.logf("nvimLua: ran")
 		return
 	}
 	c.ensureNvim()
 	c.runNvim(lua)
-	c.logf("nvimLua: ran after ensure")
 }
 
 func (c *Controller) runNvim(lua string) {
