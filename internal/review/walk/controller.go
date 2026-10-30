@@ -84,6 +84,10 @@ func StartController(ctx context.Context, opt Options) (*Controller, error) {
 	}
 	c.logf("controller starting, base=%s", opt.Base)
 
+	if err := c.preflight(opt); err != nil {
+		return nil, err
+	}
+
 	m, err := BuildModel(ctx, opt.Dir, opt.Base, opt.RigID, opt.GuideJSON)
 	if err != nil {
 		return nil, err
@@ -102,6 +106,34 @@ func StartController(ctx context.Context, opt Options) (*Controller, error) {
 	go c.watchHead(ctx)
 	c.loop(ctx, opt)
 	return c, nil
+}
+
+// preflight fails fast when the controller runs inside a tuios pane whose
+// grants cannot drive a review: the surface verbs and the pane management
+// would otherwise surface a y/n prompt in the middle of the walkthrough.
+// A controller from the person's shell (outside every pane) needs nothing.
+func (c *Controller) preflight(opt Options) error {
+	if os.Getenv("TUIOS_SESSION") == "" {
+		return nil
+	}
+	out := c.sh("tuios", "pane-grants", "--json")
+	var grants struct {
+		Grants []string `json:"grants"`
+	}
+	_ = json.Unmarshal([]byte(out[strings.Index(out, "{"):]), &grants)
+	held := map[string]bool{}
+	for _, g := range grants.Grants {
+		held[g] = true
+	}
+	c.logf("grants: %v", grants.Grants)
+	// admin covers write, and write covers the surface writes; admin also
+	// covers the new-window the nvim pane needs.
+	if !held["admin"] && !held["write"] {
+		return fmt.Errorf("this pane's grants cannot drive a review (has %v). " +
+			"Run 'tuios review walk' from your own shell, or hold admin: " +
+			"ask for it with the Inbox, then rerun", grants.Grants)
+	}
+	return nil
 }
 
 // ensureSurface adopts a matching surface or creates one. The trap this
