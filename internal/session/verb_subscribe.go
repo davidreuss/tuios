@@ -132,6 +132,10 @@ func (d *Daemon) verbSubscribe(cs *connState, params json.RawMessage) (any, *ver
 		// started") is distinguishable from not resuming at all.
 		AfterSeq *uint64 `json:"after_seq"`
 		BootID   string  `json:"boot_id"`
+		// Surface narrows the stream to one TML surface's tml-event events.
+		// It also opts the subscription into tml-event, which is otherwise an
+		// opt-in type.
+		Surface string `json:"surface"`
 		// Hosts adds the events this daemon relays from its linked hosts.
 		Hosts bool `json:"hosts"`
 	}
@@ -152,7 +156,7 @@ func (d *Daemon) verbSubscribe(cs *connState, params json.RawMessage) (any, *ver
 	}
 	cs.mu.Unlock()
 
-	filter := eventFilter{session: p.Session, window: p.Window, hosts: p.Hosts}
+	filter := eventFilter{session: p.Session, window: p.Window, surface: p.Surface, hosts: p.Hosts}
 	// A live session is followed through a rename. A name no session has yet
 	// stays a plain name, so a subscriber can wait for it to be made.
 	if p.Session != "" {
