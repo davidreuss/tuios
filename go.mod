@@ -81,7 +81,7 @@ require (
 	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sync v0.23.0
 	golang.org/x/text v0.42.0
-	tuios.dev/loom v0.2.3-0.20261026100403-53167308ea72
+	tuios.dev/loom v0.2.3-0.20261030083804-f6f1a5c0e614
 	tuios.dev/plot v0.2.2-0.20261023124927-50c38920e301 // indirect
 	tuios.dev/progstatus v0.1.1-0.20261023124927-50c38920e301
 	tuios.dev/shot v0.2.1-0.20261023124927-50c38920e301
