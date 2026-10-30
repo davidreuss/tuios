@@ -82,7 +82,7 @@ past that are listed with their counts only.`,
 	cmd.Flags().BoolVar(&jsonOutput, "json", false, "Output result as JSON")
 	_ = cmd.RegisterFlagCompletionFunc("session", completeSessionNames)
 	_ = cmd.RegisterFlagCompletionFunc("against", completeWorktreeSessions)
-	cmd.AddCommand(newReviewNoteCommand(), newReviewNotesCommand(), newReviewSendCommand())
+	cmd.AddCommand(newReviewNoteCommand(), newReviewNotesCommand(), newReviewSendCommand(), newReviewWalkCommand())
 	return cmd
 }
 
