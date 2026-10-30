@@ -77,10 +77,10 @@ Layout:
 
 Text:
 
-- `code` from lang lines: holds raw text
-- `diff` lang layout=unified|split: holds raw text
+- `code` content from lang lines: holds raw text
+- `diff` content lang layout=unified|split: holds raw text
 - `heading` level role: holds text
-- `markdown`: holds raw text
+- `markdown` content: holds raw text
 - `text` align=left|center|right on-press role wrap=word|char|none: holds text
 
 Inside text:

@@ -83,8 +83,7 @@ text has.
 Keep the `seq` of the last event and its `boot_id`. On reconnect:
 
 ```sh
-tuios subscribe --surface tml-4f2a... --types tml-event \
-  --after-seq 43 --boot-id 9f2c41d07a3e8b65
+tuios subscribe --surface tml-4f2a... --types tml-event --after-seq 43 --boot-id 9f2c41d07a3e8b65
 ```
 
 The daemon replays what it still holds, then streams live. When it cannot
