@@ -1947,6 +1947,17 @@
           "maxItems": 1,
           "type": "array"
         },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/binding"
+            }
+          ],
+          "description": "The code text from the state, instead of literal children."
+        },
         "each": {
           "anyOf": [
             {
@@ -2537,6 +2548,17 @@
           },
           "maxItems": 1,
           "type": "array"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/binding"
+            }
+          ],
+          "description": "The diff text from the state, instead of literal children."
         },
         "each": {
           "anyOf": [
@@ -5606,6 +5628,17 @@
           },
           "maxItems": 1,
           "type": "array"
+        },
+        "content": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/binding"
+            }
+          ],
+          "description": "The markdown text from the state, instead of literal children."
         },
         "each": {
           "anyOf": [

@@ -399,11 +399,13 @@ var table = [...]Component{
 	}},
 	{Name: "stack", Group: "layout", Doc: "Layers children on top of each other.", Content: ContentBlocks, Block: true},
 	{Name: "code", Group: "text", Doc: "Code, highlighted by lang. Also inline inside text.", Content: ContentRaw, Inline: true, Block: true, Attrs: []AttrSpec{
+		{Name: "content", Type: TString, Bind: true, Doc: "The code text from the state, instead of literal children."},
 		{Name: "from", Type: TInt, HasRange: true, Min: 1, Max: 1e+09, Doc: "The first line number."},
 		{Name: "lang", Type: TString, Doc: "The language for highlighting."},
 		{Name: "lines", Type: TBool, Doc: "Shows line numbers."},
 	}},
 	{Name: "diff", Group: "text", Doc: "A unified diff.", Content: ContentRaw, Block: true, Attrs: []AttrSpec{
+		{Name: "content", Type: TString, Bind: true, Doc: "The diff text from the state, instead of literal children."},
 		{Name: "lang", Type: TString, Doc: "The language for highlighting."},
 		{Name: "layout", Type: TEnum, Enum: []string{"unified", "split"}, Doc: "unified or split."},
 	}},
@@ -411,7 +413,9 @@ var table = [...]Component{
 		{Name: "level", Type: TInt, Bind: true, HasRange: true, Min: 1, Max: 3, Doc: "1 is the largest."},
 		{Name: "role", Type: TRole, Bind: true, Doc: "A theme role colour."},
 	}},
-	{Name: "markdown", Group: "text", Doc: "Markdown text.", Content: ContentRaw, Block: true},
+	{Name: "markdown", Group: "text", Doc: "Markdown text.", Content: ContentRaw, Block: true, Attrs: []AttrSpec{
+		{Name: "content", Type: TString, Bind: true, Doc: "The markdown text from the state, instead of literal children."},
+	}},
 	{Name: "text", Group: "text", Doc: "A paragraph of text with inline styling.", Content: ContentInline, Block: true, Attrs: []AttrSpec{
 		{Name: "align", Type: TEnum, Enum: []string{"left", "center", "right"}, Doc: "Horizontal alignment."},
 		{Name: "on-press", Type: TAction, Doc: "Runs on enter or a click."},

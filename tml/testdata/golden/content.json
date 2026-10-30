@@ -1,0 +1,34 @@
+{
+  "type": "tml",
+  "version": 1,
+  "title": "Bound content",
+  "state": {
+    "hunk": "--- a/x.go\n+++ b/x.go\n@@ -1,2 +1,2 @@\n-old\n+new",
+    "readme": "# Bound\n\nfrom the state",
+    "snippet": "for i := range items {}"
+  },
+  "children": [
+    {
+      "type": "col",
+      "children": [
+        {
+          "type": "diff",
+          "content": "{state.hunk}",
+          "lang": "go",
+          "layout": "unified"
+        },
+        {
+          "type": "markdown",
+          "content": "{state.readme}"
+        },
+        {
+          "type": "code",
+          "from": 12,
+          "content": "{state.snippet}",
+          "lang": "go",
+          "lines": true
+        }
+      ]
+    }
+  ]
+}

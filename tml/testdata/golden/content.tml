@@ -1,0 +1,12 @@
+<tml version="1" title="Bound content">
+  <state>{
+    "hunk": "--- a/x.go\n+++ b/x.go\n@@ -1,2 +1,2 @@\n-old\n+new",
+    "readme": "# Bound\n\nfrom the state",
+    "snippet": "for i := range items {}"
+  }</state>
+  <col>
+    <diff content="{state.hunk}" lang="go" layout="unified"/>
+    <markdown content="{state.readme}"/>
+    <code from="12" content="{state.snippet}" lang="go" lines="true"/>
+  </col>
+</tml>
