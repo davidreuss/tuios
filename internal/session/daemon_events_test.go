@@ -83,3 +83,34 @@ func TestStreamEventsEmitsGapMarker(t *testing.T) {
 		t.Fatalf("third line seq = %d, want 2", e2.Seq)
 	}
 }
+
+// TestEventFilterSurface verifies the surface filter: a subscription that
+// names a surface receives that surface's tml-event events without naming
+// the type, receives no other surface's, and no other opt-in type.
+func TestEventFilterSurface(t *testing.T) {
+	h := newEventHub()
+	sub := h.subscribe(eventFilter{surface: "tml-1"}, 8)
+	h.publish(streamEvent{Type: EventTML, TML: &TMLEvent{Surface: "tml-1", Name: "next"}})
+	h.publish(streamEvent{Type: EventTML, TML: &TMLEvent{Surface: "tml-2", Name: "next"}})
+	h.publish(streamEvent{Type: EventAgentActivity, Entry: &AgentActivityEntry{}})
+
+	// The hub preserves order, so the two events that pass arrive first and
+	// in publish order: the filtered ones cannot jump the queue.
+	h.publish(streamEvent{Type: EventTML, TML: &TMLEvent{Surface: "tml-1", Name: "prev"}})
+	ev := <-sub.ch
+	if ev.TML == nil || ev.TML.Surface != "tml-1" || ev.TML.Name != "next" {
+		t.Fatalf("first event is not tml-1's next: %+v", ev)
+	}
+	ev = <-sub.ch
+	if ev.TML == nil || ev.TML.Surface != "tml-1" || ev.TML.Name != "prev" {
+		t.Fatalf("second event is not tml-1's prev: %+v", ev)
+	}
+
+	// Naming the type keeps working, and both surfaces then arrive on a
+	// subscription without a surface filter.
+	sub2 := h.subscribe(eventFilter{types: map[string]bool{EventTML: true}}, 8)
+	h.publish(streamEvent{Type: EventTML, TML: &TMLEvent{Surface: "tml-2", Name: "next"}})
+	if ev := <-sub2.ch; ev.TML == nil || ev.TML.Surface != "tml-2" {
+		t.Fatalf("typed subscription missed tml-2: %+v", ev)
+	}
+}
