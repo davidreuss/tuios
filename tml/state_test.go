@@ -3,6 +3,7 @@ package tml
 import (
 	"encoding/json"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -96,5 +97,48 @@ func TestStore(t *testing.T) {
 	}
 	if _, err := DecodePatch(make([]byte, lim.PatchBytes+1), &lim); err == nil {
 		t.Error("a patch past the size limit decoded")
+	}
+}
+
+func TestBoundContent(t *testing.T) {
+	doc, problems, err := Check([]byte(`<tml version="1" state='{"hunk":"-a\n+b"}'><diff content="{state.hunk}"/></tml>`), nil)
+	if err != nil || len(problems) > 0 {
+		t.Fatalf("a bound diff does not validate: %v %v", err, problems)
+	}
+	s, err := StoreFor(doc, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ops, _ := DecodePatch([]byte(`[{"op":"replace","path":"/hunk","value":"x"}]`), nil)
+	if _, err := s.Apply(ops); err != nil {
+		t.Fatalf("a small bound hunk did not apply: %v", err)
+	}
+
+	big := DefaultLimits().DocBytes + 1
+	doc, problems, err = Check([]byte(`<tml version="1" state='{"hunk":"x"}'><diff content="{state.hunk}"/></tml>`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The expression machinery caps every bound string at maxString, so the
+	// rendered content of one node never passes 64 KiB however big the state
+	// value is.
+	tpl, err := ParseTemplate("{state.hunk}")
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := tpl.Render(&Env{Vars: map[string]any{"state": map[string]any{"hunk": strings.Repeat("x", big)}}})
+	if len(raw) != maxString {
+		t.Errorf("a bound diff content rendered %d bytes, the cap is %d", len(raw), maxString)
+	}
+
+	_, problems, err = Check([]byte(`<tml version="1" state='{"hunk":"x"}'><diff content="{state.hunk}">literal</diff></tml>`), nil)
+	if err == nil && len(problems) == 0 {
+		t.Error("content and children together did not fail")
+	}
+
+	// A literal document without the attribute is unchanged.
+	_, problems, err = Check([]byte("<tml version=\"1\"><diff lang=\"go\">--- a\n+++ b</diff></tml>"), nil)
+	if err != nil || len(problems) > 0 {
+		t.Errorf("a literal diff does not validate: %v %v", err, problems)
 	}
 }

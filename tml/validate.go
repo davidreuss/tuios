@@ -257,6 +257,11 @@ func (v *validator) node(n *Node, ptr string, parent *Component, sc scope, depth
 	if comp != nil {
 		content = comp.Content
 	}
+	if comp != nil && content == ContentRaw {
+		if _, has := n.Attr("content"); has && len(n.Children) > 0 {
+			v.add(Problem{At: ptr, Code: CodeBadValue, Message: fmt.Sprintf("<%s> takes either the content attribute or literal text, not both.", n.Type)}, n.Pos)
+		}
+	}
 	count := 0
 	for i, c := range n.Children {
 		cptr := childPointer(ptr, c, i)
