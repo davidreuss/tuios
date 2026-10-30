@@ -179,3 +179,30 @@ func TestStaleFlipsOnHeadMove(t *testing.T) {
 		t.Fatalf("controller never noticed HEAD move (head was %s); ctl log:\n%s", head, dump)
 	}
 }
+
+// The single-writer lock: a live controller refuses a second one, --takeover
+// overrides, and a crashed controller's stale pid file unlocks.
+func TestOwnershipRefusesAndTakesOver(t *testing.T) {
+	const rig = "ownership-test"
+	t.Cleanup(func() { releaseOwnership(rig) })
+
+	if err := claimOwnership(rig, false); err != nil {
+		t.Fatalf("fresh claim: %v", err)
+	}
+	if err := claimOwnership(rig, false); err == nil ||
+		!strings.Contains(err.Error(), "--takeover") {
+		t.Fatalf("second claim: err=%v, want a refusal naming --takeover", err)
+	}
+	if err := claimOwnership(rig, true); err != nil {
+		t.Fatalf("takeover claim: %v", err)
+	}
+
+	// A pid that can never exist (macOS pids stay below 99998) stands for
+	// a crashed controller: the next claim must win without --takeover.
+	if err := os.WriteFile(pidFile(rig), []byte("999999999\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := claimOwnership(rig, false); err != nil {
+		t.Fatalf("claim over a dead pid: %v", err)
+	}
+}

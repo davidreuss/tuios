@@ -21,6 +21,7 @@ func newReviewWalkCommand() *cobra.Command {
 		workspace   string
 		rigID       string
 		surfaceOnly bool
+		takeover    bool
 		logPath     string
 	}
 	cmd := &cobra.Command{
@@ -71,6 +72,7 @@ A second controller refuses to adopt a live review.`,
 				Workspace:   opts.workspace,
 				GuideJSON:   guide,
 				SurfaceOnly: opts.surfaceOnly,
+				Takeover:    opts.takeover,
 				LogPath:     opts.logPath,
 			})
 			return err
@@ -82,6 +84,7 @@ A second controller refuses to adopt a live review.`,
 	cmd.Flags().StringVar(&opts.workspace, "workspace", "8", "Workspace for the surface and pane")
 	cmd.Flags().StringVar(&opts.rigID, "name", "", "Rig identity (default: <dir>-review)")
 	cmd.Flags().BoolVar(&opts.surfaceOnly, "surface-only", false, "Run the walkthrough without the nvim pane")
+	cmd.Flags().BoolVar(&opts.takeover, "takeover", false, "Adopt the review even if another controller is live")
 	cmd.Flags().StringVar(&opts.logPath, "log", "", "Controller log path")
 	return cmd
 }

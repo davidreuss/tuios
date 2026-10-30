@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 )
 
@@ -45,7 +46,62 @@ type Options struct {
 	Workspace   string // workspace to open the surface on
 	GuideJSON   []byte // optional guide (story.json shape)
 	SurfaceOnly bool   // skip the nvim pane entirely
+	Takeover    bool   // adopt a surface whose controller is still live
 	LogPath     string
+}
+
+// pidFile is the single-writer lock: the rig identity maps to the pid of
+// the controller that owns its surface and pane.
+func pidFile(rigID string) string {
+	return filepath.Join(os.TempDir(), "tui-review-"+rigID+".pid")
+}
+
+// claimOwnership refuses a second controller on the same review unless
+// Takeover is set. The pid file plus a live-process check keeps a crashed
+// controller from locking the review forever.
+func claimOwnership(rigID string, takeover bool) error {
+	pidPath := pidFile(rigID)
+	if raw, err := os.ReadFile(pidPath); err == nil {
+		var pid int
+		if n, _ := fmt.Sscanf(string(raw), "%d", &pid); n == 1 && processAlive(pid) {
+			if !takeover {
+				return fmt.Errorf("review %s is already walked by pid %d. "+
+					"Close it there, or run again with --takeover", rigID, pid)
+			}
+			// taking over: the old controller loses the single-writer
+			// guarantee, which is what the flag means.
+		}
+	}
+	if err := os.WriteFile(pidPath, []byte(fmt.Sprintf("%d\n", os.Getpid())), 0o644); err != nil {
+		return fmt.Errorf("claim review %s: %w", rigID, err)
+	}
+	return nil
+}
+
+// releaseOwnership drops the claim if this process still holds it.
+func releaseOwnership(rigID string) {
+	pidPath := pidFile(rigID)
+	raw, err := os.ReadFile(pidPath)
+	if err != nil {
+		return
+	}
+	var pid int
+	if n, _ := fmt.Sscanf(string(raw), "%d", &pid); n != 1 || pid != os.Getpid() {
+		return
+	}
+	_ = os.Remove(pidPath)
+}
+
+// processAlive reports whether pid names a running process.
+func processAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	p, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return p.Signal(syscall.Signal(0)) == nil
 }
 
 // sh runs a command and returns stdout; errors are logged, not fatal -
@@ -87,6 +143,10 @@ func StartController(ctx context.Context, opt Options) (*Controller, error) {
 	if err := c.preflight(opt); err != nil {
 		return nil, err
 	}
+	if err := claimOwnership(opt.RigID, opt.Takeover); err != nil {
+		return nil, err
+	}
+	defer releaseOwnership(opt.RigID)
 
 	m, err := BuildModel(ctx, opt.Dir, opt.Base, opt.RigID, opt.GuideJSON)
 	if err != nil {
