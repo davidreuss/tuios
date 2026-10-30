@@ -105,5 +105,6 @@ tell the person.
 - Agents: `mail`, `inbox`, `fleet`, `tasks`, `recipes`, `checkpoints`, `ship`
 - Rules: `grants`, `errors`, `agents-off`
 - Results, dashboards and forms for the person: `tml`
+- Driving a surface as an agent: `tml-drivers`
 - Other machines: `hosts`, `files`
 - Other tools: `mcp`, `tmux`, `herdr`, `notify`, `pair`, `config`
