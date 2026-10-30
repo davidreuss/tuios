@@ -116,22 +116,24 @@ func (c *Controller) preflight(opt Options) error {
 	if os.Getenv("TUIOS_SESSION") == "" {
 		return nil
 	}
-	out := c.sh("tuios", "pane-grants", "--json")
-	var grants struct {
-		Grants []string `json:"grants"`
+	held := map[string]bool{"admin": true, "write": true}
+	if out := c.sh("tuios", "pane-grants", "--json"); strings.Contains(out, "{") {
+		var grants struct {
+			Grants []string `json:"grants"`
+		}
+		_ = json.Unmarshal([]byte(out[strings.Index(out, "{"):]), &grants)
+		held = map[string]bool{}
+		for _, g := range grants.Grants {
+			held[g] = true
+		}
+		c.logf("grants: %v", grants.Grants)
 	}
-	_ = json.Unmarshal([]byte(out[strings.Index(out, "{"):]), &grants)
-	held := map[string]bool{}
-	for _, g := range grants.Grants {
-		held[g] = true
-	}
-	c.logf("grants: %v", grants.Grants)
 	// admin covers write, and write covers the surface writes; admin also
 	// covers the new-window the nvim pane needs.
 	if !held["admin"] && !held["write"] {
 		return fmt.Errorf("this pane's grants cannot drive a review (has %v). " +
 			"Run 'tuios review walk' from your own shell, or hold admin: " +
-			"ask for it with the Inbox, then rerun", grants.Grants)
+			"ask for it with the Inbox, then rerun", held)
 	}
 	return nil
 }
@@ -178,12 +180,15 @@ func (c *Controller) ensureSurface(opt Options) error {
 
 // nvim driving: one --remote-expr per action, never remote-send.
 func (c *Controller) nvimLua(lua string) {
+	c.logf("nvimLua: alive=%v", c.nvimAlive())
 	if c.nvimAlive() {
 		c.runNvim(lua)
+		c.logf("nvimLua: ran")
 		return
 	}
 	c.ensureNvim()
 	c.runNvim(lua)
+	c.logf("nvimLua: ran after ensure")
 }
 
 func (c *Controller) runNvim(lua string) {

@@ -39,9 +39,13 @@ func (c *Controller) render() string {
 		"head":          c.m.Head,
 		"controller":    os.Getpid(),
 	}
-	step := c.m.Steps[0]
-	if c.st.StepIdx >= 0 && c.st.StepIdx < len(c.m.Steps) {
-		step = c.m.Steps[c.st.StepIdx]
+	step := Step{Key: "empty", Label: "no steps"}
+	if len(c.m.Steps) > 0 {
+		if c.st.StepIdx >= 0 && c.st.StepIdx < len(c.m.Steps) {
+			step = c.m.Steps[c.st.StepIdx]
+		} else {
+			step = c.m.Steps[0]
+		}
 	}
 	payload := map[string]any{
 		"rig":     rig,
@@ -91,11 +95,17 @@ func (c *Controller) patch(ops string) {
 // showStep walks to step i: nvim jump + baked doc.
 func (c *Controller) showStep(i int) {
 	c.mu.Lock()
-	if i < 0 || i >= len(c.m.Steps) {
+	if i < 0 {
 		i = 0
 	}
-	c.st.StepIdx = i
-	step := c.m.Steps[i]
+	step := Step{Key: "empty", Label: "no steps"}
+	if len(c.m.Steps) > 0 {
+		if i >= len(c.m.Steps) {
+			i = 0
+		}
+		c.st.StepIdx = i
+		step = c.m.Steps[i]
+	}
 	c.st.Now = fmt.Sprintf("%d/%d %s", i+1, len(c.m.Steps), step.Label)
 	c.st.Where = fmt.Sprintf("%s L%d-%d", step.File, step.From, step.To)
 	if step.NewInBase {
@@ -105,14 +115,18 @@ func (c *Controller) showStep(i int) {
 	if step.Section != "" {
 		c.st.Desc = step.Section + ": " + c.st.Desc
 	}
-	c.st.Marks[i] = MarkCurrent
+	if i < len(c.st.Marks) {
+		c.st.Marks[i] = MarkCurrent
+	}
 	c.st.Done = c.countWalked()
 	c.mu.Unlock()
 
+	c.logf("showStep: jumping nvim")
 	c.nvimLua(fmt.Sprintf("ReviewGo('%s', %d, %d, '%s', '%s')",
 		step.File, step.From, step.To, c.base, escLua(c.st.Desc)))
-	c.logf("step %d: %s L%d-%d", i, step.File, step.From, step.To)
+	c.logf("showStep: nvim jumped, replacing doc")
 	c.replace()
+	c.logf("step %d: %s L%d-%d", i, step.File, step.From, step.To)
 }
 
 func (c *Controller) countWalked() int {
