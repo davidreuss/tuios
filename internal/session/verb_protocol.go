@@ -1821,6 +1821,7 @@ func buildVerbRegistry() map[string]verbEntry {
 			params: []verbParam{
 				{Name: "session", Type: "string", Description: "Only deliver events from this session. Omit for events from every session. Unlike most verbs, an omitted session does not mean the most recently active one."},
 				{Name: "window", Type: "string", Description: "Only deliver events about this window id. Omit for every window."},
+				{Name: "surface", Type: "string", Description: "Only deliver the tml-event events of this TML surface. Naming a surface also opts the subscription into tml-event, which no subscriber receives without naming it in types. Omit for every surface."},
 				{Name: "types", Type: "[]string", Description: "Only deliver these event types. Omit for all of them.", Accepted: knownEventTypes},
 				{Name: "queue", Type: "int", Description: "Buffered events before the stream marks a gap.", Default: "256"},
 				{Name: "after_seq", Type: "int", Description: "Resume: replay the retained events with a seq above this one before streaming live. Pass the seq of the last event received. 0 replays everything the daemon still holds. Output events are not retained."},

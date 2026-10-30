@@ -381,8 +381,10 @@ func (f eventFilter) match(ev streamEvent) bool {
 		return false
 	}
 	// An opt-in type reaches only a filter that names it, so a subscriber
-	// written before it existed, which names no types, never sees it.
-	if len(f.types) == 0 && optInEventTypes[ev.Type] {
+	// written before it existed, which names no types, never sees it. A
+	// filter that names a surface has opted in already: there is no reading
+	// a surface's events without this type.
+	if len(f.types) == 0 && optInEventTypes[ev.Type] && !(ev.Type == EventTML && f.surface != "") {
 		return false
 	}
 	return true

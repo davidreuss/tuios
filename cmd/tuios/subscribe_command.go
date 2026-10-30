@@ -15,6 +15,7 @@ import (
 type subscribeOptions struct {
 	session  string
 	window   string
+	surface  string
 	types    []string
 	afterSeq uint64
 	resume   bool
@@ -78,6 +79,7 @@ trusting that you saw every change.`,
 	}
 	cmd.Flags().StringVarP(&opts.session, "session", "s", "", "Only events from this session (default: every session)")
 	cmd.Flags().StringVarP(&opts.window, "window", "w", "", "Only events about this window id")
+	cmd.Flags().StringVar(&opts.surface, "surface", "", "Only the tml-event events of this TML surface (also opts into tml-event)")
 	cmd.Flags().StringSliceVar(&opts.types, "types", nil, "Only these event types, comma-separated (default: all)")
 	cmd.Flags().Uint64Var(&opts.afterSeq, "after-seq", 0, "Replay the retained events after this seq before streaming live")
 	cmd.Flags().StringVar(&opts.bootID, "boot-id", "", "The boot_id the --after-seq came with, so a daemon restart shows as a gap")
@@ -100,6 +102,9 @@ func runSubscribe(opts subscribeOptions, out io.Writer) error {
 	defer t.Close()
 
 	params := map[string]any{"window": opts.window}
+	if opts.surface != "" {
+		params["surface"] = opts.surface
+	}
 	if len(opts.types) > 0 {
 		params["types"] = opts.types
 	}

@@ -7197,6 +7197,9 @@ Params:
   most recently active one.
 - `window` (optional): only events about this window id. The filter compares
   window ids, so a window name matches nothing.
+- `surface` (optional): only the `tml-event` events of this TML surface id.
+  Naming a surface also opts the subscription into `tml-event`, which no
+  subscriber receives unless it names the type.
 - `types` (optional): event types to include; empty means all.
 - `queue` (optional): per-connection queue size; defaults to 256.
 - `after_seq` (optional): resume. Replay the retained events with a higher
