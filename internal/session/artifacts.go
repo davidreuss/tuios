@@ -46,6 +46,10 @@ type artifactRec struct {
 	hasValue bool
 	doc      json.RawMessage
 	state    json.RawMessage
+	// derived_from is the surface's state.derived_from at close, a key the
+	// reader resolves: the controller names what the surface shows, such as
+	// a PR or a worktree. The daemon does not interpret it.
+	derived_from string
 	// For a screenshot: the file and its format.
 	path, format string
 }
@@ -113,10 +117,22 @@ func (d *Daemon) recordTMLClosed(s *tmlSurface) {
 	if s.caller == "" {
 		return
 	}
-	state, _ := json.Marshal(s.store.State())
+	live := s.store.State()
+	state, _ := json.Marshal(live)
+	// state.derived_from is the owner's link from the surface to what it
+	// showed: a PR, a worktree, whatever key the reader resolves. The daemon
+	// copies it verbatim and interprets nothing. Read from the live store:
+	// the owner may have spliced state over the doc's seed since it opened.
+	var derived string
+	if m, ok := live["derived_from"]; ok {
+		if str, ok := m.(string); ok {
+			derived = str
+		}
+	}
 	d.artifacts.update(s.caller, s.id, func(r *artifactRec) {
 		r.open, r.reason, r.value, r.hasValue = false, s.reason, s.value, s.hasValue
 		r.title, r.doc, r.state = s.title, s.docJSON, state
+		r.derived_from = derived
 	})
 }
 
@@ -178,6 +194,9 @@ func (d *Daemon) verbArtifactList(cs *connState, params json.RawMessage) (any, *
 				if r.hasValue {
 					item["value"] = r.value
 				}
+			}
+			if r.derived_from != "" {
+				item["derived_from"] = r.derived_from
 			}
 			if doc != nil {
 				item["doc"], item["state"] = doc, state

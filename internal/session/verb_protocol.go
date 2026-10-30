@@ -1278,7 +1278,7 @@ func buildVerbRegistry() map[string]verbEntry {
 				{Name: "window", Type: "string", Required: true, Description: "The window id of the pane."},
 			},
 			returns: []verbParam{
-				{Name: "artifacts", Type: "[]object", Description: "Each artifact: id, kind (tml or screenshot), title, at (Unix nanoseconds) and window_id. A tml artifact adds surface, target, open, doc and state, and when it closed, reason and value. A screenshot adds path and format."},
+				{Name: "artifacts", Type: "[]object", Description: "Each artifact: id, kind (tml or screenshot), title, at (Unix nanoseconds) and window_id. A tml artifact adds surface, target, open, doc and state, and when it closed, reason and value, and derived_from when the surface's state named one. A screenshot adds path and format."},
 			},
 			examples: []string{
 				`{"id":1,"verb":"artifact-list","params":{"window":"3f2a91c0-0000-4000-8000-000000000000"}}`,
