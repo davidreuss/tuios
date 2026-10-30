@@ -35,9 +35,7 @@ func RenderDoc(m *Model, st State) string {
 	b.Write(jsonState(m, st))
 	b.WriteString("</state>\n")
 
-	b.WriteString("  <col pad=\"1\">\n")
-
-	// Guide tab: the walking view.
+	b.WriteString("  <tabs>\n")
 	b.WriteString("  <tab id=\"guide\" title=\"Guide\">\n    <col gap=\"1\" pad=\"1\">\n")
 	if st.Stale {
 		b.WriteString("      <text role=\"warning\"><b>stale: the tree moved under this walkthrough (model v" +
@@ -100,7 +98,7 @@ func RenderDoc(m *Model, st State) string {
 	b.WriteString("      </table>\n")
 	b.WriteString("    </col>\n  </tab>\n")
 
-	b.WriteString("  </col>\n</tml>\n")
+	b.WriteString("  </tabs>\n</tml>\n")
 	return b.String()
 }
 
