@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -240,7 +241,7 @@ func (c *Controller) ensureSurface(opt Options) error {
 	doc := c.render()
 	out = c.sh("tuios", "call", "tml-open", mustJSON(map[string]any{
 		"session": opt.Session, "doc": doc,
-		"target": "pane", "name": opt.RigID, "workspace": opt.Workspace,
+		"target": "pane", "name": opt.RigID, "workspace": workspaceParam(opt.Workspace),
 	}))
 	m := surfaceIDRe.FindString(out)
 	if m == "" {
@@ -249,6 +250,15 @@ func (c *Controller) ensureSurface(opt Options) error {
 	c.surface = m
 	c.logf("created surface %s", c.surface)
 	return nil
+}
+
+// workspaceParam sends numeric workspace selections as JSON numbers: the
+// daemon's tml-open types the field as int and refuses a string.
+func workspaceParam(ws string) any {
+	if n, err := strconv.Atoi(strings.TrimSpace(ws)); err == nil {
+		return n
+	}
+	return ws
 }
 
 // nvim driving: one --remote-expr per action, never remote-send.
