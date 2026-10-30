@@ -1,0 +1,108 @@
+=== truecolor 36x9
+|  9 func bound() {                 ┃|
+| 10     return 1                   ┃|
+| 11 }                              ┃|
+|                                   ┃|
+| --- a/y.go                        ┃|
+| +++ b/y.go                        ┃|
+| @@ -2,3 +2,3 @@                   ┃|
+|  ctx                              │|
+| -old line                         │|
+--- styles
+|aabaccccacccccccacaaaaaaaaaaaaaaaaad|
+|abbaaaaaccccccacaaaaaaaaaaaaaaaaaaad|
+|abbacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad|
+|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeed|
+|afffgffffffaaaaaaaaaaaaaaaaaaaaaaaad|
+|afffgffffffaaaaaaaaaaaaaaaaaaaaaaaad|
+|ahhahhhhahhhhahhaaaaaaaaaaaaaaaaaaad|
+|aacccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaai|
+|ajjjjajjjjaaaaaaaaaaaaaaaaaaaaaaaaai|
+a: bg=canvas
+b: fg=mute bg=canvas
+c: fg=fg bg=canvas
+d: fg=dim bg=panel
+e: bg=panel
+f: fg=dim bg=canvas bold
+g: bg=canvas bold
+h: fg=info bg=canvas
+i: fg=mute bg=panel
+j: fg=error bg=canvas
+=== 256 36x9
+|  9 func bound() {                 ┃|
+| 10     return 1                   ┃|
+| 11 }                              ┃|
+|                                   ┃|
+| --- a/y.go                        ┃|
+| +++ b/y.go                        ┃|
+| @@ -2,3 +2,3 @@                   ┃|
+|  ctx                              │|
+| -old line                         │|
+--- styles
+|aabaccccacccccccacaaaaaaaaaaaaaaaaad|
+|abbaaaaaccccccacaaaaaaaaaaaaaaaaaaad|
+|abbacaaaaaaaaaaaaaaaaaaaaaaaaaaaaaad|
+|eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeed|
+|afffgffffffaaaaaaaaaaaaaaaaaaaaaaaad|
+|afffgffffffaaaaaaaaaaaaaaaaaaaaaaaad|
+|ahhahhhhahhhhahhaaaaaaaaaaaaaaaaaaad|
+|aacccaaaaaaaaaaaaaaaaaaaaaaaaaaaaaai|
+|ajjjjajjjjaaaaaaaaaaaaaaaaaaaaaaaaai|
+a: bg=canvas
+b: fg=mute bg=canvas
+c: fg=fg bg=canvas
+d: fg=dim bg=panel
+e: bg=panel
+f: fg=dim bg=canvas bold
+g: bg=canvas bold
+h: fg=info bg=canvas
+i: fg=mute bg=panel
+j: fg=error bg=canvas
+=== 16 36x9
+|  9 func bound() {                 ┃|
+| 10     return 1                   ┃|
+| 11 }                              ┃|
+|                                   ┃|
+| --- a/y.go                        ┃|
+| +++ b/y.go                        ┃|
+| @@ -2,3 +2,3 @@                   ┃|
+|  ctx                              │|
+| -old line                         │|
+--- styles
+|  a bbbb bbbbbbb b                 c|
+| aa     bbbbbb b                   c|
+| aa b                              c|
+|                                   c|
+| dddedddddd                        c|
+| dddedddddd                        c|
+| ff ffff ffff ff                   c|
+|  bbb                              a|
+| gggg gggg                         a|
+a: fg=mute
+b: fg=fg
+c: fg=dim
+d: fg=dim bold
+e: bold
+f: fg=info
+g: fg=error
+=== ascii 36x9
+|  9 func bound() {                 #|
+| 10     return 1                   #|
+| 11 }                              #|
+|                                   #|
+| --- a/y.go                        #|
+| +++ b/y.go                        #|
+| @@ -2,3 +2,3 @@                   #|
+|  ctx                              ||
+| -old line                         ||
+--- styles
+|                                    |
+|                                    |
+|                                    |
+|                                    |
+| aaaaaaaaaa                         |
+| aaaaaaaaaa                         |
+|                                    |
+|                                    |
+|                                    |
+a: bold

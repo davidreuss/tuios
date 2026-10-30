@@ -413,13 +413,23 @@ type codeWidget struct {
 
 func (s *Surface) buildCode(b *box, vars map[string]any) widget {
 	n := b.src
-	var raw strings.Builder
-	for _, c := range n.Children {
-		if c.IsText() {
-			raw.WriteString(c.Text)
+	var text string
+	if _, bound := n.Attr("content"); bound {
+		// The content attribute replaces the literal children. It goes
+		// through the bound-attribute path, so a state patch of the path it
+		// reads redraws this box alone, and no owner ever escapes text for
+		// this node.
+		text = s.str(n, "content", vars)
+	} else {
+		var raw strings.Builder
+		for _, c := range n.Children {
+			if c.IsText() {
+				raw.WriteString(c.Text)
+			}
 		}
+		text = raw.String()
 	}
-	text := strings.ReplaceAll(raw.String(), "\t", "    ")
+	text = strings.ReplaceAll(text, "\t", "    ")
 	text = strings.TrimSuffix(strings.TrimPrefix(text, "\n"), "\n")
 	w := &codeWidget{lines: strings.Split(text, "\n"), diff: n.Type == "diff"}
 	w.number = s.flag(n, "lines", vars, false)
