@@ -1,6 +1,7 @@
 package loom
 
 import (
+	"encoding/json"
 	"fmt"
 	"image"
 	"os"
@@ -58,6 +59,14 @@ func screenHas(t *testing.T, buf *Buffer, want string) {
 		}
 	}
 	t.Fatalf("the screen has no %q:\n%s", want, strings.Join(rows(buf), "\n"))
+}
+
+// screenHasNot fails when any row of the buffer holds s.
+func screenHasNot(t *testing.T, buf *Buffer, want string) {
+	t.Helper()
+	if row := rowWith(buf, want); row >= 0 {
+		t.Fatalf("the screen still shows %q on row %d:\n%s", want, row, strings.Join(rows(buf), "\n"))
+	}
 }
 
 // rowWith returns the row that holds s, or -1.
@@ -813,5 +822,29 @@ func TestPlacementAndStatRows(t *testing.T) {
 	buf := st.Render(24, 6)
 	for _, want := range []string{"passed", "failed", "skipped"} {
 		screenHas(t, buf, want)
+	}
+}
+
+// TestBoundContentRedrawsAlone patches the state path a bound diff reads:
+// the diff box follows the state, and it is the only box rebuilt. Reverting
+// buildCode to its literal-children read shows here as a patch that draws
+// nothing.
+func TestBoundContentRedrawsAlone(t *testing.T) {
+	s := mustSurface(t, `<tml version="1"><state>{"hunk": "--- a/x.go\n+++ b/x.go\n@@ -1,1 +1,1 @@\n-old\n+new"}</state>
+<diff content="{state.hunk}"/>
+</tml>`)
+	const w, h = 40, 8
+	buf := s.Render(w, h)
+	screenHas(t, buf, "+new")
+	s.Damage()
+	thunk, _ := json.Marshal("--- a/x.go\n+++ b/x.go\n@@ -1,1 +1,1 @@\n-gone\n+here")
+	if err := s.Patch([]tml.Op{{Op: "replace", Path: "/hunk", Value: thunk}}); err != nil {
+		t.Fatal(err)
+	}
+	buf = s.Render(w, h)
+	screenHas(t, buf, "+here")
+	screenHasNot(t, buf, "+new")
+	if b := s.stats.built; b != 1 {
+		t.Errorf("a patch to the diff's content rebuilt %d boxes, want 1", b)
 	}
 }

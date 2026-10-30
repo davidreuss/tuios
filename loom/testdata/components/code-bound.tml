@@ -1,0 +1,8 @@
+<!-- 36x9 -->
+<tml version="1">
+  <state>{"src": "func bound() {\n\treturn 1\n}", "hunk": "--- a/y.go\n+++ b/y.go\n@@ -2,3 +2,3 @@\n ctx\n-old line\n+new line\n ctx"}</state>
+  <col gap="1">
+    <code lang="go" lines="true" from="9" content="{state.src}"/>
+    <diff content="{state.hunk}"/>
+  </col>
+</tml>
