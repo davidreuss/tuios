@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Gaurav-Gosain/tuios/internal/review"
@@ -52,6 +53,8 @@ func BuildModel(ctx context.Context, dir, base, rigID string, guideJSON []byte) 
 			return nil, err
 		}
 		m.Steps = steps
+	} else {
+		m.Steps = AutoSteps(d)
 	}
 	return m, nil
 }
@@ -117,16 +120,48 @@ func fileStatus(d *review.Diff, path string) string {
 }
 
 func buildCommits(ctx context.Context, dir, baseSHA string) []Commit {
-	out := runGit(ctx, dir, "log", "--reverse", "--format=%H%x09%s", baseSHA+"..HEAD")
+	out := runGit(ctx, dir, "log", "--reverse", "--numstat", "--format=%H%x09%s", baseSHA+"..HEAD")
 	var commits []Commit
-	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
-		if line == "" {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		parts := strings.SplitN(line, "\t", 3)
+		if len(parts) == 3 && isCountField(parts[0]) && isCountField(parts[1]) {
+			// A numstat row belongs to the commit above it. A binary file's
+			// counts are "-".
+			if len(commits) == 0 {
+				continue
+			}
+			c := &commits[len(commits)-1]
+			if parts[0] != "-" {
+				c.Added, _ = strconv.Atoi(parts[0])
+			}
+			if parts[1] != "-" {
+				c.Removed, _ = strconv.Atoi(parts[1])
+			}
+			c.Files = append(c.Files, parts[2])
 			continue
 		}
 		sha, subj, _ := strings.Cut(line, "\t")
 		commits = append(commits, Commit{SHA: sha, Subject: subj})
 	}
 	return commits
+}
+
+// isCountField reports whether the field is a numstat count: all digits,
+// or the "-" a binary file's count shows.
+func isCountField(s string) bool {
+	if s == "-" {
+		return true
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return s != ""
 }
 
 func runGit(ctx context.Context, dir string, args ...string) string {

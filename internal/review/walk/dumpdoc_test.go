@@ -17,6 +17,12 @@ func TestDumpRenderedDoc(t *testing.T) {
 		t.Skipf("build: %v", err)
 	}
 	m.BoundContent = false
+	t.Logf("diff files=%d commits=%d", len(m.Diff.Files), len(m.Commits))
+	for i, c := range m.Commits {
+		if i < 3 {
+			t.Logf("commit %s +%d/-%d files=%v", c.SHA[:8], c.Added, c.Removed, c.Files)
+		}
+	}
 	doc := RenderDoc(m, DefaultState(m))
 	out := filepath.Join(os.TempDir(), "walk-doc.tml")
 	if err := os.WriteFile(out, []byte(doc), 0o644); err != nil {
