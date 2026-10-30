@@ -22,6 +22,7 @@ func newReviewWalkCommand() *cobra.Command {
 		rigID       string
 		surfaceOnly bool
 		takeover    bool
+		derivedFrom string
 		logPath     string
 	}
 	cmd := &cobra.Command{
@@ -53,6 +54,9 @@ A second controller refuses to adopt a live review.`,
 			if opts.rigID == "" {
 				opts.rigID = filepath.Base(opts.dir) + "-review"
 			}
+			if opts.derivedFrom == "" {
+				opts.derivedFrom = filepath.Base(opts.dir)
+			}
 			if opts.logPath == "" {
 				opts.logPath = filepath.Join(os.TempDir(), "tui-review-"+opts.rigID+".log")
 			}
@@ -73,6 +77,7 @@ A second controller refuses to adopt a live review.`,
 				GuideJSON:   guide,
 				SurfaceOnly: opts.surfaceOnly,
 				Takeover:    opts.takeover,
+				DerivedFrom: opts.derivedFrom,
 				LogPath:     opts.logPath,
 			})
 			return err
@@ -85,6 +90,7 @@ A second controller refuses to adopt a live review.`,
 	cmd.Flags().StringVar(&opts.rigID, "name", "", "Rig identity (default: <dir>-review)")
 	cmd.Flags().BoolVar(&opts.surfaceOnly, "surface-only", false, "Run the walkthrough without the nvim pane")
 	cmd.Flags().BoolVar(&opts.takeover, "takeover", false, "Adopt the review even if another controller is live")
+	cmd.Flags().StringVar(&opts.derivedFrom, "derived-from", "", "Link the close-out artifact to this key (default: the worktree name)")
 	cmd.Flags().StringVar(&opts.logPath, "log", "", "Controller log path")
 	return cmd
 }

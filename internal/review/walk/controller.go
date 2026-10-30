@@ -47,6 +47,7 @@ type Options struct {
 	GuideJSON   []byte // optional guide (story.json shape)
 	SurfaceOnly bool   // skip the nvim pane entirely
 	Takeover    bool   // adopt a surface whose controller is still live
+	DerivedFrom string // artifact-record link (default: the worktree name)
 	LogPath     string
 }
 
@@ -151,6 +152,9 @@ func StartController(ctx context.Context, opt Options) (*Controller, error) {
 	m, err := BuildModel(ctx, opt.Dir, opt.Base, opt.RigID, opt.GuideJSON)
 	if err != nil {
 		return nil, err
+	}
+	if opt.DerivedFrom != "" {
+		m.DerivedFrom = opt.DerivedFrom
 	}
 	c.m = m
 	c.st = DefaultState(m)

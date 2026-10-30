@@ -84,7 +84,7 @@ func TestControllerWalksFeedsAndStales(t *testing.T) {
 	done := make(chan error, 1)
 	go func() {
 		_, err := StartController(ctx, Options{
-			Dir: repo, Base: "main", RigID: "walk-test", Session: "s",
+			Dir: repo, Base: "main", RigID: "walk-test", Session: "s", DerivedFrom: "pr-595",
 			GuideJSON: gb, LogPath: filepath.Join(state, "ctl.log"),
 		})
 		done <- err
@@ -126,7 +126,7 @@ func TestControllerWalksFeedsAndStales(t *testing.T) {
 		t.Fatalf("no live doc: %v", err)
 	}
 	d := string(live)
-	for _, want := range []string{"1/1 thing takes an id", "thing.go L3-5", "+func Thing(id string)"} {
+	for _, want := range []string{"1/1 thing takes an id", "thing.go L3-5", "+func Thing(id string)", `"derived_from":"pr-595"`} {
 		if !strings.Contains(d, want) {
 			t.Errorf("live doc misses %q", want)
 		}

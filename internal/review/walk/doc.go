@@ -176,6 +176,7 @@ func jsonState(m *Model, st State) []byte {
 	s := m.Steps[st.StepIdx]
 	payload := map[string]any{
 		"rig":   rig,
+		"derived_from": m.DerivedFrom,
 		"step":  map[string]any{"index": st.StepIdx, "file": s.File, "from": s.From, "to": s.To, "prose": s.Prose},
 		"tab":   st.Tab,
 		"stale": st.Stale,

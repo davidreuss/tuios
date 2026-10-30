@@ -49,6 +49,7 @@ func (c *Controller) render() string {
 	}
 	payload := map[string]any{
 		"rig":     rig,
+		"derived_from": c.m.DerivedFrom,
 		"step":    map[string]any{"index": stStepIdx(c.st), "file": step.File, "from": step.From, "to": step.To, "prose": step.Prose},
 		"tab":     c.st.Tab,
 		"stale":   c.st.Stale,

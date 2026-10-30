@@ -47,6 +47,9 @@ type Commit struct {
 type Model struct {
 	Rig       string   `json:"rig"`
 	Base      string   `json:"base"`
+	// DerivedFrom links the close-out record to the thing reviewed (the
+	// daemon copies state.derived_from into the artifact record at close).
+	DerivedFrom string   `json:"derived_from,omitempty"`
 	BaseSHA   string   `json:"base_sha"`
 	Head      string   `json:"head"`
 	Version   int      `json:"version"`
