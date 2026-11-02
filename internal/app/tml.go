@@ -899,9 +899,17 @@ func (m *OS) tmlResult(w *terminal.Window, v *tmlView, res loom.Result) tea.Cmd 
 			}
 		case "copy":
 			cmds = append(cmds, m.CopyToClipboard(tml.Stringify(e.Value)))
+		case "link":
+			// The person pressed an <a>. OpenLink owns the machine split:
+			// file: opens in a pane, https: goes to the viewer's browser,
+			// and a remote client copies the address instead.
+			cmds = append(cmds, m.OpenLink(e.Name))
+		case "open":
+			// open() names a path relative to the surface's files folder,
+			// which the client does not know yet; the daemon holds the
+			// surface's origin. Wire it here once that path travels.
+			clientLog("TML surface %s: %s is not carried out yet", v.id, e.Action)
 		default:
-			// open and link reach files and pages, which a later version
-			// asks the person about. They do nothing yet.
 			clientLog("TML surface %s: %s is not carried out yet", v.id, e.Action)
 		}
 	}
