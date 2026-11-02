@@ -77,6 +77,9 @@ func TestRailReturnTokenClicks(t *testing.T) {
 	if !m.SidebarClick(entry.X0+2, entry.Y0, false) {
 		t.Fatal("the rail refused a press on the folder row")
 	}
+	// A press on a files row arms the drag; the release is what acts as a
+	// click when the pointer never moved.
+	m.FileDragRelease(entry.X0+2, entry.Y0, false)
 	cmd := m.TakeSidebarCmd()
 	if cmd == nil {
 		t.Fatal("entering the folder scheduled no read")
@@ -103,6 +106,7 @@ func TestRailReturnTokenClicks(t *testing.T) {
 	if !m.SidebarClick(ret.X0, ret.Y0, false) {
 		t.Fatal("the rail refused a press on the return token")
 	}
+	m.SidebarRelease(ret.X0, ret.Y0)
 	cmd = m.TakeSidebarCmd()
 	if cmd == nil {
 		t.Fatal("a press on the return token scheduled no read")
