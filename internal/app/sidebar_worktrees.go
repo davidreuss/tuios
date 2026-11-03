@@ -167,13 +167,13 @@ func (m *OS) sidebarFoldMark(collapsed, cursor bool, bg color.Color, pal overlay
 }
 
 // sidebarComposeFoldRow is sidebarComposeGroupRow for a row with a fold mark.
-// The mark takes the inset cell, so the figures stay on the column the figures
-// of the rows around them are on.
+// The fold state trails the name, where reading ends: the header says what it
+// is first and whether it is open second.
 func sidebarComposeFoldRow(indent int, gutter, glyph, name, right, fold string, cw int, bg color.Color) string {
 	row := gutter + sidebarStyle(bg, nil).Render(strings.Repeat(" ", max(indent, 0))) +
-		sidebarMarkCell(glyph, bg) + name
-	gap := max(cw-lipgloss.Width(row)-lipgloss.Width(right)-lipgloss.Width(fold), 0)
-	return sidebarFit(row+sidebarStyle(bg, nil).Render(strings.Repeat(" ", gap))+right+fold, cw, bg)
+		sidebarMarkCell(glyph, bg) + name + " " + fold
+	gap := max(cw-lipgloss.Width(row)-lipgloss.Width(right), 0)
+	return sidebarFit(row+sidebarStyle(bg, nil).Render(strings.Repeat(" ", gap))+right, cw, bg)
 }
 
 // sidebarFoldCells is what a fold mark costs a row's name: the mark and the
@@ -268,6 +268,19 @@ func railTreeMarkForCaps(mark string, s *config.Settings) (string, int) {
 // parent would draw the same alarm twice. A shut group is the opposite case:
 // its rows are not on screen, so the parent carries the worst of them and the
 // count of what it is hiding.
+// sidebarRepoMark is the glyph slot's mark on a repository row: the tree
+// glyph where a session row carries its quiet dot, tinted the same way so the
+// roll-up colour keeps its seat. ASCII-only falls back to the bullet.
+func (m *OS) sidebarRepoMark(tint, bg color.Color, pal overlay.Palette) string {
+	if !m.Settings.SidebarShowGlyphs {
+		return sidebarStyle(bg, nil).Render(" ")
+	}
+	if m.Settings.UseASCIIOnly {
+		return sidebarQuietDotTinted(tint, bg, pal, &m.Settings)
+	}
+	return sidebarStyle(bg, tint).Render("⎇")
+}
+
 func (m *OS) sidebarRepoRow(node sessiontree.Node, cw int, pal overlay.Palette, st sidebarRowState) string {
 	rowBg := sidebarRowBg(st, pal)
 	if d := m.SidebarDrag; d.Dragging && d.Repo && d.SessionID == node.ID && d.Space == node.Space {
@@ -290,15 +303,20 @@ func (m *OS) sidebarRepoRow(node sessiontree.Node, cw int, pal overlay.Palette, 
 	if collapsed {
 		state = node.AgentState
 	}
-	glyph := sidebarQuietDot(rowBg, pal, &m.Settings)
+	// The roll-up glyph stays: a shut group's agent activity has to read
+	// on the row that hides it. At rest the slot carries the tree glyph,
+	// not the dot every session row carries — the mark that says this row
+	// is a branch point.
+	glyph := m.sidebarRepoMark(pal.FgMute, rowBg, pal)
 	if agentStateIndicator(state) != "" {
 		glyph = sidebarGlyph(state, node.DoneSeen, node.Subagents, rowBg, pal, &m.Settings)
 	}
 
+	// A repository row reads bold a step brighter than the branch labels
+	// it borrows its ink from, and a step quieter than the section
+	// headings' white. The tree glyph and the fold state trail the name:
+	// the name leads, the marks qualify it.
 	fg := pal.FgDim
-	if st.lit() {
-		fg = pal.Fg
-	}
 	// A repository is an item that owns a subtree, not a heading: it wears a
 	// session's glyph, rolls its members' states up, and steps in under its
 	// machine with every other session row. Its own members hang off it on the
@@ -308,6 +326,7 @@ func (m *OS) sidebarRepoRow(node sessiontree.Node, cw int, pal overlay.Palette, 
 	if rightW == 0 {
 		nameW = max(nameW-sidebarFoldCells, 1)
 	}
+
 	// A shut group that holds the attached session wears that session's mark,
 	// in that session's colour, because the session's own row is not drawn.
 	holdsCurrent := collapsed && node.GroupCurrent
@@ -324,7 +343,7 @@ func (m *OS) sidebarRepoRow(node sessiontree.Node, cw int, pal overlay.Palette, 
 		name = railCurrentName(overlay.Truncate(title, max(nameW-capsW, 1)), tint, rowBg, pal, &m.Settings)
 		gutter = sidebarGutterNameMarked(state, rowBg, pal, &m.Settings)
 	} else {
-		name = sidebarStyle(rowBg, fg).Bold(sidebarAttention(state)).Render(overlay.Truncate(title, nameW))
+name = sidebarStyle(rowBg, fg).Bold(true).Render(overlay.Truncate(title, nameW))
 	}
 	fold := m.sidebarFoldMark(collapsed, false, rowBg, pal)
 	return sidebarComposeFoldRow(indent, gutter, glyph, name, right, fold, cw, rowBg)
