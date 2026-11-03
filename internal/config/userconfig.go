@@ -1061,6 +1061,9 @@ type SidebarConfig struct {
 	// FolderClick is what a click on a folder row does: navigate, cd or both
 	// (default: navigate).
 	FolderClick string `toml:"folder_click"`
+	// FocusEnterRail lets a pane focus key run off the screen's edge into
+	// the rail, giving it the keyboard (default: true).
+	FocusEnterRail *bool `toml:"focus_enter_rail"`
 	// FileDrag lets a row of the files section be dragged into a pane to
 	// paste its path (default: true).
 	FileDrag *bool `toml:"file_drag"`
@@ -3075,6 +3078,9 @@ func ApplyAppearanceConfig(cfg *UserConfig, s *Settings) {
 	}
 	if sb.Width > 0 {
 		s.SidebarWidth = sb.Width
+	}
+	if sb.FocusEnterRail != nil {
+		s.SidebarFocusEnterRail = *sb.FocusEnterRail
 	}
 	// Assigned whatever the file says, so a key removed from it turns the
 	// peek back on at the next reload.

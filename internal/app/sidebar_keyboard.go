@@ -134,6 +134,9 @@ func railEdgeToward(direction string) (sidebarEdge, bool) {
 // instead of stopping. A hidden rail is not revealed: there is nothing on that
 // edge to walk into.
 func (m *OS) enterRailAtEdge(direction string) {
+	if !m.Settings.SidebarFocusEnterRail {
+		return
+	}
 	edge, ok := railEdgeToward(direction)
 	if !ok || m.sidebarWidthFor(m.sidebarPreferredWidth()) == 0 {
 		return

@@ -1134,6 +1134,11 @@ var optionSpecs = []Option{
 		Accepted:    SidebarFilesStyles,
 	},
 	{
+		Path: "appearance.sidebar.focus_enter_rail", Type: OptionBool, Section: "sidebar",
+		Description: "Let a pane focus key that runs off the screen's edge give the keyboard to the rail",
+		Default:     "true",
+	},
+	{
 		Path: "appearance.sidebar.group_main", Type: OptionBool, Section: "sidebar",
 		Description: "Give each repository a row of its own, with the main checkout under it. When off, the main checkout's row is the repository's row",
 		Default:     "false",

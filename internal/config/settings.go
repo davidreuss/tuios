@@ -267,6 +267,11 @@ type Settings struct {
 	// the numbers set show_numbers in [appearance.sidebar].
 	SidebarShowNumbers bool `opt:"appearance.sidebar.show_numbers,keep"`
 
+	// SidebarFocusEnterRail lets a pane focus key that runs off the screen's
+	// edge give the keyboard to the rail. True by default; appearance.sidebar
+	// focus_enter_rail = false keeps the focus keys inside the panes.
+	SidebarFocusEnterRail bool
+
 	// SidebarMarquee scrolls a hovered row's title when it overflows its columns.
 	SidebarMarquee bool `opt:"appearance.sidebar.marquee,keep"`
 
@@ -1102,6 +1107,7 @@ func DefaultSettings() Settings {
 		SidebarShowGlyphs:           true,
 		SidebarShowCounts:           true,
 		SidebarShowNumbers:          false,
+		SidebarFocusEnterRail:       true,
 		SidebarMarquee:              true,
 		SidebarPeekEnabled:          true,
 		SidebarSections:             SidebarDefaultSections,
