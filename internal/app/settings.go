@@ -486,6 +486,7 @@ func (m *OS) settingsCategories() []settingsCategory {
 			opt("appearance.sidebar.header_style"),
 			opt("appearance.sidebar.cursor_background"),
 			opt("appearance.sidebar.density"),
+			opt("appearance.sidebar.focus_enter_rail"),
 			opt("appearance.sidebar.show_glyphs"),
 			opt("appearance.sidebar.show_counts"),
 			opt("appearance.sidebar.show_numbers"),
