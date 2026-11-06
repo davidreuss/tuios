@@ -1157,14 +1157,21 @@ func (m *OS) drawFleetRow(c *ckCanvas, l ckLook, r ckRow, cursor, hover bool, x,
 	// At 16 colours the cursor is reverse video and the pointer an
 	// underline, applied once the row is drawn.
 	defer c.mark(pal, x+1, y, w-1, r.lines, overlay.RowState{Cursor: cursor, Focused: cursor, Hover: hover})
+	var e sidebarAgentEntry
+	if r.agent >= 0 {
+		e = ck.agents[r.agent]
+	}
+	current := ckCurrentAgent(e)
 	if cursor {
 		for i := range r.lines {
 			c.text(x, y+i, 0, ckSeg{t: "▌", fg: pal.Accent})
 		}
-	}
-	var e sidebarAgentEntry
-	if r.agent >= 0 {
-		e = ck.agents[r.agent]
+	} else if current {
+		// The agent of the pane the person is looking at wears a bar of its
+		// own, a brighter one than the cursor's, so the two never blur.
+		for i := range r.lines {
+			c.text(x, y+i, 0, ckSeg{t: "▌", fg: pal.AccentBright})
+		}
 	}
 	// A marked row shows its mark beside the cursor bar, and a click there
 	// marks or unmarks it.
@@ -1181,6 +1188,11 @@ func (m *OS) drawFleetRow(c *ckCanvas, l ckLook, r ckRow, cursor, hover bool, x,
 	down := e.Host != "" && m.ckLinkDown(e.Host)
 	if r.group == ckIdle || r.group == ckSettled || r.group == ckSnoozed || r.item.Stale || down {
 		nameInk = pal.FgDim
+	}
+	if current {
+		// The row stays bright whatever shelf it sits on: the point is to
+		// find it in the idle crowd too.
+		nameInk = pal.AccentBright
 	}
 	if down {
 		// The machine's link is down: the row is its last known state.
@@ -1361,6 +1373,15 @@ func (m *OS) ckLinkDown(host string) bool {
 		}
 	}
 	return false
+}
+
+// ckCurrentAgent reports whether e is the agent of the pane the person is
+// looking at: the focused window of the attached session, which is the
+// session the cockpit was opened from. The rail computes it for the entry
+// (sidebarAgentEntry.Focused), so the cockpit reuses its answer, and a
+// remote agent never matches: only the attached session's rows carry it.
+func ckCurrentAgent(e sidebarAgentEntry) bool {
+	return e.Focused
 }
 
 // ckRowFacts are a row's name, harness, place and age.
@@ -1954,10 +1975,18 @@ func (m *OS) ckStripChip(l ckLook, r ckRow, cursor bool) (chip, art []ckSeg) {
 		g, gInk = l.g(ckGlyphNeeds), pal.Attention
 	}
 	bg, nameInk := l.panel, pal.FgDim
+	current := ckCurrentAgent(e)
 	if cursor {
 		bg, nameInk = l.cursor, pal.Fg
 	}
-	chip = []ckSeg{{t: " " + g + " ", fg: gInk, bg: bg}, {t: name + " ", fg: overlay.Readable(nameInk, bg), bg: bg, attrs: ckBold}}
+	chip = []ckSeg{{t: " " + g + " ", fg: gInk, bg: bg}}
+	if current && !cursor {
+		// The agent of the pane the person is looking at, in the fleet
+		// row's bar-and-bright-name language, so the two places read alike.
+		chip = append(chip, ckSeg{t: "▌", fg: pal.AccentBright, bg: bg})
+		nameInk = pal.AccentBright
+	}
+	chip = append(chip, ckSeg{t: name + " ", fg: overlay.Readable(nameInk, bg), bg: bg, attrs: ckBold})
 	if r.agent >= 0 && m.ckArtifactNew(e, false) {
 		art = []ckSeg{{t: l.g(ckGlyphNeeds) + " " + ckArtChip, fg: pal.Attention, attrs: ckBold}}
 	}
