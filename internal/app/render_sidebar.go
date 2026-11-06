@@ -1667,11 +1667,6 @@ func (m *OS) sidebarPanelLinesForTree(tree sessiontree.Tree) ([]string, int) {
 	// move, and the bottom was unreachable. So the budget is laid out for the
 	// attached session's rows either way, and the peeked list is fitted into
 	// the lines that buys, padded when it is shorter and cut to a "+N" when it
-	// is longer. Below the sessions section the fit is widened afterwards, by
-	// the second budget below. peekRows is the peeked list's own count, which
-	// the windowing below uses once the budget is settled. An attached session
-	// with no rows of its own holds nothing: there is no section to hold, and
-	// a peek that could not show anything would not be one.
 	peekRows := nT
 	if peeking {
 		resting := m.sidebarTerminals(sessions, m.sidebarCurrentSessionID())
