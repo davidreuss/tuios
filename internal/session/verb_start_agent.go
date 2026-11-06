@@ -120,6 +120,9 @@ func (d *Daemon) verbStartAgent(cs *connState, params json.RawMessage) (any, *ve
 		}
 	}
 	env, pathList, verr := callerEnv(cs, p.Env)
+	if verr == nil {
+		env = append(env, d.spawnedByEnv(cs)...)
+	}
 	if verr != nil {
 		return nil, verr
 	}

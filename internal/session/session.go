@@ -257,6 +257,11 @@ type WindowState struct {
 	// AgentSessionID. Empty in state written before it existed, and a resume
 	// then falls back to AgentHarness.
 	AgentSessionHarness string `json:"agent_session_harness,omitempty"`
+	// AgentThreadToken is the conversation token the harness's own extension
+	// reports beside the session id. ship-commit stamps it as a Thread
+	// trailer on the commits a pane makes, whose git runs without hooks.
+	// Daemon-owned like AgentSessionID.
+	AgentThreadToken string `json:"agent_thread_token,omitempty"`
 	// AgentFlags are the flags the pane's agent was started with that its
 	// manifest keeps across a resume. Kept when the agent exits, like
 	// AgentSessionID. Daemon-owned. A pointer, because WindowState is copied
@@ -2144,6 +2149,28 @@ func (s *Session) noteStartDir(windowID, dir string) {
 	// Resolved once, here. A link in the path that is repointed later must
 	// not move the folder a grant is held to, so no check resolves it again.
 	s.startDirs.LoadOrStore(windowID, startDirEntry{dir: realPath(filepath.Clean(dir)), at: time.Now()})
+}
+
+// windowStateTitle is the name a window goes by: the custom name the user
+// chose, else the recorded title, else "shell". Empty when the window is not
+// this session's.
+func (s *Session) windowStateTitle(windowID string) string {
+	s.stateMu.Lock()
+	defer s.stateMu.Unlock()
+	for i := range s.state.Windows {
+		w := &s.state.Windows[i]
+		if w.ID != windowID {
+			continue
+		}
+		if w.CustomName != "" {
+			return w.CustomName
+		}
+		if w.Title != "" {
+			return w.Title
+		}
+		return "shell"
+	}
+	return ""
 }
 
 // windowStartDir is a window's start folder, or "" when none was recorded.

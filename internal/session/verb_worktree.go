@@ -1040,6 +1040,7 @@ func (d *Daemon) verbFan(cs *connState, params json.RawMessage) (any, *verbError
 		if env, pathList, verr = callerEnv(cs, p.Env); verr != nil {
 			return verr
 		}
+		env = append(env, d.spawnedByEnv(cs)...)
 		launches = make([]agentLaunch, len(specs))
 		for i, spec := range specs {
 			param := "agent"

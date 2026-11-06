@@ -1,7 +1,12 @@
 package session
 
 import (
+	"encoding/json"
+	"os"
+	"strings"
 	"testing"
+
+	"github.com/Gaurav-Gosain/tuios/internal/testutil"
 )
 
 // These tests cover set-agent-session: a harness naming its conversation in a
@@ -133,5 +138,56 @@ func TestDetectorForgetsTheHarnessPIDWhenTheAgentLeaves(t *testing.T) {
 	_, ok, reason, err := sess.applyAgentSession(winID, AgentSessionReport{Harness: "qwen", SessionID: "second", HarnessPID: 5200})
 	if err != nil || !ok {
 		t.Fatalf("a restarted harness was refused: %s %v", reason, err)
+	}
+}
+
+// TestShipCommitStampsTheThreadTrailerForAPane checks the chain that replaces
+// hooks for a pane's commits: the harness's set-agent-session report stores the
+// thread token, and ship-commit from that pane appends it as a Thread trailer.
+// The person's own ship-commit runs their hooks and is not stamped here.
+func TestShipCommitStampsTheThreadTrailerForAPane(t *testing.T) {
+	t.Chdir(testutil.GitRepo(t))
+	d, sp := startTestDaemon(t)
+	sess := makeSessionWithWindow(t, d, "work")
+	c := dialVerb(t, sp)
+
+	setAgentSessionVerb(t, c, `{"session":"work","window":"Window","harness":"pi","agent_session_id":"pi-1","thread_token":"thread-1"}`)
+	if w := sess.GetState().Windows[0]; w.AgentThreadToken != "thread-1" {
+		t.Fatalf("agent_thread_token = %q, want thread-1", w.AgentThreadToken)
+	}
+
+	ship := func(message string) map[string]any {
+		raw, err := json.Marshal(map[string]any{"session": "work", "window": "Window", "message": message})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out, verr := d.verbShipCommit(&connState{paneOnly: true, done: make(chan struct{})}, raw)
+		if verr != nil {
+			t.Fatalf("ship-commit: %v", verr)
+		}
+		return out.(map[string]any)
+	}
+
+	if err := os.WriteFile("hello.txt", []byte("hello\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := ship("Add the hello file"); res["type"] != "ship_committed" {
+		t.Fatalf("ship-commit: %v", res)
+	}
+	msg := testutil.Git(t, ".", "log", "-1", "--format=%B")
+	if !strings.Contains(msg, "Thread: thread-1") {
+		t.Fatalf("the commit message is %q, want a Thread: thread-1 trailer", msg)
+	}
+
+	// A repeat never grows a second trailer, whatever the message says.
+	if err := os.WriteFile("hello.txt", []byte("hello again\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if res := ship("Greet again\n\nThread: thread-1"); res["type"] != "ship_committed" {
+		t.Fatalf("second ship-commit: %v", res)
+	}
+	msg = testutil.Git(t, ".", "log", "-1", "--format=%B")
+	if n := strings.Count(msg, "Thread: thread-1"); n != 1 {
+		t.Fatalf("the second commit message is %q, want exactly one Thread trailer", msg)
 	}
 }

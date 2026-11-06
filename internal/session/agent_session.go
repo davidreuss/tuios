@@ -27,6 +27,10 @@ type AgentSessionReport struct {
 	// TranscriptOnly is a metadata update for the conversation already in
 	// the pane, never a request to replace it with a different conversation.
 	TranscriptOnly bool
+	// ThreadToken is the conversation token the harness's own extension
+	// reports. Kept beside AgentSessionID for ship-commit to stamp on a
+	// pane's commits, whose git runs without hooks.
+	ThreadToken string
 	// harnessGone is AgentReport's.
 	harnessGone bool
 }
@@ -88,6 +92,9 @@ func (s *Session) applyAgentSession(target string, r AgentSessionReport) (string
 		}
 		owner := s.agentHarnessPIDs[w.ID].pid
 		if w.AgentSessionID == r.SessionID && w.AgentSessionHarness == r.Harness {
+			if r.ThreadToken != "" && w.AgentThreadToken != r.ThreadToken {
+				w.AgentThreadToken = r.ThreadToken
+			}
 			if r.HarnessPID > 1 && owner != r.HarnessPID {
 				s.setAgentHarnessPID(w.ID, r.HarnessPID, r.HarnessIsCaller, r.harnessGone)
 			}
@@ -100,6 +107,9 @@ func (s *Session) applyAgentSession(target string, r AgentSessionReport) (string
 		}
 		w.AgentSessionID = r.SessionID
 		w.AgentSessionHarness = r.Harness
+		if r.ThreadToken != "" {
+			w.AgentThreadToken = r.ThreadToken
+		}
 		stored = r.SessionID
 		s.setAgentHarnessPID(w.ID, r.HarnessPID, r.HarnessIsCaller, r.harnessGone)
 		// A person pointing the pane at a conversation clears the Codex

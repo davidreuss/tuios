@@ -491,6 +491,7 @@ func (d *Daemon) openWindow(cs *connState, p *newWindowParams, split *splitAsk) 
 	// The pane that asked for the window opened it. The typing rule reads
 	// that while the agent features are off.
 	d.notePaneCreator(cs, win.ID)
+	d.writeOriginNote(cs, sess, win)
 
 	// With a client attached, answer once the client has placed the window
 	// and sized its terminal. A program started in the pane straight after
@@ -2002,6 +2003,7 @@ func (d *Daemon) verbSetAgentSession(cs *connState, params json.RawMessage) (any
 		HarnessPID     int     `json:"harness_pid"`
 		TranscriptPath string  `json:"transcript_path"`
 		TranscriptLeaf *string `json:"transcript_leaf"`
+		ThreadToken    string  `json:"thread_token"`
 	}
 	if verr := decodeParams(params, &p); verr != nil {
 		return nil, verr
@@ -2041,10 +2043,15 @@ func (d *Daemon) verbSetAgentSession(cs *connState, params json.RawMessage) (any
 			treeWindow, previousSession = st.Windows[idx].ID, st.Windows[idx].AgentSessionID
 		}
 	}
+	threadToken := strings.TrimSpace(p.ThreadToken)
+	if threadToken != "" && len(threadToken) > maxAgentSessionIDLen {
+		return nil, invalidParam("thread_token", fmt.Sprintf("thread_token is %d bytes; the limit is %d", len(threadToken), maxAgentSessionIDLen))
+	}
 	stored, applied, reason, err := sess.applyAgentSession(target, AgentSessionReport{
 		Harness:     harnessID,
 		SessionID:   sid,
 		HarnessPID:  p.HarnessPID,
+		ThreadToken: threadToken,
 		foreignPane: d.harnessOutsidePane(cs, sess, target, p.HarnessPID),
 
 		HarnessIsCaller: callerRunsHarness(cs, p.HarnessPID),

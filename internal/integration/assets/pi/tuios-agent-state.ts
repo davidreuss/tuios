@@ -39,6 +39,7 @@ let sending = false;
 let activeChild;
 let idle;
 let lastSelection = "";
+let spawnedByNoted = false;
 
 let activeAbort;
 
@@ -140,6 +141,9 @@ function report(event, ctx, extra, key) {
     session_id: sessionID,
     transcript_path: sessionFile,
     ...(sessionFile && leaf !== undefined ? { transcript_leaf: leaf } : {}),
+    ...(process.env.AGENT_THREAD_TOKEN_ID
+      ? { thread_token: process.env.AGENT_THREAD_TOKEN_ID }
+      : {}),
     ...extra,
   });
   // The daemon is not told again what it already has: the end of a turn, or a
@@ -194,6 +198,21 @@ export default function (pi) {
     epoch++;
     tui = ctx?.mode === "tui";
     if (!tui) return;
+    // A pane tuios started on behalf of another pane names its parent: the
+    // footer carries it for as long as the session runs, and one notification
+    // marks the arrival. Reloads re-report without re-notifying.
+    const by = process.env.TUIOS_SPAWNED_BY;
+    const parentWindow = process.env.TUIOS_SPAWNED_BY_WINDOW;
+    if (by && !spawnedByNoted) {
+      spawnedByNoted = true;
+      // The label links to the parent pane: tuios focuses it on click.
+      const label = "spawned from " + by;
+      const linked = parentWindow
+        ? `\x1b]8;;tuios://window/${parentWindow}\x07${label}\x1b]8;;\x07`
+        : label;
+      ctx?.ui?.setStatus("tuios-spawned-from", linked);
+      ctx?.ui?.notify("Spawned from " + by);
+    }
     startWatching(ctx);
     subCtx = ctx;
     startSubagents();

@@ -466,8 +466,11 @@ var targets = []*Target{
 		// reports nothing (its rows ride the async and child-status events),
 		// a foreground run's id keeps to the daemon's id alphabet, and a
 		// subagent report does not suppress the parent transcript_update
-		// behind it. Version 5 sends each event to the daemon's agent-hook-event verb over its
-		// socket and starts tuios agent-hook only for a daemon without it.
+		// behind it.
+		// Version 5 names the pane that started the agent: TUIOS_SPAWNED_BY
+		// in the pane env, shown in the footer and one notification, and
+		// reports the conversation's thread token for the ship-commit
+		// Thread trailer.
 		ID: Pi, Name: "Pi", Binary: "pi", Version: 5, Reports: ReportsState,
 		Source:    "herdr src/integration/assets/pi (TypeScript extensions load from ~/.pi/agent/extensions, or PI_CODING_AGENT_DIR/extensions)",
 		ConfigDir: func(e Env) string { return e.dirFromEnv("PI_CODING_AGENT_DIR", ".pi", "agent") },

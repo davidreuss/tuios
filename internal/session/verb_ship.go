@@ -368,6 +368,12 @@ func (d *Daemon) verbShipCommit(cs *connState, params json.RawMessage) (any, *ve
 	}
 	ctx, cancel := d.shipContext(cs, shipTimeout)
 	defer cancel()
+	// A pane's commit runs without hooks, so its conversation token never
+	// reaches a commit-msg hook. The daemon stamps it instead; the person's
+	// own commit runs their hooks and is stamped there.
+	if !d.shipCallerIsPerson(cs) && target.AgentThreadToken != "" && !strings.Contains(msg, "Thread: "+target.AgentThreadToken) {
+		msg += "\n\nThread: " + target.AgentThreadToken
+	}
 	d.shipMu.Lock()
 	defer d.shipMu.Unlock()
 	branch, verr := shipBranch(ctx, repo.root)

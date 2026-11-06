@@ -288,6 +288,29 @@ func (d *Daemon) noteStartedBy(cs *connState, window string) {
 	}
 }
 
+// writeOriginNote queues the spawned-from line in a window the caller on cs
+// just opened, so a pane a watch or a worker was spawned into carries a link
+// back to the pane that made it. It says nothing for a caller in no pane, a
+// self-spawned pane, or a pane whose stream is gone.
+func (d *Daemon) writeOriginNote(cs *connState, sess *Session, win WindowState) {
+	if cs == nil || win.ID == "" {
+		return
+	}
+	ref := d.callerPaneRef(cs)
+	if ref == nil || ref.Window == win.ID {
+		return
+	}
+	label := ref.Session
+	if parent := d.sessionHoldingWindow(ref.Window); parent != nil {
+		if t := parent.windowStateTitle(ref.Window); t != "" {
+			label = t
+		}
+	}
+	if pty := sess.GetPTY(win.PTYID); pty != nil {
+		pty.queueOriginNote(ref.Window, label)
+	}
+}
+
 // offTypingAllowed reports whether a pane without respond may type into
 // target while the agent features are off: target's shell is at its prompt,
 // or the caller opened target. See the file comment.

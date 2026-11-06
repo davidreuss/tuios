@@ -258,6 +258,26 @@ func (d *Daemon) resolveAgentLaunch(param, spec, pathList string) (agentLaunch, 
 // directories and settings of that machine. A TUIOS_ variable is refused, since
 // those are the contract a pane's process reads its identity from, and so are
 // TMUX and TMUX_PANE, which the daemon strips on purpose (guestenv).
+// spawnedByEnv names the pane that asked for an agent pane, so the agent can
+// show where it came from: the window id for a link, and the title the pane
+// goes by for a person reading. Nil when the caller is not a pane.
+func (d *Daemon) spawnedByEnv(cs *connState) []string {
+	ref := d.callerPaneRef(cs)
+	if ref == nil {
+		return nil
+	}
+	label := ref.Session
+	if parent := d.sessionHoldingWindow(ref.Window); parent != nil {
+		if t := parent.windowStateTitle(ref.Window); t != "" {
+			label = t
+		}
+	}
+	return []string{
+		"TUIOS_SPAWNED_BY_WINDOW=" + ref.Window,
+		"TUIOS_SPAWNED_BY=" + label,
+	}
+}
+
 func callerEnv(cs *connState, env map[string]string) ([]string, string, *verbError) {
 	if len(env) == 0 {
 		return nil, "", nil
