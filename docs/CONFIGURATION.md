@@ -641,6 +641,22 @@ keep_awake = "agents"
 - When the daemon stops, or a live upgrade replaces it, the hold ends. The new daemon takes it again.
 - `tuios keep-awake agents` sets the value, applies it at once and saves it to the config file. `tuios keep-awake` shows the hold. `tuios doctor keep-awake` checks that this machine can be held awake. The Daemon tab of the settings has the same option. A change in the config file applies at once.
 
+`ship_outbound` in `[daemon]` (default `"inbox"`) decides what an outbound `tuios ship push` or `ship pr` called from a pane, or from a restricted connection, needs before it sends work off this machine. See [Shipping a worktree](AGENT_STATE.md#shipping-a-worktree).
+
+| Value | The call waits for |
+|---|---|
+| `inbox` (default) | Your yes in the Inbox, after the caller's own confirm token. |
+| `never` | Nothing. The caller's confirm token is the only gate. |
+
+```toml
+[daemon]
+ship_outbound = "never"
+```
+
+- `never` is for the machine whose panes you trust to push their own work. The two-call confirm flow stays: the caller still has to look at what it would send and call again with the token for exactly that. What goes is that `approved_by` is empty on every push, since no push is ever yours.
+- A push over a host link is refused either way: the person on the machine the repository is on allows it there.
+- An unknown value falls back to `inbox`, and the config check warns about it.
+
 `[hints]` sets what hints mode (`Ctrl+B F`) labels. See [HINTS.md](HINTS.md).
 
 `[panes]` sets `label_keys`, the keys that the pane labels (`Ctrl+B Q`) use. The default is `1234567890`. Letters `a` to `z` and digits are allowed. See [KEYBINDINGS.md](KEYBINDINGS.md#pane-labels).

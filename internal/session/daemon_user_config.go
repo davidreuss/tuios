@@ -49,6 +49,7 @@ func DaemonConfigFromUser(uc *config.UserConfig) *DaemonConfig {
 	cfg.SSHAgent = uc.Daemon.SSHAgent
 	cfg.Display = uc.Daemon.Display
 	cfg.KeepAwake = uc.Daemon.KeepAwake
+	cfg.ShipOutbound = uc.Daemon.ShipOutbound
 	cfg.History = ResolveHistoryPolicy(uc.Daemon.PersistScrollback, uc.Daemon.PersistScrollbackLines, uc.Daemon.PersistScrollbackKB)
 	cfg.Hosts = HostsFromConfig(uc)
 	// The same table says what each machine linked to this one may do here.

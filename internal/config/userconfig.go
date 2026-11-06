@@ -449,6 +449,11 @@ type DaemonConfig struct {
 	// default, never. The display can still dim and lock. See
 	// internal/session/keep_awake.go.
 	KeepAwake string `toml:"keep_awake"`
+	// ShipOutbound is what an outbound ship push or pull request from a
+	// caller inside a pane needs: "inbox" (the default) puts a question to
+	// the person in the Inbox and waits for the answer, "never" ships on the
+	// caller's confirm token alone. See internal/session/verb_ship.go.
+	ShipOutbound string `toml:"ship_outbound"`
 }
 
 // FollowsUpgrade reports whether a local client follows a live upgrade of its
@@ -512,6 +517,26 @@ func ResolveKeepAwake(value string) string {
 		return v
 	}
 	return KeepAwakeOff
+}
+
+// Ship outbound modes. See DaemonConfig.ShipOutbound.
+const (
+	ShipOutboundInbox = "inbox"
+	ShipOutboundNever = "never"
+)
+
+// ShipOutboundModes lists the valid values for daemon.ship_outbound.
+var ShipOutboundModes = []string{ShipOutboundInbox, ShipOutboundNever}
+
+// ResolveShipOutbound is the mode a daemon.ship_outbound value means. Empty
+// is the default, inbox, and so is an unknown value, so a typo never
+// disables the Inbox gate.
+func ResolveShipOutbound(value string) string {
+	v := strings.TrimSpace(value)
+	if slices.Contains(ShipOutboundModes, v) {
+		return v
+	}
+	return ShipOutboundInbox
 }
 
 // Window size policies. See DaemonConfig.WindowSize.

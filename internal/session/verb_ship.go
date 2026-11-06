@@ -15,6 +15,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/Gaurav-Gosain/tuios/internal/childproc"
+	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/ghpr"
 	"github.com/Gaurav-Gosain/tuios/internal/gitstate"
 	"github.com/Gaurav-Gosain/tuios/internal/plural"
@@ -150,7 +151,7 @@ func shipVerbs() map[string]verbEntry {
 		"ship-push": {
 			scope:       scopeWrite,
 			link:        needWrite,
-			description: "Push a pane's branch to a remote and set it as the branch's upstream. Never forced. The first call answers confirm_required with what would be pushed and a token. Call again with that token to push. A caller inside a pane, or on a restricted connection, also needs the person to allow it in the Inbox, and the call waits for that answer.",
+			description: "Push a pane's branch to a remote and set it as the branch's upstream. Never forced. The first call answers confirm_required with what would be pushed and a token. Call again with that token to push. A caller inside a pane, or on a restricted connection, also needs the person to allow it in the Inbox, and the call waits for that answer, unless the daemon's config sets daemon.ship_outbound = \"never\", which ships on the confirm token alone.",
 			params:      pushParams,
 			returns: []verbParam{
 				{Name: "session", Type: "string", Description: "The session of the pane."},
@@ -170,7 +171,7 @@ func shipVerbs() map[string]verbEntry {
 		"ship-pr": {
 			scope:       scopeWrite,
 			link:        needWrite,
-			description: "Push a pane's branch and open a pull request for it with the gh CLI, as the person is logged in to gh. tuios holds no GitHub token. When the branch already has an open pull request, the push updates it and no new one is opened. The first call answers confirm_required with what would happen and a token. Call again with that token. A caller inside a pane, or on a restricted connection, also needs the person to allow it in the Inbox.",
+			description: "Push a pane's branch and open a pull request for it with the gh CLI, as the person is logged in to gh. tuios holds no GitHub token. When the branch already has an open pull request, the push updates it and no new one is opened. The first call answers confirm_required with what would happen and a token. Call again with that token. A caller inside a pane, or on a restricted connection, also needs the person to allow it in the Inbox, unless the daemon's config sets daemon.ship_outbound = \"never\", which ships on the confirm token alone.",
 			params: append(append([]verbParam{}, pushParams...),
 				verbParam{Name: "base", Type: "string", Description: "The branch the pull request merges into. Omit for the base the worktree was made from, else the repository's default branch."},
 				verbParam{Name: "title", Type: "string", Description: "The title. With title and body both omitted, gh fills them from the commits."},
@@ -792,6 +793,9 @@ func (d *Daemon) shipOutboundGate(cs *connState, verb, cli string, o shipOutboun
 		})
 	}
 	if d.shipCallerIsPerson(cs) {
+		return "", nil
+	}
+	if d.shipOutbound == config.ShipOutboundNever {
 		return "", nil
 	}
 	return d.shipAskPerson(cs, verb, o, p, token)

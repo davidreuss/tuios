@@ -558,6 +558,10 @@ type Daemon struct {
 	// output instead and nothing else changes.
 	transcriptWatcher *lazyTranscriptWatcher
 
+	// shipOutbound is [daemon] ship_outbound, resolved. It decides whether
+	// a pane's outbound ship call is put to the person in the Inbox. See
+	// shipOutboundGate.
+	shipOutbound string
 	// resumeAgents is the resolved daemon.resume_agents mode: one of the
 	// resumeMode values. See agent_resume.go.
 	resumeAgents string
@@ -1203,6 +1207,11 @@ type DaemonConfig struct {
 	// Plugins is the [plugins] table: the herdr plugins the daemon runs.
 	// See plugin_host.go.
 	Plugins config.PluginsConfig
+	// ShipOutbound is [daemon] ship_outbound, resolved through
+	// config.ResolveShipOutbound: "inbox", the default, asks the person in
+	// the Inbox before a pane's ship push or pull request goes ahead;
+	// "never" ships on the caller's confirm token alone. See verb_ship.go.
+	ShipOutbound string
 }
 
 // NewDaemon creates a new daemon instance.
@@ -1238,6 +1247,7 @@ func NewDaemon(cfg *DaemonConfig) *Daemon {
 		hostCallTimeout:      cfg.HostCallTimeout,
 		agentMatcher:         newAgentMatcher(resolveAgentBinaries(cfg.AgentBinaries)),
 		respondFromShell:     cfg.RespondFromShell,
+		shipOutbound:         config.ResolveShipOutbound(cfg.ShipOutbound),
 		resumeAgents:         resolveResumeMode(cfg.ResumeAgents),
 		windowSize:           windowSizePolicy(cfg.WindowSize),
 		handoffArgs:          cfg.HandoffArgs,

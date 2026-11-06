@@ -5520,11 +5520,23 @@ pull request already, the push updates it.
 
 **When the caller is not you.** A push or a pull request from a process
 inside a pane, or from a connection limited with `restrict-connection`, also
-needs your yes in the Inbox. The question pops up on the client
+needs your yes in the Inbox, unless the daemon's config sets
+`ship_outbound = "never"` in `[daemon]`, in which case the caller's confirm
+token is the only gate. The question pops up on the client
 that shows the pane: `Push feat/retry (abc1234) to origin?`, with `allow` and
 `deny`. The call waits for your answer, two minutes by default. When the wait
 ends first, the call fails with `not_ready` and the question stays. Call
 again with `request_id` to wait for it. Over a link, a push is refused.
+
+**The trade in `ship_outbound = "never"`.** The Inbox gate exists because a
+prompt injection can talk an agent into sending its own work away: an agent
+that read a poisoned file or page runs `tuios ship push` from its pane, and
+without the gate nothing stops it but the confirm token it holds anyway. With
+`never`, one confirm call pushes. The setting is for a machine whose panes
+you trust to push the work they sit on, and it is machine-wide and covers
+every repository and every pane. The confirm flow and the link refusal stay
+in every mode. A push made under `never` records no `approved_by`, since no
+push under it is ever yours.
 
 **The pull request on the rail.** `ship pr` and `ship status --refresh`
 record the branch's pull request on the worktree session. The agent rows of
@@ -5543,7 +5555,8 @@ timer.
 
 **Grants.** From a pane, `ship-commit` and `ship-merge` need `write`, on a
 pane that holds no grant the caller does not hold. `ship-push` and `ship-pr`
-need `write` and your yes in the Inbox. `ship-status` needs `read`.
+need `write` and your yes in the Inbox, unless `ship_outbound = "never"` in
+`[daemon]`. `ship-status` needs `read`.
 
 ## Environment
 
