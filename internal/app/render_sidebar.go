@@ -3808,6 +3808,14 @@ func (m *OS) sidebarAgentRow(e sidebarAgentEntry, variant, cw int, pal overlay.P
 	if e.State == "done" && !e.DoneSeen {
 		fg = pal.Fg
 	}
+	if ckCurrentAgent(e) {
+		// The agent of the pane the person is looking at wears the bright
+		// name the cockpit's fleet row and strip chip wear, so the same
+		// question reads the same in all three places. The name carries the
+		// whole mark because the gutter is taken: severity, the foreign tint
+		// and the focus mark live there.
+		fg = pal.AccentBright
+	}
 	if st.lit() {
 		rowBg = sidebarRowBg(st, pal)
 		fg = pal.Fg
