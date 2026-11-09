@@ -36,8 +36,10 @@ argv = ["echo", "resumed-{session_id}"]
 // savedAgentSession is the state a previous daemon wrote for a session whose
 // panes ran agents: one resumable pane with its agent running, one whose
 // harness has no resume command, one that ran on another machine, one with no
-// conversation, and one whose agent had already exited, which keeps its id and
-// has nothing live to resume.
+// conversation, one whose agent had already exited, which keeps its id and
+// has nothing live to resume, and one whose attribution the detector swept
+// while the conversation was still live, which keeps only its id and the
+// swept mark.
 func savedAgentSession(name string) *SessionState {
 	return &SessionState{
 		Name:             name,
@@ -57,6 +59,8 @@ func savedAgentSession(name string) *SessionState {
 			{ID: "win-plain", Title: "plain", Width: 60, Height: 40, Workspace: 1, PTYID: "dead-4"},
 			{ID: "win-ended", Title: "ended", Width: 60, Height: 40, Workspace: 1, PTYID: "dead-5",
 				AgentSessionID: "e1-ended", AgentSessionHarness: "echoer"},
+			{ID: "win-swept", Title: "swept", Width: 60, Height: 40, Workspace: 1, PTYID: "dead-6",
+				AgentSessionID: "s1-swept", AgentSessionHarness: "echoer", AgentResumeSwept: true},
 		},
 	}
 }
@@ -114,6 +118,9 @@ func TestRestoreKeepsTheConversationID(t *testing.T) {
 	}
 	if w := got["win-ended"]; w.AgentSessionID != "e1-ended" {
 		t.Errorf("a pane whose agent had exited lost its id %q; resume-agent still needs it", w.AgentSessionID)
+	}
+	if w := got["win-swept"]; w.AgentSessionID != "s1-swept" || !w.AgentResumeSwept {
+		t.Errorf("the restored swept pane lost its conversation or its swept mark: id %q swept %v", w.AgentSessionID, w.AgentResumeSwept)
 	}
 }
 
@@ -179,6 +186,39 @@ func TestRestoreOffersOnce(t *testing.T) {
 	}
 	if o, ok := d.resumeOfferFor("once", w); ok {
 		t.Errorf("a second restart would offer %v again", o)
+	}
+}
+
+// TestResumeOfferSurvivesTheDetectorSweep: the detector swept a live agent's
+// attribution by inference (a sleep/wake made the pane read as at its shell)
+// and an idle agent reports nothing that would set it again, so the saved
+// state carries no harness and no state, only the conversation id and the
+// swept mark. The pane still gets its offer, which is the bug this fixes.
+// The offer also recurs: the swept mark rides the restore (clearLiveAgent
+// leaves it), so every later restart offers again until the conversation is
+// resumed or the agent reports its own exit. That repeat is the known
+// behavior of the swept path, not a leak of the once-only restore offer.
+func TestResumeOfferSurvivesTheDetectorSweep(t *testing.T) {
+	echoHarness(t)
+	d, sp := startTestDaemon(t)
+	c := dialVerb(t, sp)
+
+	sess, err := d.restoreSession(savedAgentSession("swept"))
+	if err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	waitAttention(t, c, "the swept pane's offer", hasKind(AttentionResume, "win-swept"))
+
+	saved := sess.ResurrectionState()
+	w, ok := findWindowState(saved, "win-swept")
+	if !ok {
+		t.Fatal("the next save lost the pane")
+	}
+	if !w.AgentResumeSwept {
+		t.Fatal("the next save lost the swept mark, so the offer would not recur")
+	}
+	if _, ok := d.resumeOfferFor("swept", w); !ok {
+		t.Error("a second restart would not offer the swept pane again")
 	}
 }
 

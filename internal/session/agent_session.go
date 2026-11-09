@@ -107,6 +107,9 @@ func (s *Session) applyAgentSession(target string, r AgentSessionReport) (string
 		}
 		w.AgentSessionID = r.SessionID
 		w.AgentSessionHarness = r.Harness
+		// A new conversation in the pane must not inherit the old one's
+		// swept bit.
+		w.AgentResumeSwept = false
 		if r.ThreadToken != "" {
 			w.AgentThreadToken = r.ThreadToken
 		}

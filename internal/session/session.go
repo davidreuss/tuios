@@ -267,6 +267,14 @@ type WindowState struct {
 	// AgentSessionID. Daemon-owned. A pointer, because WindowState is copied
 	// by value all over the daemon and this is rarely set.
 	AgentFlags *KeptFlags `json:"agent_flags,omitempty"`
+	// AgentResumeSwept says the detector cleared the pane's agent attribution
+	// by inference while its conversation never ended cleanly, so the pane
+	// stays worth a resume offer though its saved state reads not-live. Set
+	// only by the detector's sweep paths; an exit the agent itself reported
+	// leaves it false. Cleared when a report sets or replaces
+	// AgentSessionID, so a new conversation in the pane does not inherit the
+	// old conversation's swept bit. Daemon-owned like AgentSessionID.
+	AgentResumeSwept bool `json:"agent_resume_swept,omitempty"`
 	// AgentMeta is what the pane reported about its agent through
 	// set-agent-meta (model, context, cost, a summary), in the order the keys
 	// first arrived. Daemon-owned like AgentState, display only, and cleared

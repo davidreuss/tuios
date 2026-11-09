@@ -128,6 +128,8 @@ func resumeFlagsOf(w WindowState, hid string) []string {
 // was written: an agent state or a harness attribution. Both are cleared when
 // the agent leaves the pane (see scanAgentDetection) and the conversation id
 // is not, so the id alone says only that the pane ran an agent at some point.
+// AgentResumeSwept is the other route to an offer: the detector swept the
+// attribution by inference while the conversation was still live.
 //
 // A restore does not carry either field onto the new shell, so the state the
 // next save writes for a restored pane says no agent is live. That is what
@@ -145,7 +147,7 @@ func (d *Daemon) resumeOfferFor(sessionName string, w WindowState) (resumeOffer,
 	if !d.agentsEnabled() {
 		return resumeOffer{}, false
 	}
-	if w.AgentSessionID == "" || !agentWasLive(w) {
+	if w.AgentSessionID == "" || (!agentWasLive(w) && !w.AgentResumeSwept) {
 		return resumeOffer{}, false
 	}
 	hid := resumeHarnessOf(w)

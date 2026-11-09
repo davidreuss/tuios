@@ -529,6 +529,9 @@ func (s *Session) applyAgentReport(target string, r AgentReport) (AgentState, bo
 		s.noteSharedGuard(w.ID, r)
 		if r.SessionID != "" {
 			w.AgentSessionID = r.SessionID
+			// A new conversation in the pane must not inherit the old one's
+			// swept bit.
+			w.AgentResumeSwept = false
 			// The harness the id belongs to: the one the report named, else
 			// the one the pane is attributed to after it.
 			w.AgentSessionHarness = r.Harness

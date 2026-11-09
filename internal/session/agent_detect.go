@@ -931,6 +931,9 @@ func (s *Session) detectionPass(st *SessionState, readings map[string]detectRead
 			w.AgentHarness = ""
 			w.AgentMeta = nil
 			w.AgentStateAt = now
+			// The conversation did not end: the detector inferred this clear.
+			// Keep the pane worth a resume offer (agent_resume.go).
+			w.AgentResumeSwept = true
 
 		case !detected && !owned && w.AgentState != AgentStateNone:
 			// A claim the detector never took, on a pane that is back at
@@ -1001,6 +1004,9 @@ func (s *Session) detectionPass(st *SessionState, readings map[string]detectRead
 				w.AgentHarness = ""
 				w.AgentMeta = nil
 				w.AgentStateAt = now
+				// Same inference clear as the owned case above: the sweep,
+				// not an exit the agent reported. Keep the offer alive.
+				w.AgentResumeSwept = true
 			}
 		}
 	}
