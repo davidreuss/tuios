@@ -6,9 +6,8 @@
 // TUIOS_INTEGRATION_VERSION=__TUIOS_VERSION__
 // @ts-nocheck
 //
-// Reports Pi's turns to the tuios pane it runs in, through the daemon's
-// agent-hook-event verb, or `tuios agent-hook pi` where the daemon has no
-// such verb: session_start names the session, agent_start starts
+// Reports Pi's turns to the tuios pane it runs in, through
+// `tuios agent-hook pi`: session_start names the session, agent_start starts
 // work and agent_settled ends it. ui_prompt_start says Pi is waiting on the
 // person in a blocking prompt (a confirm, a choice, a line of input), and
 // ui_prompt_end that the prompt was answered; both say whether a turn is
@@ -19,14 +18,12 @@
 // mode reports, since the print, JSON and RPC modes run with no terminal a
 // pane could show.
 
-import { spawn } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, watch } from "node:fs";
 import { basename, dirname } from "node:path";
 import { homedir } from "node:os";
 
 const TUIOS = __TUIOS_COMMAND__;
-
-__TUIOS_HOOK_SOCKET__
 
 // Delivery is best-effort, bounded and FIFO for retained state reports. Keep
 // only the newest adjacent metadata update; a slow daemon must not accumulate
@@ -40,22 +37,7 @@ let activeChild;
 let idle;
 let lastSelection = "";
 let spawnedByNoted = false;
-
-let activeAbort;
-
-// send reports one event: over the daemon's socket, else through tuios.
-async function send(payload) {
-  const abort = new AbortController();
-  activeAbort = abort;
-  try {
-    if ((await hookViaSocket("pi", payload, 2000, abort.signal)) !== null) return;
-  } finally {
-    if (activeAbort === abort) activeAbort = undefined;
-  }
-  await spawnSend(payload);
-}
-
-function spawnSend(payload) {
+function send(payload) {
   return new Promise(resolve => {
     try {
       const child = spawn(TUIOS, ["agent-hook", "pi", "--integration", "__TUIOS_VERSION__"], {
@@ -116,7 +98,6 @@ async function drain() {
   clearTimeout(timer);
   idle = undefined;
   queue.length = 0;
-  activeAbort?.abort(); // the report on the daemon's socket, if one is out
   activeChild?.kill(); // only our reporting child, never the daemon or Pi
 }
 
@@ -192,9 +173,106 @@ export default function (pi) {
       // Filesystem watching is optional; lifecycle reports still work.
     }
   };
+  let selfWindow = "";
+  let childrenTimer;
+  let childrenCtx;
+
+  // tuiosCall runs one daemon verb and parses its JSON reply. The extension
+  // lives inside pi, so its process tree names its pane through resolve-pane
+  // even when the harness scrubbed TUIOS_PANE_ID.
+  function tuiosCall(verb, params) {
+    return new Promise((resolve) => {
+      try {
+        const child = spawn(TUIOS, ["call", verb, JSON.stringify(params)], {
+          stdio: ["ignore", "pipe", "ignore"],
+          windowsHide: true,
+          timeout: 8000,
+        });
+        let out = "";
+        child.stdout.on("data", (chunk) => { out += chunk; });
+        child.on("error", () => resolve(undefined));
+        child.on("close", () => {
+          try {
+            const parsed = JSON.parse(out);
+            resolve(parsed.error ? undefined : parsed);
+          } catch {
+            resolve(undefined);
+          }
+        });
+      } catch {
+        resolve(undefined);
+      }
+    });
+  }
+
+  // resolveSelf names the pane this pi runs in, via the daemon's resolve-pane
+  // verb: the terminal's session id matches the pane shell's pid first, the
+  // ancestor pids second. Empty means unresolved; a run without it shows no
+  // children footer but works otherwise.
+  function resolveSelf() {
+    if (selfWindow || !tui) return Promise.resolve(selfWindow);
+    return new Promise((resolve) => {
+      try {
+        // macOS spells the terminal session id sess; Linux sid. One of the
+        // two matches the pane shell's pid, which is what resolve-pane reads.
+        let sid = NaN;
+        for (const keyword of ["sess", "sid"]) {
+          try {
+            sid = Number(execFileSync("ps", ["-o", keyword + "=", "-p", String(process.pid)], { encoding: "utf8" }).trim());
+            if (Number.isFinite(sid) && sid > 1) break;
+          } catch { /* try the next spelling */ }
+        }
+        const pids = [];
+        let pid = process.ppid;
+        for (let hops = 0; pid > 1 && hops < 8; hops++) {
+          pids.push(pid);
+          pid = Number(execFileSync("ps", ["-o", "ppid=", "-p", String(pid)], { encoding: "utf8" }).trim());
+        }
+        void tuiosCall("resolve-pane", { sid, pids }).then((answer) => {
+          if (answer?.window_id) selfWindow = answer.window_id;
+          resolve(selfWindow);
+        });
+      } catch {
+        resolve(selfWindow);
+      }
+    });
+  }
+
+  // pollChildren draws the agents this pane started: one footer segment whose
+  // names are tuios://window links, so the parent sees who works for it and
+  // jumps to a child without opening any listing. Children come from the
+  // daemon's agent link, the same record list-agents reads.
+  async function pollChildren() {
+    if (!tui || !selfWindow || !childrenCtx) return;
+    const answer = await tuiosCall("list-agents", { all_sessions: true });
+    if (!tui || !childrenCtx) return;
+    const rows = answer?.agents || [];
+    const children = rows.filter((row) => row.parent?.window === selfWindow);
+    if (!children.length) {
+      childrenCtx.ui?.setStatus("tuios-children", "");
+      return;
+    }
+    const working = children.filter((child) => child.state === "working").length;
+    const parts = children.map((child) => {
+      const label = `${child.name || String(child.window_id || "").slice(0, 8)} (${child.state})`;
+      return `\x1b]8;;tuios://window/${child.window_id}\x07${label}\x1b]8;;\x07`;
+    });
+    const head = `${children.length} agent${children.length === 1 ? "" : "s"}${working ? ` \u00b7 ${working} working` : ""}: `;
+    childrenCtx.ui?.setStatus("tuios-children", head + parts.join(" \u00b7 "));
+  }
+
+  function stopChildren() {
+    if (childrenTimer) {
+      clearInterval(childrenTimer);
+      childrenTimer = undefined;
+    }
+    childrenCtx = undefined;
+  }
+
   pi.on("session_start", (_event, ctx) => {
     stopWatching();
     stopSubagents();
+    stopChildren();
     epoch++;
     tui = ctx?.mode === "tui";
     if (!tui) return;
@@ -216,6 +294,15 @@ export default function (pi) {
     startWatching(ctx);
     subCtx = ctx;
     startSubagents();
+    // The parent side of the same lineage: once the pane knows itself it
+    // polls the agents linked to it, so its footer names them with links.
+    stopChildren();
+    childrenCtx = ctx;
+    void resolveSelf().then(() => {
+      if (!selfWindow || !childrenCtx) return;
+      void pollChildren();
+      childrenTimer = setInterval(() => void pollChildren(), 30000);
+    });
     // A reload replaces the extension mid-turn without a new agent_start.
     report("session_start", ctx, { busy: ctx?.isIdle?.() === false });
   });
@@ -233,6 +320,7 @@ export default function (pi) {
     epoch++;
     stopWatching();
     stopSubagents();
+    stopChildren();
     return drain();
   });
   pi.on("agent_start", (_event, ctx) => {

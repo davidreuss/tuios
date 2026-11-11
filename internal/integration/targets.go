@@ -471,7 +471,12 @@ var targets = []*Target{
 		// in the pane env, shown in the footer and one notification, and
 		// reports the conversation's thread token for the ship-commit
 		// Thread trailer.
-		ID: Pi, Name: "Pi", Binary: "pi", Version: 5, Reports: ReportsState,
+		// Version 6 turns the footer into both halves of the lineage: a
+		// pane resolves itself through resolve-pane and polls the agents
+		// linked to it, so a parent's footer names its children as
+		// tuios://window links, beside the spawned-from link a child
+		// already wore.
+		ID: Pi, Name: "Pi", Binary: "pi", Version: 6, Reports: ReportsState,
 		Source:    "herdr src/integration/assets/pi (TypeScript extensions load from ~/.pi/agent/extensions, or PI_CODING_AGENT_DIR/extensions)",
 		ConfigDir: func(e Env) string { return e.dirFromEnv("PI_CODING_AGENT_DIR", ".pi", "agent") },
 		File:      filepath.Join("extensions", "tuios-agent-state.ts"),
