@@ -3,7 +3,9 @@
 If your harness loads MCP servers, tuios can be one, and then you call tools
 instead of writing shell commands. The server is `tuios mcp`, over stdio. Each
 tool is a daemon verb, with its input schema generated from the verb table, so
-it always matches the daemon you run.
+it always matches the daemon you run. An agent that can run code prefers the
+tools over shell lines: it batches independent calls, filters large results,
+and keeps quoted pane names and message text out of the shell.
 
 ## Setup
 

@@ -150,6 +150,15 @@ async setup keeps the worktree and the branch, and only reports.
 With a sync setup, `new-worktree` and `fan` return `agent_pending` and no
 `window_id`. Wait on `setup.agent` before you address the agent.
 
+### One agent per worktree
+
+A worktree session is one agent's. `--agent` starts that agent, and the
+agent's window goes by the branch stem, so `send-agent-message -w retry`
+reaches it. Brief it where it sits (`ask-agent -s <repo>-<branch> ...`) or
+delegate a child into it. Doing both leaves a second agent at its welcome
+screen with no task. When the session already holds a working agent, join it
+with `ask-agent`; `start-agent` there makes the duplicate.
+
 ## Fan-out
 
 One prompt across several agents, each in its own worktree:
@@ -289,6 +298,14 @@ tuios start-agent claude --name reviewer --grants read
 `--grants` works the same on `fan` and `new-window`. You can give only what you
 hold (`tuios --skill grants`). The helper also never gets a wider permission
 mode than yours.
+
+### Name your agents
+
+`--name` is the agent's address. The child reads its own name from
+`$TUIOS_AGENT_NAME`, and mail resolves a name before an id prefix, so
+`send-agent-message -w reviewer` reaches the pane the way a person would say
+it. A name must be unique in its session; an unnamed agent is addressed by
+its window id.
 
 An agent you start is your child. `list-agents` shows its `parent` and the
 `root` of the chain, and the rail draws it under your row. Wait for all your

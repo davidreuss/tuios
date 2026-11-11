@@ -122,6 +122,13 @@ func (d *Daemon) verbStartAgent(cs *connState, params json.RawMessage) (any, *ve
 	env, pathList, verr := callerEnv(cs, p.Env)
 	if verr == nil {
 		env = append(env, d.spawnedByEnv(cs)...)
+		// The child learns its own name with the rest of its identity, so
+		// it can self-reference in mail and the parent can address it as
+		// @name. Only a caller-named pane carries it: an unnamed one has
+		// nothing to say yet.
+		if p.Name != "" {
+			env = append(env, "TUIOS_AGENT_NAME="+p.Name)
+		}
 	}
 	if verr != nil {
 		return nil, verr
