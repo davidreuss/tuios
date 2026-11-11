@@ -27,6 +27,7 @@ type tmlShowOptions struct {
 	width     string
 	height    string
 	workspace int
+	noFocus   bool
 	wait      bool
 	timeout   int
 	jsonOut   bool
@@ -101,6 +102,7 @@ patch or tuios tml replace. That makes the script the surface's owner.`,
 	cmd.Flags().StringVar(&o.width, "width", "", "Popup width in cells or percent (default: 80%)")
 	cmd.Flags().StringVar(&o.height, "height", "", "Popup height in cells or percent (default: 60%)")
 	cmd.Flags().IntVar(&o.workspace, "workspace", 0, "Workspace to open it on (default: the current one)")
+	cmd.Flags().BoolVar(&o.noFocus, "no-focus", false, "Never take the focus, even when the caller is no pane")
 	cmd.Flags().BoolVar(&o.wait, "wait", false, "Stay open until the surface closes, and print its value")
 	cmd.Flags().IntVar(&o.timeout, "timeout", 0, "With --wait: milliseconds to wait (default: as long as it is open)")
 	addJSONFlag(cmd, &o.jsonOut)
@@ -180,6 +182,9 @@ func runTMLShow(name string, o tmlShowOptions, stdin io.Reader, stdout io.Writer
 	}
 	if o.workspace != 0 {
 		params["workspace"] = o.workspace
+	}
+	if o.noFocus {
+		params["no_focus"] = true
 	}
 	callTimeout := defaultPopupCallTimeout
 	if o.events {

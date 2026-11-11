@@ -543,6 +543,7 @@ func (d *Daemon) verbTMLOpen(cs *connState, params json.RawMessage) (any, *verbE
 		Doc       json.RawMessage `json:"doc"`
 		Target    string          `json:"target"`
 		Name      string          `json:"name"`
+	NoFocus   bool            `json:"no_focus"`
 		Width     string          `json:"width"`
 		Height    string          `json:"height"`
 		Workspace int             `json:"workspace"`
@@ -671,13 +672,15 @@ func (d *Daemon) verbTMLOpen(cs *connState, params json.RawMessage) (any, *verbE
 		// A surface a pane opened does not take the keys: the person
 		// focuses it with a click or a key, so text meant for another pane
 		// cannot answer it. The person's own surface takes the focus.
-		Focus:       s.caller == "",
 		Command:     tmlPlaceholderCommand(uri),
 		Popup:       target == TMLTargetPopup,
 		PopupWidth:  p.Width,
 		PopupHeight: p.Height,
 		Kind:        WindowKindTML,
 		URI:         uri,
+		// A caller in no pane would take the focus by default, which a
+		// detached script has no business doing; --no-focus holds it off.
+		Focus:       s.caller == "" && !p.NoFocus,
 	}
 	win, bverr, err := d.addWindowFor(cs, "tml-open", sess, opts, onExit)
 	if bverr == nil && err != nil {
