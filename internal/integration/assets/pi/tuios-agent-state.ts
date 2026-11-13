@@ -6,17 +6,16 @@
 // TUIOS_INTEGRATION_VERSION=__TUIOS_VERSION__
 // @ts-nocheck
 //
-// Reports Pi's turns to the tuios pane it runs in, through
-// `tuios agent-hook pi`: session_start names the session, agent_start starts
-// work and agent_settled ends it. ui_prompt_start says Pi is waiting on the
-// person in a blocking prompt (a confirm, a choice, a line of input), and
-// ui_prompt_end that the prompt was answered; both say whether a turn is
-// running, so an answered prompt goes back to working or to rest. Pi's
-// subagents report as children of the pane: subagent_start names one and what
-// it was asked, subagent_update what it runs now, subagent_stop how it ended
-// — an empty stop text is a stop, a non-empty one a finish. Only the TUI
-// mode reports, since the print, JSON and RPC modes run with no terminal a
-// pane could show.
+// Reports Pi's turns to the tuios pane it runs in: session_start names the
+// session, agent_start starts work and agent_settled ends it. ui_prompt_start
+// says Pi is waiting on the person in a blocking prompt (a confirm, a choice,
+// a line of input), and ui_prompt_end that the prompt was answered; both say
+// whether a turn is running, so an answered prompt goes back to working or to
+// rest. Pi's subagents report as children of the pane: subagent_start names
+// one and what it was asked, subagent_update what it runs now, subagent_stop
+// how it ended — an empty stop text is a stop, a non-empty one a finish. Only
+// the TUI mode reports, since the print, JSON and RPC modes run with no
+// terminal a pane could show.
 
 import { execFileSync, spawn } from "node:child_process";
 import { readFileSync, watch } from "node:fs";
@@ -37,7 +36,17 @@ let activeChild;
 let idle;
 let lastSelection = "";
 let spawnedByNoted = false;
+__TUIOS_HOOK_SOCKET__
+
 function send(payload) {
+  // The socket path needs no process per report; the process fallback stays
+  // for a daemon without the verb and for environments without a socket.
+  return hookViaSocket("__TUIOS_HARNESS__", payload, 2000).then(out => {
+    if (out === null) return sendByProcess(payload);
+  });
+}
+
+function sendByProcess(payload) {
   return new Promise(resolve => {
     try {
       const child = spawn(TUIOS, ["agent-hook", "pi", "--integration", "__TUIOS_VERSION__"], {
