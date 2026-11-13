@@ -1186,28 +1186,29 @@ func handleCopySelection(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	return o, tea.Batch(o.CopyToClipboard(text), o.SaveToPasteBuffers(text))
 }
 
-// handleCopyWindowID copies the focused pane's name and window id: the name
-// says what the pane is, the id is the one handle every addressing path
-// takes — mail, links, selectors, the thread journal.
+// handleCopyWindowID copies the focused pane's identity as one structured
+// line: what it is, its window id, its session and its name. The prefix and
+// the key=value form make it parseable by an agent that receives it, and
+// readable by a person; the full id addresses the pane from any session.
 func handleCopyWindowID(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	w := o.GetFocusedWindow()
 	if w == nil {
 		return o, nil
 	}
-	text := w.ID
+	text := "tuios pane window=" + w.ID + " session=" + o.SessionName
 	if name := app.PaneName(w, &o.Settings); name != "" {
-		text = name + " " + w.ID
+		text += ` name="` + name + `"`
 	}
 	return o, o.CopyToClipboard(text)
 }
 
 // handleCopySessionID copies the name of the session the focused pane runs
-// in, which is how mail and `-s` name a session.
+// in, in the same structured form, so the paste says what it is.
 func handleCopySessionID(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	if o.SessionName == "" {
 		return o, nil
 	}
-	return o, o.CopyToClipboard(o.SessionName)
+	return o, o.CopyToClipboard("tuios session=" + o.SessionName)
 }
 
 func handlePasteClipboard(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
