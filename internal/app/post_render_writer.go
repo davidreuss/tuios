@@ -2,11 +2,29 @@ package app
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"os"
 	"sync"
 	"time"
 )
+
+// framesTrace records one line per frame write when TUIOS_FRAME_LOG names a
+// file: time, size and whether the frame cleared the screen. A flicker is a
+// frame pattern, and this is the cheapest way to read it off a live client.
+var framesTrace *os.File
+
+func init() {
+	path := os.Getenv("TUIOS_FRAME_LOG")
+	if path == "" {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return
+	}
+	framesTrace = f
+}
 
 // PostRenderWriter wraps the client's terminal (stdout) to intercept bubbletea's
 // frame output and append queued graphics data (OSC 66 text sizing)
@@ -264,6 +282,10 @@ func (w *PostRenderWriter) write(p []byte, frame bool) (n int, err error) {
 
 	if _, err = w.writeOut(buf); err != nil {
 		return 0, err
+	}
+	if framesTrace != nil {
+		cleared := bytes.Contains(out, []byte("\x1b[2J"))
+		fmt.Fprintf(framesTrace, "%s frame=%d clear=%v\n", time.Now().Format("15:04:05.000"), len(buf), cleared)
 	}
 	if bytes.Contains(pending, kittyGraphicsStart) || (!frame && bytes.Contains(out, kittyGraphicsStart)) {
 		w.repaint.note(w.writeRepaint)
