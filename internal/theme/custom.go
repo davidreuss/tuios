@@ -266,7 +266,7 @@ func ReloadThemeFiles() []string {
 	ReloadGlyphSets()
 	if t := Current(); t != nil && slices.Contains(loaded, t.ID) {
 		tint.SetTintID(t.ID)
-		generation.Add(1)
+		bumpGeneration("reload-theme-files")
 	}
 	return problems
 }

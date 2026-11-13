@@ -214,7 +214,7 @@ func (d *Draft) Preview() error {
 	tint.SetTintID(scratch.ID)
 	enabled = true
 	matchHost.Store(false)
-	generation.Add(1)
+	bumpGeneration("draft-scratch")
 	return nil
 }
 

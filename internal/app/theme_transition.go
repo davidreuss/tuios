@@ -1,6 +1,7 @@
 package app
 
 import (
+	"fmt"
 	"image/color"
 	"math"
 	"time"
@@ -137,6 +138,9 @@ func (m *OS) noticeThemeChange() {
 	t.asked = time.Now()
 	t.dur = m.Settings.ThemeTransitionDuration()
 	m.renderSkipped = false
+	if framesTrace != nil {
+		fmt.Fprintf(framesTrace, "%s theme-transition restart dur=%s\n", time.Now().Format("15:04:05.000"), t.dur)
+	}
 }
 
 // themeTransitionFrame is the motion clock's interval while a transition

@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"sync"
+
+	"github.com/Gaurav-Gosain/tuios/internal/theme"
 	"time"
 )
 
@@ -30,7 +32,30 @@ func init() {
 	}
 	_ = os.MkdirAll(dir, 0o700)
 	framesDumpDir = dir
+	theme.BumpHook = func(reason string, stack []byte) {
+		if framesBumps > 5 {
+			return
+		}
+		framesBumps++
+		lines := [4][]byte{}
+		n := 0
+		for _, l := range bytes.SplitAfter(stack, []byte("\n")) {
+			if n > 0 && len(lines[n-1]) > 0 && !bytes.HasPrefix(bytes.TrimSpace(l), []byte("/")) {
+				break
+			}
+			if len(l) > 0 {
+				lines[n%4] = l
+				n++
+			}
+			if n >= 4 {
+				break
+			}
+		}
+		fmt.Fprintf(f, "%s theme-bump reason=%s %s %s\n", time.Now().Format("15:04:05.000"), reason, lines[1], lines[2])
+	}
 }
+
+var framesBumps int
 
 var (
 	framesTrace   *os.File

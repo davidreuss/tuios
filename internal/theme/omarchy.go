@@ -4,6 +4,7 @@ import (
 	"errors"
 	"image/color"
 	"os"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 
@@ -56,6 +57,18 @@ var omarchyState struct {
 // generation counts every change of the active theme, a live one's new
 // colours included. See Generation.
 var generation atomic.Uint64
+
+// BumpHook, when set, runs at every generation bump with the reason and the
+// bumper's stack. It is the frame log's way of seeing what restarts a theme
+// transition.
+var BumpHook func(reason string, stack []byte)
+
+func bumpGeneration(reason string) {
+	if BumpHook != nil {
+		BumpHook(reason, debug.Stack())
+	}
+	generation.Add(1)
+}
 
 // Generation is a number that changes whenever the active theme or its
 // colours change. A memo of anything drawn from the theme keys on it rather
@@ -135,7 +148,7 @@ func SetOmarchyPalette(p swatch.Palette) bool {
 	tint.Register(t)
 	registerChrome(OmarchyID, c)
 	if CurrentThemeID() == OmarchyID {
-		generation.Add(1)
+		bumpGeneration("omarchy-palette")
 	}
 	return true
 }
