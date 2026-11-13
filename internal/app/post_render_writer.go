@@ -14,7 +14,7 @@ import (
 // framesTrace records one line per frame write when TUIOS_FRAME_LOG names a
 // file: time, size and whether the frame cleared the screen. A flicker is a
 // frame pattern, and this is the cheapest way to read it off a live client.
-// Frames over 4KB are dumped whole, up to 20 of them, so the region they
+// Frames over 300B are dumped whole, up to 400 of them, so the region they
 // rewrite can be read off the bytes.
 func init() {
 	path := os.Getenv("TUIOS_FRAME_LOG")
@@ -106,6 +106,16 @@ type PostRenderWriter struct {
 	erased []func(kept bool) []byte
 	// repaint follows a kitty picture with a second write. See pictureRepaint.
 	repaint pictureRepaint
+	// frameStats, when set, is read for the frame log line: the geometry the
+	// flicker diagnosis compares frame to frame.
+	frameStats func() string
+}
+
+// SetFrameStats installs the callback the frame log line reads. See frameStats.
+func (w *PostRenderWriter) SetFrameStats(fn func() string) {
+	w.mu.Lock()
+	w.frameStats = fn
+	w.mu.Unlock()
 }
 
 // FrameHook runs on each frame the renderer writes. out is the frame to send
@@ -323,7 +333,10 @@ func (w *PostRenderWriter) write(p []byte, frame bool) (n int, err error) {
 	if framesTrace != nil {
 		cleared := bytes.Contains(out, []byte("\x1b[2J"))
 		line := fmt.Sprintf("%s frame=%d clear=%v", time.Now().Format("15:04:05.000"), len(buf), cleared)
-		if len(buf) > 4096 && framesDumps < 20 {
+		if w.frameStats != nil {
+			line += " " + w.frameStats()
+		}
+		if len(buf) > 300 && framesDumps < 400 {
 			framesDumps++
 			dump := fmt.Sprintf("%s/frame-%02d.bin", framesDumpDir, framesDumps)
 			_ = os.WriteFile(dump, buf, 0o600)
