@@ -1256,3 +1256,9 @@ func (m *OS) takeDaemonCwd(w *terminal.Window, ws *session.WindowState) {
 		w.Cwd = ws.Cwd
 	}
 }
+
+// PaneDir is paneDir for callers outside the package: the copied pane
+// identity carries the directory the pane works in.
+func PaneDir(w *terminal.Window) string {
+	return paneDir(w)
+}

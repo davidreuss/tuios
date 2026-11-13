@@ -1196,6 +1196,9 @@ func handleCopyWindowID(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 		return o, nil
 	}
 	text := "tuios pane window=" + w.ID + " session=" + o.SessionName
+	if cwd := app.PaneDir(w); cwd != "" {
+		text += " cwd=" + cwd
+	}
 	if name := app.PaneName(w, &o.Settings); name != "" {
 		text += ` name="` + name + `"`
 	}
