@@ -916,3 +916,9 @@ func (m *OS) workspacePosition(window *terminal.Window) int {
 	}
 	return 0
 }
+
+// PaneName is paneName for callers outside the package: the input actions
+// copy the name with the window id, so the pasted identity says what it is.
+func PaneName(window *terminal.Window, s *config.Settings) string {
+	return paneName(window, s)
+}

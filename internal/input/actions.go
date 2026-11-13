@@ -1186,14 +1186,19 @@ func handleCopySelection(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	return o, tea.Batch(o.CopyToClipboard(text), o.SaveToPasteBuffers(text))
 }
 
-// handleCopyWindowID copies the focused pane's window id: the one handle
-// every addressing path takes — mail, links, selectors, the thread journal.
+// handleCopyWindowID copies the focused pane's name and window id: the name
+// says what the pane is, the id is the one handle every addressing path
+// takes — mail, links, selectors, the thread journal.
 func handleCopyWindowID(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	w := o.GetFocusedWindow()
 	if w == nil {
 		return o, nil
 	}
-	return o, o.CopyToClipboard(w.ID)
+	text := w.ID
+	if name := app.PaneName(w, &o.Settings); name != "" {
+		text = name + " " + w.ID
+	}
+	return o, o.CopyToClipboard(text)
 }
 
 // handleCopySessionID copies the name of the session the focused pane runs
