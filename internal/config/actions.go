@@ -362,6 +362,8 @@ var actionTable = [...]ActionSpec{
 
 	// Clipboard
 	{Name: "copy_selection", Desc: "Copy selection to clipboard"},
+	{Name: "copy_window_id", Desc: "Copy the focused pane's window id"},
+	{Name: "copy_session_id", Desc: "Copy the focused pane's session name"},
 	{Name: "paste_clipboard", Desc: "Paste from clipboard"},
 	{Name: "paste_image", Desc: "Paste the clipboard image as a file path"},
 	{Name: "paste_buffer", Desc: "Paste the newest paste buffer"},

@@ -252,6 +252,8 @@ func (d *ActionDispatcher) registerHandlers() {
 
 	// Clipboard actions
 	d.Register("copy_selection", handleCopySelection)
+	d.Register("copy_window_id", handleCopyWindowID)
+	d.Register("copy_session_id", handleCopySessionID)
 	d.Register("paste_clipboard", handlePasteClipboard)
 	d.Register("paste_image", handlePasteImage)
 	d.Register("paste_buffer", handlePasteBuffer)
@@ -1182,6 +1184,25 @@ func handleCopySelection(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
 	}
 	text := selectionText(focusedWindow)
 	return o, tea.Batch(o.CopyToClipboard(text), o.SaveToPasteBuffers(text))
+}
+
+// handleCopyWindowID copies the focused pane's window id: the one handle
+// every addressing path takes — mail, links, selectors, the thread journal.
+func handleCopyWindowID(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+	w := o.GetFocusedWindow()
+	if w == nil {
+		return o, nil
+	}
+	return o, o.CopyToClipboard(w.ID)
+}
+
+// handleCopySessionID copies the name of the session the focused pane runs
+// in, which is how mail and `-s` name a session.
+func handleCopySessionID(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {
+	if o.SessionName == "" {
+		return o, nil
+	}
+	return o, o.CopyToClipboard(o.SessionName)
 }
 
 func handlePasteClipboard(_ tea.KeyPressMsg, o *app.OS) (*app.OS, tea.Cmd) {

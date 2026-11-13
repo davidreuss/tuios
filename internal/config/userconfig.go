@@ -1556,6 +1556,12 @@ func DefaultConfig() *UserConfig {
 				// which the glyph table maps back to these chords.
 				"next_agent": {"alt+shift+j"},
 				"prev_agent": {"alt+shift+k"},
+				// The focused pane's identity, to paste where an agent is asked
+				// for: the window id is the one handle mail, links, selectors
+				// and the thread journal all take, and the session name is how
+				// mail and -s name a session. Both terminal-safe.
+				"copy_window_id":  {"alt+i"},
+				"copy_session_id": {"alt+shift+i"},
 			},
 			Workspaces: getDefaultWorkspaceKeybinds(),
 			Layout:     getDefaultLayoutKeybinds(),
