@@ -153,9 +153,9 @@ func (m *OS) sidebarFilterAgents(agents []sidebarAgentEntry) ([]sidebarAgentEntr
 	return kept, total
 }
 
-// sidebarSortAgents orders the section. Every order is stable, so panes at the
-// same rank or the same instant keep the order the tree gave them and no row
-// moves under the pointer for a reason the user cannot see.
+// sidebarSortAgents orders the section. Every order ties on the entry's
+// identity, so two rebuilds of the same listing draw it in the same order
+// even as sessions and panes arrive in steps between them.
 //
 // The needs-you order is groups only. Inside a group the rows keep the tree's
 // order, which is spawn order: sessions as the daemon created them (or as the
@@ -165,18 +165,43 @@ func (m *OS) sidebarFilterAgents(agents []sidebarAgentEntry) ([]sidebarAgentEntr
 // needs_input and recency sorts by the last state change, and both of those
 // reorder a group every time one of its members moves.
 func (m *OS) sidebarSortAgents(agents []sidebarAgentEntry) {
+	// The tie-break is the entry's identity, so two rebuilds of the same
+	// listing order it the same way even where the sort key ties. A stable
+	// sort keeps the tree's order for the ties it sees, but the tree's order
+	// itself moves as sessions and panes arrive in steps, and two rebuilds a
+	// frame apart then drew two different lists, which the frame stream
+	// showed as a strobe.
+	tie := func(a, b *sidebarAgentEntry) bool {
+		if a.SessionID != b.SessionID {
+			return a.SessionID < b.SessionID
+		}
+		return a.WindowID < b.WindowID
+	}
 	switch m.sidebarAgentsSort() {
 	case sidebarAgentsRecent:
-		sort.SliceStable(agents, func(a, b int) bool { return agents[a].StateAt > agents[b].StateAt })
+		sort.Slice(agents, func(a, b int) bool {
+			if agents[a].StateAt != agents[b].StateAt {
+				return agents[a].StateAt > agents[b].StateAt
+			}
+			return tie(&agents[a], &agents[b])
+		})
 	case sidebarAgentsPriority:
-		sort.SliceStable(agents, func(a, b int) bool {
-			return sidebarAgentPriority(agents[a].State, agents[a].DoneSeen) >
-				sidebarAgentPriority(agents[b].State, agents[b].DoneSeen)
+		sort.Slice(agents, func(a, b int) bool {
+			pa := sidebarAgentPriority(agents[a].State, agents[a].DoneSeen)
+			pb := sidebarAgentPriority(agents[b].State, agents[b].DoneSeen)
+			if pa != pb {
+				return pa > pb
+			}
+			return tie(&agents[a], &agents[b])
 		})
 	default:
-		sort.SliceStable(agents, func(a, b int) bool {
-			return sidebarAgentGroup(agents[a].State, agents[a].DoneSeen) <
-				sidebarAgentGroup(agents[b].State, agents[b].DoneSeen)
+		sort.Slice(agents, func(a, b int) bool {
+			ga := sidebarAgentGroup(agents[a].State, agents[a].DoneSeen)
+			gb := sidebarAgentGroup(agents[b].State, agents[b].DoneSeen)
+			if ga != gb {
+				return ga < gb
+			}
+			return tie(&agents[a], &agents[b])
 		})
 	}
 }

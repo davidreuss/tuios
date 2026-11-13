@@ -1367,7 +1367,14 @@ func (m *OS) updateWindowFromState(w *terminal.Window, ws *session.WindowState) 
 	w.IsPopup = ws.Popup
 	w.IsScratch = ws.Scratch
 	w.ScratchName = ws.ScratchName
-	w.Rail = ws.Rail
+	// An empty rail tag on the wire is "this snapshot says nothing about the
+	// tag", not "the pane has none": a pane that lost its tag here re-created
+	// itself in the rail's pane section and lost it again on the next sync,
+	// and the section flapped for as long as the syncs came. Same doctrine as
+	// ShellPID below.
+	if ws.Rail != "" || w.Rail == "" {
+		w.Rail = ws.Rail
+	}
 	w.Stack, w.StackIndex = ws.Stack, ws.StackIndex
 	w.Kind, w.URI = ws.Kind, ws.URI
 	w.PopupWidth = ws.PopupWidth
@@ -1507,7 +1514,10 @@ func adoptWindowState(window *terminal.Window, ws session.WindowState) {
 	window.IsPopup = ws.Popup
 	window.IsScratch = ws.Scratch
 	window.ScratchName = ws.ScratchName
-	window.Rail = ws.Rail
+	// See the rail-tag note at adoptWindowState above.
+	if ws.Rail != "" || window.Rail == "" {
+		window.Rail = ws.Rail
+	}
 	window.Stack, window.StackIndex = ws.Stack, ws.StackIndex
 	window.Kind, window.URI = ws.Kind, ws.URI
 	window.PopupWidth = ws.PopupWidth
