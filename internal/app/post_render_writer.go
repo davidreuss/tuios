@@ -12,8 +12,8 @@ import (
 // framesTrace records one line per frame write when TUIOS_FRAME_LOG names a
 // file: time, size and whether the frame cleared the screen. A flicker is a
 // frame pattern, and this is the cheapest way to read it off a live client.
-var framesTrace *os.File
-
+// Frames over 4KB are dumped whole, up to 20 of them, so the region they
+// rewrite can be read off the bytes.
 func init() {
 	path := os.Getenv("TUIOS_FRAME_LOG")
 	if path == "" {
@@ -24,7 +24,19 @@ func init() {
 		return
 	}
 	framesTrace = f
+	dir := os.Getenv("TUIOS_FRAME_DUMP_DIR")
+	if dir == "" {
+		dir = "/tmp/tuios-frames"
+	}
+	_ = os.MkdirAll(dir, 0o700)
+	framesDumpDir = dir
 }
+
+var (
+	framesTrace   *os.File
+	framesDumpDir string
+	framesDumps   int
+)
 
 // PostRenderWriter wraps the client's terminal (stdout) to intercept bubbletea's
 // frame output and append queued graphics data (OSC 66 text sizing)
@@ -285,7 +297,14 @@ func (w *PostRenderWriter) write(p []byte, frame bool) (n int, err error) {
 	}
 	if framesTrace != nil {
 		cleared := bytes.Contains(out, []byte("\x1b[2J"))
-		fmt.Fprintf(framesTrace, "%s frame=%d clear=%v\n", time.Now().Format("15:04:05.000"), len(buf), cleared)
+		line := fmt.Sprintf("%s frame=%d clear=%v", time.Now().Format("15:04:05.000"), len(buf), cleared)
+		if len(buf) > 4096 && framesDumps < 20 {
+			framesDumps++
+			dump := fmt.Sprintf("%s/frame-%02d.bin", framesDumpDir, framesDumps)
+			_ = os.WriteFile(dump, buf, 0o600)
+			line += " dump=" + dump
+		}
+		fmt.Fprintln(framesTrace, line)
 	}
 	if bytes.Contains(pending, kittyGraphicsStart) || (!frame && bytes.Contains(out, kittyGraphicsStart)) {
 		w.repaint.note(w.writeRepaint)
