@@ -208,6 +208,9 @@ func New(t Terminal, opts app.OSOptions, state *session.SessionState) *Client {
 	m.PostRenderWriter = prw
 	// Sixel images follow the frame they sit on, in the same write.
 	m.ConnectFrameWriter(prw)
+	prw.SetFrameStats(func() string {
+		return fmt.Sprintf("sb=%d eff=%d w=%d res=%+v", m.GetSidebarWidth(), m.EffectiveWidth, m.Width, m.OwnLayoutReserve())
+	})
 	if opts.DaemonClient != nil {
 		// Everything the daemon sends an attached client, queued for Update.
 		// The same call the SSH server and tuios-web make.
