@@ -155,7 +155,8 @@ func TerminalSafeAction(action string) bool {
 		action == "next_workspace" || action == "prev_workspace" ||
 		action == "next_session" || action == "prev_session" ||
 		action == "next_host" || action == "prev_host" ||
-		action == "next_agent" || action == "prev_agent"
+		action == "next_agent" || action == "prev_agent" ||
+		action == "copy_window_id" || action == "copy_session_id"
 }
 
 // reservedTerminalChord mirrors input.isReservedTerminalChord for a key written
