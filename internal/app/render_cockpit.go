@@ -35,7 +35,8 @@ const (
 type ckLook struct {
 	pal                    overlay.Palette
 	canvas, panel, cursor  color.Color
-	hover, edge, edgePanel color.Color
+	hover, active          color.Color
+	edge, edgePanel        color.Color
 	add, del               color.Color
 	attnTint, busyTint     color.Color
 	okTint, warnTint       color.Color
@@ -135,6 +136,10 @@ func (m *OS) buildCockpitLook(pal overlay.Palette) ckLook {
 	l.ascii = overlay.UseASCII()
 	l.nerd = !l.ascii && !m.Settings.NoNerdFont
 	l.hover = overlay.MixColors(pal.Panel, pal.Fg, 0.06)
+	// The band under the row of the pane the person is looking at: a dim
+	// accent on the panel, the rail's "you are here" treatment. Quieter
+	// than the cursor's ground, louder than a resting row.
+	l.active = overlay.MixColors(pal.Panel, pal.Accent, 0.14)
 	l.edge = overlay.Shown(overlay.Structure(pal.Canvas))
 	l.edgePanel = overlay.Shown(overlay.Structure(pal.Panel))
 	l.add = overlay.MixColors(pal.Success, pal.FgDim, 0.4)
@@ -146,12 +151,13 @@ func (m *OS) buildCockpitLook(pal overlay.Palette) ckLook {
 	case overlay.Depth256:
 		l.cursor = overlay.Apart256(l.cursor, pal.Panel)
 		l.hover = overlay.Apart256(l.hover, pal.Panel)
+		l.active = overlay.Apart256(l.active, pal.Panel)
 		l.add, l.del = overlay.To256(l.add), overlay.To256(l.del)
 		l.attnTint, l.busyTint = overlay.To256(l.attnTint), overlay.To256(l.busyTint)
 		l.okTint, l.warnTint = overlay.To256(l.okTint), overlay.To256(l.warnTint)
 		l.accTint, l.infoTint = overlay.To256(l.accTint), overlay.To256(l.infoTint)
 	case overlay.Depth16:
-		l.cursor, l.hover = overlay.NoColor, overlay.NoColor
+		l.cursor, l.hover, l.active = overlay.NoColor, overlay.NoColor, overlay.NoColor
 		l.attnTint, l.busyTint, l.okTint, l.warnTint = overlay.NoColor, overlay.NoColor, overlay.NoColor, overlay.NoColor
 		l.accTint, l.infoTint = overlay.NoColor, overlay.NoColor
 		l.add, l.del = pal.Success, pal.Warn
@@ -1146,10 +1152,17 @@ func (m *OS) drawFleetRow(c *ckCanvas, l ckLook, r ckRow, cursor, hover bool, x,
 		return
 	}
 
+	var e sidebarAgentEntry
+	if r.agent >= 0 {
+		e = ck.agents[r.agent]
+	}
+	current := ckCurrentAgent(e)
 	ground := l.panel
 	switch {
 	case cursor:
 		ground = l.cursor
+	case current:
+		ground = l.active
 	case hover:
 		ground = l.hover
 	}
@@ -1157,18 +1170,15 @@ func (m *OS) drawFleetRow(c *ckCanvas, l ckLook, r ckRow, cursor, hover bool, x,
 	// At 16 colours the cursor is reverse video and the pointer an
 	// underline, applied once the row is drawn.
 	defer c.mark(pal, x+1, y, w-1, r.lines, overlay.RowState{Cursor: cursor, Focused: cursor, Hover: hover})
-	var e sidebarAgentEntry
-	if r.agent >= 0 {
-		e = ck.agents[r.agent]
-	}
-	current := ckCurrentAgent(e)
 	if cursor {
 		for i := range r.lines {
 			c.text(x, y+i, 0, ckSeg{t: "▌", fg: pal.Accent})
 		}
 	} else if current {
-		// The agent of the pane the person is looking at wears a bar of its
-		// own, a brighter one than the cursor's, so the two never blur.
+		// The agent of the pane the person is looking at wears the rail's
+		// band and a bar of its own, a brighter one than the cursor's, so
+		// the two never blur. At 16 colours the band is the terminal's own
+		// and the bar carries the mark alone.
 		for i := range r.lines {
 			c.text(x, y+i, 0, ckSeg{t: "▌", fg: pal.AccentBright})
 		}
@@ -1978,6 +1988,10 @@ func (m *OS) ckStripChip(l ckLook, r ckRow, cursor bool) (chip, art []ckSeg) {
 	current := ckCurrentAgent(e)
 	if cursor {
 		bg, nameInk = l.cursor, pal.Fg
+	} else if current {
+		// The strip's chip for the pane the person is looking at wears
+		// the same band its fleet row does.
+		bg = l.active
 	}
 	chip = []ckSeg{{t: " " + g + " ", fg: gInk, bg: bg}}
 	if current && !cursor {
@@ -2446,7 +2460,17 @@ func (m *OS) drawFocus(c *ckCanvas, l ckLook, x, y, w, y1, top int, now time.Tim
 	if r.agent >= 0 && e.Quiet {
 		harness = strings.TrimPrefix(harness+sepWord()+"quiet", sepWord())
 	}
-	hx := c.text(x, y, right, ckSeg{t: name, fg: pal.Fg, attrs: ckBold})
+	current := r.agent >= 0 && ckCurrentAgent(e)
+	if current {
+		// The reading view answers "what am I looking at" with the same
+		// band the agent's row wears in the fleet.
+		c.fill(x, y, w, 1, l.active)
+	}
+	nameInk := pal.Fg
+	if current {
+		nameInk = pal.AccentBright
+	}
+	hx := c.text(x, y, right, ckSeg{t: name, fg: overlay.Readable(nameInk, l.active), attrs: ckBold})
 	if harness != "" {
 		hx = c.text(hx, y, right, ckSeg{t: "   " + harness, fg: pal.FgDim})
 	}
