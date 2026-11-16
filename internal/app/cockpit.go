@@ -60,10 +60,14 @@ const ckFoldAt = 8
 // ckChildMax is how many subagent rows an agent shows under it.
 const ckChildMax = 3
 
-// ckHold is how long an agent's new group must last before its row moves
-// there, so a hook that flips working, needs you, working in a moment does
-// not move the row twice.
-const ckHold = 400 * time.Millisecond
+// ckHoldUrgent is the hold for a move into Needs you: a question must
+// surface at once.
+const ckHoldUrgent = 400 * time.Millisecond
+
+// ckHoldCalm is the hold for every other band move. An agent flaps between
+// working and settled between turns, longer than a moment apart, so its row
+// waits that flap out where it is instead of moving bands each time.
+const ckHoldCalm = 5 * time.Second
 
 type ckRowKind uint8
 
@@ -780,12 +784,17 @@ func (m *OS) buildCockpitRows(list []sidebarAgentEntry, now time.Time) []ckRow {
 }
 
 // ckHoldGroup is the group an agent's row is drawn in: the group its state
-// asks for, once it has asked for it for ckHold. A row new to the fleet goes
-// straight to its group.
+// asks for, once it has asked for it for the hold that move earns. A move
+// into Needs you is urgent and takes ckHoldUrgent; every other move takes
+// ckHoldCalm. A row new to the fleet goes straight to its group.
 func (m *OS) ckHoldGroup(key string, want int, now time.Time) int {
 	ck := &m.Inbox.ck
 	if ck.placed == nil {
 		ck.placed = make(map[string]ckPlaced)
+	}
+	hold := ckHoldCalm
+	if want == ckNeeds {
+		hold = ckHoldUrgent
 	}
 	p, ok := ck.placed[key]
 	switch {
@@ -795,7 +804,7 @@ func (m *OS) ckHoldGroup(key string, want int, now time.Time) int {
 		p.want, p.since = want, now
 	}
 	if p.shown != p.want {
-		if due := p.since.Add(ckHold); now.Before(due) {
+		if due := p.since.Add(hold); now.Before(due) {
 			if ck.holdUntil.IsZero() || due.Before(ck.holdUntil) {
 				ck.holdUntil = due
 				m.armCockpitHold(due.Sub(now))
