@@ -305,10 +305,10 @@ func (m *OS) inboxAgentsBest() (sidebarAgentEntry, bool) {
 	return best, tier >= 0
 }
 
-// agentsSort orders the rows by the sort in force, into a new slice. Ties keep
-// the tree's order, so the list does not shuffle on every frame. It sorts
-// indexes, not the rows: a row is a large struct, and moving two hundred of
-// them about cost more than everything else a rebuild does.
+// agentsSort orders the rows by the sort in force, into a new slice. Ties go
+// to the entry's identity, so the list does not shuffle while agents report.
+// It sorts indexes, not the rows: a row is a large struct, and moving two
+// hundred of them about cost more than everything else a rebuild does.
 func (m *OS) agentsSort(rows []sidebarAgentEntry) []sidebarAgentEntry {
 	by := m.Inbox.agents.sort
 	idx := make([]int, len(rows))
@@ -324,20 +324,35 @@ func (m *OS) agentsSort(rows []sidebarAgentEntry) []sidebarAgentEntry {
 				return c
 			}
 		}
+		var c int
 		switch by {
 		case agentsSortName:
-			return strings.Compare(strings.ToLower(x.Title), strings.ToLower(y.Title))
+			c = strings.Compare(strings.ToLower(x.Title), strings.ToLower(y.Title))
 		case agentsSortRecent:
-			return cmp.Compare(y.StateAt, x.StateAt)
+			c = cmp.Compare(y.StateAt, x.StateAt)
 		case agentsSortSession:
-			return strings.Compare(agentSessionWords(*x), agentSessionWords(*y))
+			c = strings.Compare(agentSessionWords(*x), agentSessionWords(*y))
+		default:
+			// Needs you first, then the longest wait.
+			gx, gy := sidebarAgentGroup(x.State, x.DoneSeen), sidebarAgentGroup(y.State, y.DoneSeen)
+			if gx != gy {
+				c = gx - gy
+			} else {
+				c = cmp.Compare(x.StateAt, y.StateAt)
+			}
 		}
-		// Needs you first, then the longest wait.
-		gx, gy := sidebarAgentGroup(x.State, x.DoneSeen), sidebarAgentGroup(y.State, y.DoneSeen)
-		if gx != gy {
-			return gx - gy
+		if c != 0 {
+			return c
 		}
-		return cmp.Compare(x.StateAt, y.StateAt)
+		// The tie-break is the entry's identity. A stable sort keeps the tree's
+		// order for the ties it sees, but the tree's order itself moves as
+		// sessions and panes arrive in steps, and two rebuilds a frame apart
+		// then drew two different lists, which the frame stream showed as a
+		// strobe. Same fix as the rail's agents section.
+		if x.SessionID != y.SessionID {
+			return strings.Compare(x.SessionID, y.SessionID)
+		}
+		return strings.Compare(x.WindowID, y.WindowID)
 	})
 	out := make([]sidebarAgentEntry, len(rows))
 	for i, j := range idx {
