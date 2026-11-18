@@ -4578,6 +4578,7 @@ Store the conversation id a harness reports for a window's pane, without changin
 | `agent_session_id` | string |  |  | The harness's own id for the conversation, at most 256 bytes. |
 | `transcript_path` | string |  |  | The exact transcript file, held to set-agent-state's same-machine, own-pane, regular-file and manifest-folder rules. A transcript update never replaces a different conversation, even at rest. |
 | `transcript_leaf` | string |  |  | Pi's selected entry, as set-agent-state describes it. An empty string selects an empty branch. Updating selection changes no agent state and raises a transcript event even without a file append. |
+| `thread_token` | string |  |  | A conversation token the harness's own extension reports, at most 256 bytes. Kept with the session id and stamped as a Thread trailer on commits a pane makes through ship-commit. |
 | `harness_pid` | int |  |  | The pid of the harness process that ran the hook. While the window is working or needs_input, a different id from a different process than the one that reported the stored id is a nested run and is refused with reason foreign_session. A harness whose environment names this pane in TUIOS_PANE_ID but that runs outside it, neither the pane's process nor on its terminal, with a harness daemon among its ancestors, even one the pane started (Claude Code's daemon or the pty host of its background sessions), is refused with reason foreign_pane: a background session that inherited the variable. A harness under anything else that left the pane, such as a tmux server or a rootless container's conmon, is taken for the pane. Kept in daemon memory only. |
 
 | Result field | Type | Description |
@@ -5089,7 +5090,7 @@ Merge a worktree pane's branch into its base branch in the repository's main che
 
 ### `ship-pr`
 
-Push a pane's branch and open a pull request for it with the gh CLI, as the person is logged in to gh. tuios holds no GitHub token. When the branch already has an open pull request, the push updates it and no new one is opened. The first call answers confirm_required with what would happen and a token. Call again with that token. A caller inside a pane, or on a restricted connection, also needs the person to allow it in the Inbox.
+Push a pane's branch and open a pull request for it with the gh CLI, as the person is logged in to gh. tuios holds no GitHub token. When the branch already has an open pull request, the push updates it and no new one is opened. The first call answers confirm_required with what would happen and a token. Call again with that token. A caller inside a pane, or on a restricted connection, also needs the person to allow it in the Inbox, unless the daemon's config sets daemon.ship_outbound = "never", which ships on the confirm token alone.
 
 | Param | Type | Required | Default | Description |
 |---|---|---|---|---|
@@ -5122,7 +5123,7 @@ Push a pane's branch and open a pull request for it with the gh CLI, as the pers
 
 ### `ship-push`
 
-Push a pane's branch to a remote and set it as the branch's upstream. Never forced. The first call answers confirm_required with what would be pushed and a token. Call again with that token to push. A caller inside a pane, or on a restricted connection, also needs the person to allow it in the Inbox, and the call waits for that answer.
+Push a pane's branch to a remote and set it as the branch's upstream. Never forced. The first call answers confirm_required with what would be pushed and a token. Call again with that token to push. A caller inside a pane, or on a restricted connection, also needs the person to allow it in the Inbox, and the call waits for that answer, unless the daemon's config sets daemon.ship_outbound = "never", which ships on the confirm token alone.
 
 | Param | Type | Required | Default | Description |
 |---|---|---|---|---|
