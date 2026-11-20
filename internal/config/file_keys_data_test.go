@@ -118,6 +118,8 @@ var fileKeys = []FileKey{
 		Description: "follow gives the new panes of a daemon with no display the display of the local client. off gives them none."},
 	{Path: "daemon.respond_from_shell", Type: OptionBool, Section: "daemon", Default: "false",
 		Description: "Let tuios respond, run from a shell outside every pane, answer the prompt of an agent. tuios refuses a caller inside a pane either way."},
+	{Path: "daemon.ship_outbound", Type: OptionString, Section: "daemon", Default: "inbox", Accepted: []string{"inbox", "never"},
+		Description: "never takes the Inbox allow off a pane's outbound ship push or pull request: the caller's confirm token alone ships. inbox, the default, asks the person in the Inbox."},
 
 	// [hosts.NAME]
 	{Path: "hosts.NAME.addr", Type: OptionString, Section: "hosts", Default: "required",
