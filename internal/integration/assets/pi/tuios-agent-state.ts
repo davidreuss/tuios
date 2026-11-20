@@ -252,6 +252,7 @@ export default function (pi) {
   // jumps to a child without opening any listing. Children come from the
   // daemon's agent link, the same record list-agents reads.
   async function pollChildren() {
+    if (process.env.TUIOS_CHILDREN_FOOTER !== "1") return;
     if (!tui || !selfWindow || !childrenCtx) return;
     const answer = await tuiosCall("list-agents", { all_sessions: true });
     if (!tui || !childrenCtx) return;
