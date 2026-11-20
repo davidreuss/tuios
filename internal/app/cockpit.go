@@ -992,6 +992,14 @@ func (m *OS) cockpitClamp() {
 	if i < 0 && ck.akey != "" {
 		i = find(func(r ckRow) bool { return r.agent >= 0 && agentKey(ck.agents[r.agent]) == ck.akey })
 	}
+	if i < 0 && ck.key == "" && ck.akey == "" {
+		// A fresh open, with nothing followed and nothing chosen: the cursor
+		// starts on the agent of the pane the person opened the cockpit
+		// from, not on the top of the attention sort, which is whoever has
+		// waited longest and reads as random. A focused pane with no agent
+		// falls through to the nearest row as before.
+		i = find(func(r ckRow) bool { return r.agent >= 0 && ckCurrentAgent(ck.agents[r.agent]) })
+	}
 	if i < 0 {
 		i = ckNearest(rows, ck.idx)
 	}
