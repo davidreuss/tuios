@@ -190,6 +190,7 @@ var builtinGlyphSets = map[string]*GlyphSet{
 		Add: "+", Collapse: "«", Expand: "»",
 		TreeBranch: "├─ ", TreeLast: "└─ ",
 		FoldOpen: "▾", FoldShut: "▸",
+		RepoMark: "┬",
 		Folder: "▸", Parent: "▴", File: "·",
 		Ellipsis: "…", Sigil: "›", DashRule: "╌",
 	},

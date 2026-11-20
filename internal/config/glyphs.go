@@ -67,10 +67,11 @@ func (s *Settings) GetRailTreeBranch() string {
 }
 
 // GetRailRepoMark is the gutter mark on a repository's group row: the
-// branch point the worktree rows hang from. Box-drawing by default, so it
-// renders wherever the tree marks under it render.
+// branch point the worktree rows hang from. The Nerd Font branch glyph by
+// default, since the set a Nerd Font terminal runs has it and nothing else
+// in the rail says "git" as plainly.
 func (s *Settings) GetRailRepoMark() string {
-	return s.glyphOr(func(g *theme.GlyphSet) string { return g.RepoMark }, "┬", "^")
+	return s.glyphOr(func(g *theme.GlyphSet) string { return g.RepoMark }, "\ue0a0", "^")
 }
 
 // GetRailTreeLast is the mark on the last row of a group.
