@@ -476,7 +476,7 @@ var targets = []*Target{
 		// linked to it, so a parent's footer names its children as
 		// tuios://window links, beside the spawned-from link a child
 		// already wore.
-		ID: Pi, Name: "Pi", Binary: "pi", Version: 6, Reports: ReportsState,
+		ID: Pi, Name: "Pi", Binary: "pi", Version: 7, Reports: ReportsState,
 		Source:    "herdr src/integration/assets/pi (TypeScript extensions load from ~/.pi/agent/extensions, or PI_CODING_AGENT_DIR/extensions)",
 		ConfigDir: func(e Env) string { return e.dirFromEnv("PI_CODING_AGENT_DIR", ".pi", "agent") },
 		File:      filepath.Join("extensions", "tuios-agent-state.ts"),
