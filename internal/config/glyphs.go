@@ -66,6 +66,13 @@ func (s *Settings) GetRailTreeBranch() string {
 	return s.glyphOr(func(g *theme.GlyphSet) string { return g.TreeBranch }, "├─ ", "|- ")
 }
 
+// GetRailRepoMark is the gutter mark on a repository's group row: the
+// branch point the worktree rows hang from. Box-drawing by default, so it
+// renders wherever the tree marks under it render.
+func (s *Settings) GetRailRepoMark() string {
+	return s.glyphOr(func(g *theme.GlyphSet) string { return g.RepoMark }, "┬", "^")
+}
+
 // GetRailTreeLast is the mark on the last row of a group.
 func (s *Settings) GetRailTreeLast() string {
 	return s.glyphOr(func(g *theme.GlyphSet) string { return g.TreeLast }, "└─ ", "`- ")

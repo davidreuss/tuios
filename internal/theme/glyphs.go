@@ -96,6 +96,11 @@ type GlyphSet struct {
 	Focus  string `json:"focus,omitempty"`  // "you are here"
 	Marker string `json:"marker,omitempty"` // "you are here", the marker row style
 
+	// RepoMark is the gutter mark on a repository's group row, saying the
+	// row is a branch point of the tree. Box-drawing by default, so the
+	// mark renders wherever the tree marks it heads render.
+	RepoMark string `json:"repo_mark,omitempty"`
+
 	// The icons in front of the rail's section headers, under the icon
 	// header style, one cell each.
 	SectionSessions  string `json:"section_sessions,omitempty"`
@@ -386,6 +391,7 @@ var glyphRoles = []glyphRole{
 	// are budgeted three cells: the mark, its arm, and the space before the
 	// name. A wider one would step every grouped name out of the rail's spine.
 	{"tree_branch", func(g *GlyphSet) *string { return &g.TreeBranch }, 3},
+	{"repo_mark", func(g *GlyphSet) *string { return &g.RepoMark }, 1},
 	{"tree_last", func(g *GlyphSet) *string { return &g.TreeLast }, 3},
 	{"fold_open", func(g *GlyphSet) *string { return &g.FoldOpen }, 1},
 	{"fold_shut", func(g *GlyphSet) *string { return &g.FoldShut }, 1},

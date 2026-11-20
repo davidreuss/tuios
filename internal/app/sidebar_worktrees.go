@@ -278,7 +278,7 @@ func (m *OS) sidebarRepoMark(tint, bg color.Color, pal overlay.Palette) string {
 	if m.Settings.UseASCIIOnly {
 		return sidebarQuietDotTinted(tint, bg, pal, &m.Settings)
 	}
-	return sidebarStyle(bg, tint).Render("⎇")
+	return sidebarStyle(bg, tint).Render(m.Settings.GetRailRepoMark())
 }
 
 func (m *OS) sidebarRepoRow(node sessiontree.Node, cw int, pal overlay.Palette, st sidebarRowState) string {
