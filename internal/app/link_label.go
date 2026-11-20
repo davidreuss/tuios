@@ -53,8 +53,11 @@ func linkLabelHint(s *config.Settings) string {
 func linkLabelHintFor(rawURL string, s *config.Settings) string {
 	if target, ok := parseTuiosLink(rawURL); ok {
 		verb := "jumps to that window"
-		if target.close {
+		switch {
+		case target.close:
 			verb = "asks to close that window"
+		case target.queue != "":
+			verb = "queues a message for that pane"
 		}
 		if hint := linkLabelHint(s); hint != "" {
 			gesture := strings.TrimSuffix(hint, " to open")

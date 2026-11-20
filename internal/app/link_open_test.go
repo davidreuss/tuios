@@ -1,6 +1,7 @@
 package app
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/Gaurav-Gosain/tuios/internal/config"
@@ -124,8 +125,9 @@ func TestOnlyKnownSchemesReachTheDesktop(t *testing.T) {
 }
 
 // TestTuiosWindowLinksParse checks the shapes the tuios:// scheme answers:
-// a window id focuses it, a /close suffix closes it, and anything else is
-// not an address tuios acts on.
+// a window id focuses it, a /close suffix closes it, a /queue suffix with a
+// text parameter queues the decoded text, and anything else is not an
+// address tuios acts on.
 //
 // Negative control: with the host check dropped from parseTuiosLink, the
 // tuios://session/... case comes back ok and this fails.
@@ -134,15 +136,17 @@ func TestTuiosWindowLinksParse(t *testing.T) {
 		url     string
 		id      string
 		closing bool
+		text    string
 	}{
-		{"tuios://window/4262c319", "4262c319", false},
-		{"tuios://window/4262c319/close", "4262c319", true},
-		{"tuios://window/a878cd43-0b70-4c1e-bd43-7b78de51cc43", "a878cd43-0b70-4c1e-bd43-7b78de51cc43", false},
+		{"tuios://window/4262c319", "4262c319", false, ""},
+		{"tuios://window/4262c319/close", "4262c319", true, ""},
+		{"tuios://window/a878cd43-0b70-4c1e-bd43-7b78de51cc43", "a878cd43-0b70-4c1e-bd43-7b78de51cc43", false, ""},
+		{"tuios://window/4262c319/queue?text=run%20the%20tests", "4262c319", false, "run the tests"},
 	}
 	for _, c := range good {
 		got, ok := parseTuiosLink(c.url)
-		if !ok || got.id != c.id || got.close != c.closing {
-			t.Errorf("%q parsed as %+v, ok=%v; want id %q close=%v", c.url, got, ok, c.id, c.closing)
+		if !ok || got.id != c.id || got.close != c.closing || got.queue != c.text {
+			t.Errorf("%q parsed as %+v, ok=%v; want id %q close=%v queue=%q", c.url, got, ok, c.id, c.closing, c.text)
 		}
 	}
 
@@ -153,11 +157,16 @@ func TestTuiosWindowLinksParse(t *testing.T) {
 		"tuios://session/4262c319",
 		"tuios://pane/4262c319",
 		"https://window/4262c319",
+		// A queue link without a message queues nothing, and the empty text
+		// is refused like any other shape tuios does not answer.
+		"tuios://window/4262c319/queue",
+		"tuios://window/4262c319/queue?text=",
 		// Below the 8-character short id: a prefix that short names a window
 		// one time in many, and the program printing the link chose it, not
 		// the person clicking.
 		"tuios://window/4262c31",
 		"tuios://window/4262c31/close",
+		"tuios://window/4262c31/queue?text=x",
 		"tuios://window/a/close",
 	}
 	for _, u := range bad {
@@ -263,7 +272,75 @@ func TestLinkLabelHintForTuios(t *testing.T) {
 	if got := linkLabelHintFor("tuios://window/a878cd43-0b70-4c1e-bd43-7b78de51cc43/close", &s); got != "ctrl+click asks to close that window" {
 		t.Errorf("close hint was %q", got)
 	}
+	if got := linkLabelHintFor("tuios://window/a878cd43-0b70-4c1e-bd43-7b78de51cc43/queue?text=hi", &s); got != "ctrl+click queues a message for that pane" {
+		t.Errorf("queue hint was %q", got)
+	}
 	if got := linkLabelHintFor("https://example.com", &s); got != "ctrl+click to open" {
 		t.Errorf("plain-URL hint was %q", got)
 	}
+}
+
+// TestTuiosWindowLinkQueues checks the action half of the queue form: the
+// click reaches the daemon's queue-prompt verb as the person, with the text
+// the URL carried and the pane the id resolved to, and the answer comes back
+// as a message that says what happened.
+func TestTuiosWindowLinkQueues(t *testing.T) {
+	m := inboxOS(t, zeroSettle())
+	q := &queueFake{}
+	m.SetInboxVerbCaller(q.call, func() string { return "nonce-1" })
+	w := &terminal.Window{ID: "a878cd43-0b70-4c1e-bd43-7b78de51cc43"}
+	m.Windows = []*terminal.Window{w}
+
+	// The attached session's pane: no session named, the full id after the
+	// prefix resolved, and the nonce of the person who clicked.
+	runMsg(t, m, m.OpenLink("tuios://window/a878cd43/queue?text=run%20the%20tests"))
+	p, ok := q.last("queue-prompt")
+	if !ok {
+		t.Fatal("the click never reached queue-prompt")
+	}
+	if p["text"] != "run the tests" || p["window"] != w.ID || p["human_nonce"] != "nonce-1" {
+		t.Errorf("queue-prompt got %v", p)
+	}
+	if _, named := p["session"]; named {
+		t.Errorf("queue-prompt was sent a session for the attached session's pane: %v", p)
+	}
+	if lastNotice(m).Type != "success" {
+		t.Errorf("the click said nothing about queueing: %+v", lastNotice(m))
+	}
+	if len(m.Windows) != 1 || m.SessionName != "here" {
+		t.Error("a queue link moved the person's session or its panes")
+	}
+
+	// A pane of another session is queued into by name, and the click does
+	// not switch the person to that session first.
+	q.calls = nil
+	cmd := m.followWindowLink(mustParseQueue(t, "tuios://window/bbbbbbbb/queue?text=hi"),
+		"tuios://window/bbbbbbbb/queue?text=hi",
+		[]session.SessionInfo{{Name: "away", Windows: []session.WindowSummary{{ID: "bbbbbbbb-0000-0000-0000-000000000001"}}}})
+	runMsg(t, m, cmd)
+	if p, ok = q.last("queue-prompt"); !ok || p["session"] != "away" || p["window"] != "bbbbbbbb-0000-0000-0000-000000000001" {
+		t.Errorf("queue-prompt for another session's pane got %v, ok=%v", p, ok)
+	}
+	if m.SessionName != "here" {
+		t.Error("queueing into another session's pane switched the client there")
+	}
+
+	// A refusal from the daemon is said, not swallowed.
+	q.calls = nil
+	q.err = &session.VerbCallError{Code: session.ErrVerbQueueFull, Message: "the pane's queue is full"}
+	runMsg(t, m, m.OpenLink("tuios://window/a878cd43/queue?text=hi"))
+	if n := lastNotice(m); n.Type != "error" || !strings.Contains(n.Message, "queue is full") {
+		t.Errorf("a refused queue said %q", n.Message)
+	}
+}
+
+// mustParseQueue parses a queue link the tests above build, failing the test
+// when the shape stops parsing.
+func mustParseQueue(t *testing.T, rawURL string) tuiosLink {
+	t.Helper()
+	target, ok := parseTuiosLink(rawURL)
+	if !ok {
+		t.Fatalf("%q stopped parsing", rawURL)
+	}
+	return target
 }

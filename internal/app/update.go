@@ -2004,6 +2004,14 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 		}
 		return m, cmd
 
+	case windowLinkQueuedMsg:
+		if msg.err != nil {
+			m.ShowNotification("The message was not queued: "+msg.err.Error()+".", "error", m.Settings.NotificationDuration)
+			return m, nil
+		}
+		m.ShowNotification("The message is queued for that pane. It is typed when the agent comes to rest.", "success", m.Settings.NotificationDuration)
+		return m, nil
+
 	case foreignSessionsChangedMsg:
 		// The rail's render cache keys on the listing's generation, so this
 		// frame rebuilds the rows the refresh moved.

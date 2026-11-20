@@ -86,7 +86,7 @@ func (m *OS) OpenLink(rawURL string) tea.Cmd {
 		return m.openWindowLink(target, rawURL)
 	}
 	if strings.HasPrefix(strings.ToLower(rawURL), "tuios:") {
-		m.ShowNotification("tuios did not understand the link. A window link is tuios://window/<id>, or tuios://window/<id>/close.",
+		m.ShowNotification("tuios did not understand the link. A window link is tuios://window/<id>, tuios://window/<id>/close, or tuios://window/<id>/queue?text=<message>.",
 			"warning", m.Settings.NotificationDuration)
 		return nil
 	}
@@ -154,10 +154,12 @@ func frameLink(u string) bool {
 	return !strings.EqualFold(u[:len(scheme)], scheme)
 }
 
-// tuiosLink is the parse of a tuios://window address.
+// tuiosLink is the parse of a tuios://window address. queue holds the text a
+// queue link carries; it is empty for the other shapes.
 type tuiosLink struct {
 	id    string
 	close bool
+	queue string
 }
 
 // tuiosLinkMinID is the shortest id a window link may carry: the 8-character
@@ -167,10 +169,12 @@ type tuiosLink struct {
 const tuiosLinkMinID = 8
 
 // parseTuiosLink reads the window addresses the scheme carries:
-// tuios://window/<id> focuses the window and tuios://window/<id>/close closes
-// it. The id is the window's uuid or a prefix of it at least the short form
-// list-windows prints. Any other tuios:// shape is not an address tuios
-// answers, and the caller says so.
+// tuios://window/<id> focuses the window, tuios://window/<id>/close closes it,
+// and tuios://window/<id>/queue?text=<url-encoded text> queues the decoded
+// text for the pane's agent, typed when the agent comes to rest. The id is the
+// window's uuid or a prefix of it at least the short form list-windows prints.
+// Any other tuios:// shape is not an address tuios answers, and the caller
+// says so.
 func parseTuiosLink(rawURL string) (tuiosLink, bool) {
 	u, err := url.Parse(rawURL)
 	if err != nil || u.Scheme != "tuios" || u.Host != "window" {
@@ -185,6 +189,18 @@ func parseTuiosLink(rawURL string) (tuiosLink, bool) {
 			return tuiosLink{}, false
 		}
 		return tuiosLink{id: id, close: true}, true
+	}
+	if id, found := strings.CutSuffix(rest, "/queue"); found {
+		if len(id) < tuiosLinkMinID {
+			return tuiosLink{}, false
+		}
+		// The text is the message, and a link without one queues nothing: the
+		// empty decode is refused like any other shape tuios does not answer.
+		text := u.Query().Get("text")
+		if text == "" {
+			return tuiosLink{}, false
+		}
+		return tuiosLink{id: id, queue: text}, true
 	}
 	if len(rest) < tuiosLinkMinID {
 		return tuiosLink{}, false
@@ -221,6 +237,12 @@ func (m *OS) followWindowLink(target tuiosLink, rawURL string, sessions []sessio
 	if len(matches) != 1 {
 		return m.windowLinkMiss(rawURL)
 	}
+	// A queue link leaves the screen alone: it hands a message to the pane's
+	// agent, and the pane the message goes to is named by the confirmation
+	// that follows, not by a session the click dragged the person to.
+	if target.queue != "" {
+		return m.queueWindowLink(matches[0], target.queue, rawURL)
+	}
 	if matches[0].session != "" && !m.openSession("", matches[0].session) {
 		return nil // openSession reported why
 	}
@@ -247,6 +269,33 @@ type windowLinkListedMsg struct {
 	target   tuiosLink
 	rawURL   string
 	sessions []session.SessionInfo
+}
+
+// windowLinkQueuedMsg is the answer to the queue-prompt a queue link sent.
+type windowLinkQueuedMsg struct {
+	err error
+}
+
+// queueWindowLink queues text for the pane a queue link named, through the
+// queue-prompt verb `tuios queue` calls. The queue lives in the daemon, so
+// the call runs in the command, and the answer tells the person what became
+// of the message on the next Update. The click is the person's, so the call
+// signs with the attach nonce and the message is queued as human.
+func (m *OS) queueWindowLink(match windowLinkMatch, text, rawURL string) tea.Cmd {
+	if m.DaemonClient == nil && m.Inbox.call == nil {
+		m.ShowNotification("The message was not queued. Queuing for a pane needs a client attached to a daemon.",
+			"warning", m.Settings.NotificationDuration)
+		return nil
+	}
+	call, nonce := m.queueCaller(""), m.inboxNonce()
+	return func() tea.Msg {
+		params := map[string]any{"window": match.id, "text": text, "human_nonce": nonce}
+		if match.session != "" {
+			params["session"] = match.session
+		}
+		_, err := call("queue-prompt", params, inboxReplyTimeout)
+		return windowLinkQueuedMsg{err: err}
+	}
 }
 
 // windowLinkMiss says a window link named no pane, or more than one.
