@@ -630,6 +630,7 @@ func (s *Session) AddDaemonWindowWith(opts NewWindowOptions, onExit func(ptyID s
 		if opts.Focus {
 			s.markFocusIntentLocked()
 			s.focusAskedBy = opts.focusAskedBy
+			state.recordPrevFocus(windowID)
 			state.FocusedWindowID = windowID
 			// A scratch workspace is never the session's current one: a
 			// client shows it over the workspace it is on.
@@ -639,6 +640,7 @@ func (s *Session) AddDaemonWindowWith(opts NewWindowOptions, onExit func(ptyID s
 			state.FocusHistory = RecordFocus(state.FocusHistory, workspace, windowID)
 		} else if opts.FocusIfShown {
 			if workspace == state.CurrentWorkspace {
+				state.recordPrevFocus(windowID)
 				state.FocusedWindowID = windowID
 				state.FocusHistory = RecordFocus(state.FocusHistory, workspace, windowID)
 			}
@@ -816,6 +818,7 @@ func (s *Session) FocusDaemonWindow(target string) error {
 		}
 		win := state.Windows[idx]
 		s.markFocusIntentLocked()
+		state.recordPrevFocus(win.ID)
 		state.FocusedWindowID = win.ID
 		// A scratch pane takes the focus without its workspace becoming the
 		// session's: a client that sees the focus on a scratch pane shows the
@@ -867,6 +870,7 @@ func (s *Session) CycleDaemonFocus(delta int) error {
 		next := ((current+step)%len(order) + len(order)) % len(order)
 		win := state.Windows[order[next]]
 		s.markFocusIntentLocked()
+		state.recordPrevFocus(win.ID)
 		state.FocusedWindowID = win.ID
 		if state.WorkspaceFocus == nil {
 			state.WorkspaceFocus = make(map[int]string)
@@ -990,6 +994,7 @@ func (s *Session) SwitchDaemonWorkspace(ws int) error {
 		state.CurrentWorkspace = ws
 		if state.WorkspaceFocus != nil {
 			if focus, ok := state.WorkspaceFocus[ws]; ok {
+				state.recordPrevFocus(focus)
 				state.FocusedWindowID = focus
 				state.FocusHistory = RecordFocus(state.FocusHistory, ws, focus)
 			}

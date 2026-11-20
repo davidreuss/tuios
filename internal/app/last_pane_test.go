@@ -2,7 +2,9 @@ package app
 
 import (
 	"testing"
+	"time"
 
+	"github.com/Gaurav-Gosain/tuios/internal/session"
 	"github.com/Gaurav-Gosain/tuios/internal/terminal"
 )
 
@@ -80,6 +82,62 @@ func TestLastPaneDeadTarget(t *testing.T) {
 	}
 	if m.FocusedWindow != 0 {
 		t.Fatalf("focus moved to %d on a dead target", m.FocusedWindow)
+	}
+}
+
+// TestLastPaneAcrossClients is the two-client case. The daemon ran
+// FocusWindow for a jump made on another client and pushed the state with the
+// record of the pane focus left. This client, which was on pane two, adopts
+// it: the chord flips back to the pane the OTHER client came from, not to
+// this client's own previous pane, and alternating presses keep walking.
+func TestLastPaneAcrossClients(t *testing.T) {
+	m := lastPaneTestOS(t)
+	focusTo(m, 1)
+
+	state := &session.SessionState{
+		Name:             m.SessionName,
+		CurrentWorkspace: 1,
+		FocusedWindowID:  "three",
+		PrevFocusedID:    "one",
+		PrevFocusedAt:    time.Now().UnixNano(),
+		Version:          7,
+		WorkspaceFocus:   map[int]string{1: "three"},
+	}
+	for _, w := range m.Windows {
+		state.Windows = append(state.Windows, session.WindowState{
+			ID: w.ID, PTYID: "pty-" + w.ID, Workspace: 1, Width: w.Width, Height: w.Height,
+		})
+	}
+	if err := m.ApplyStateSync(state); err != nil {
+		t.Fatalf("ApplyStateSync: %v", err)
+	}
+
+	if !m.LastPane() || m.FocusedWindow != 0 {
+		t.Fatalf("flip after a daemon-routed jump landed on pane %d, want 0", m.FocusedWindow)
+	}
+	m.reconcilePrevFocus()
+	if !m.LastPane() || m.FocusedWindow != 2 {
+		t.Fatalf("second flip landed on pane %d, want 2", m.FocusedWindow)
+	}
+}
+
+// TestLastPaneRecordSurvivesReattach checks the restore carries the record:
+// the chord works on the first press of a reattached or reloaded client.
+func TestLastPaneRecordSurvivesReattach(t *testing.T) {
+	src := lastPaneTestOS(t)
+	focusTo(src, 1)
+	focusTo(src, 2)
+	state := src.BuildSessionState()
+	if state.PrevFocusedID != "two" {
+		t.Fatalf("BuildSessionState PrevFocusedID = %q, want two", state.PrevFocusedID)
+	}
+
+	dst := NewOS(OSOptions{})
+	if err := dst.RestoreFromState(state); err != nil {
+		t.Fatalf("RestoreFromState: %v", err)
+	}
+	if dst.PrevFocusedID != "two" {
+		t.Fatalf("PrevFocusedID after restore = %q, want two", dst.PrevFocusedID)
 	}
 }
 

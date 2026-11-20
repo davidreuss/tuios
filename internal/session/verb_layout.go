@@ -862,6 +862,7 @@ func (d *Daemon) zoomPane(sess *Session, w WindowState, on bool) (bool, *verbErr
 		}
 		if on && w.Workspace == state.CurrentWorkspace && state.FocusedWindowID != w.ID {
 			sess.markFocusIntentLocked()
+			state.recordPrevFocus(w.ID)
 			state.FocusedWindowID = w.ID
 			state.FocusHistory = RecordFocus(state.FocusHistory, w.Workspace, w.ID)
 		}

@@ -189,16 +189,27 @@ type OS struct {
 	FocusedWindow       int
 	// PrevFocusedID is the window focus came from most recently, for the
 	// last_pane toggle. A window ID, not an index: indices shift on close and
-	// reorder.
+	// reorder. In a daemon session the record follows the focus through every
+	// client (SessionState.PrevFocusedID), so a jump routed from another
+	// client can be flipped back from this one.
 	PrevFocusedID string
 	// lastFocusedID is the window reconcilePrevFocus last saw focused. Focus
 	// moves through FocusWindow, new panes, workspace switches, closes and
 	// the daemon, so the previous pane is read off the landed focus once a
 	// message, not written by every caller.
 	lastFocusedID string
-	Width         int
-	Height        int
-	Mode          Mode
+	// prevFocusedAt is when PrevFocusedID was recorded, in unix nanoseconds,
+	// by this client's own reconcile or by the daemon. It is what the state
+	// push carries and what the merge compares.
+	prevFocusedAt int64
+	// prevFocusGiven marks the focus the daemon gave this client: a state
+	// push or a routed command moved it, and the daemon's previous-pane
+	// record already describes that transition. reconcilePrevFocus clears it
+	// instead of recording the move again from this client's view.
+	prevFocusGiven bool
+	Width          int
+	Height         int
+	Mode           Mode
 	// mode is the choice beneath the borrows open now; see mode.go.
 	mode modeState
 	// terminalMu guards the m.Windows slice and the per-window dirty flags and

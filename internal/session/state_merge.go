@@ -3,6 +3,7 @@ package session
 import (
 	"maps"
 	"slices"
+	"time"
 
 	"github.com/Gaurav-Gosain/tuios/internal/config"
 	"github.com/Gaurav-Gosain/tuios/internal/layout"
@@ -96,6 +97,13 @@ func retainDaemonExclusive(incoming, canonical *SessionState) {
 	// Older clients omit focus history.
 	if incoming.FocusHistory == nil {
 		incoming.FocusHistory = canonical.FocusHistory
+	}
+	// The previous-pane record: an older client omits it, and between two
+	// records the newer timestamp stands (SessionState.PrevFocusedAt).
+	if incoming.PrevFocusedID == "" && incoming.PrevFocusedAt == 0 {
+		incoming.PrevFocusedID, incoming.PrevFocusedAt = canonical.PrevFocusedID, canonical.PrevFocusedAt
+	} else if canonical.PrevFocusedAt > incoming.PrevFocusedAt {
+		incoming.PrevFocusedID, incoming.PrevFocusedAt = canonical.PrevFocusedID, canonical.PrevFocusedAt
 	}
 	// The herdr tab keys are written by a renumber and when a tab closes, both
 	// daemon-side, so canonical wins. A display order is never kept: a build
@@ -614,6 +622,10 @@ func reconcileStale(incoming, canonical *SessionState, hasLivePTY func(ptyID str
 	if canonical.FocusHistory != nil {
 		incoming.FocusHistory = CloneFocusHistory(canonical.FocusHistory)
 	}
+	// The push was built before a daemon mutation, so the record of the
+	// transition the client missed is the daemon's. keepClientFocus puts the
+	// push's own back when the push owns the focus.
+	incoming.PrevFocusedID, incoming.PrevFocusedAt = canonical.PrevFocusedID, canonical.PrevFocusedAt
 }
 
 // CloneFocusHistory returns an independent copy of a workspace MRU map.
@@ -653,6 +665,18 @@ func RecordFocus(history map[int][]string, workspace int, id string) map[int][]s
 	return history
 }
 
+// recordPrevFocus moves the previous-pane record to the window focus just
+// left, when the focus is about to move to id. Every daemon focus move calls
+// it beside RecordFocus, so the record holds the transition from whichever
+// client made it.
+func (state *SessionState) recordPrevFocus(id string) {
+	if id == "" || state.FocusedWindowID == "" || state.FocusedWindowID == id {
+		return
+	}
+	state.PrevFocusedID = state.FocusedWindowID
+	state.PrevFocusedAt = time.Now().UnixNano()
+}
+
 // RemoveFocus removes id from every MRU history.
 func RemoveFocus(history map[int][]string, id string) map[int][]string {
 	if history == nil {
@@ -682,6 +706,8 @@ type focusView struct {
 	workspace int
 	perWS     map[int]string
 	history   map[int][]string
+	prevID    string
+	prevAt    int64
 	strip     *ScrollStripState
 }
 
@@ -694,6 +720,8 @@ func focusViewOf(s *SessionState) focusView {
 		workspace: s.CurrentWorkspace,
 		perWS:     maps.Clone(s.WorkspaceFocus),
 		history:   CloneFocusHistory(s.FocusHistory),
+		prevID:    s.PrevFocusedID,
+		prevAt:    s.PrevFocusedAt,
 		strip:     s.ScrollStrip,
 	}
 }
@@ -738,6 +766,7 @@ func keepSessionFocus(incoming, canonical *SessionState) bool {
 	incoming.CurrentWorkspace = theirs.workspace
 	incoming.WorkspaceFocus = theirs.perWS
 	incoming.FocusHistory = theirs.history
+	incoming.PrevFocusedID, incoming.PrevFocusedAt = theirs.prevID, theirs.prevAt
 	incoming.ScrollStrip = strip
 	return true
 }
@@ -777,6 +806,7 @@ func keepClientFocus(incoming *SessionState, mine focusView) {
 	incoming.CurrentWorkspace = mine.workspace
 	incoming.WorkspaceFocus = mine.perWS
 	incoming.FocusHistory = mine.history
+	incoming.PrevFocusedID, incoming.PrevFocusedAt = mine.prevID, mine.prevAt
 	incoming.ScrollStrip = mine.strip
 }
 

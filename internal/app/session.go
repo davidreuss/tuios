@@ -121,6 +121,8 @@ func (m *OS) BuildSessionState() *session.SessionState {
 	if m.FocusedWindow >= 0 && m.FocusedWindow < len(m.Windows) {
 		state.FocusedWindowID = m.Windows[m.FocusedWindow].ID
 	}
+	state.PrevFocusedID = m.PrevFocusedID
+	state.PrevFocusedAt = m.prevFocusedAt
 
 	// Build workspace focus map (window index -> window ID)
 	for workspace, windowIdx := range m.WorkspaceFocus {
@@ -392,6 +394,8 @@ func (m *OS) RestoreFromState(state *session.SessionState) error {
 			}
 		}
 	}
+	m.PrevFocusedID = state.PrevFocusedID
+	m.prevFocusedAt = state.PrevFocusedAt
 	// If no focused window matched, focus the first visible window in current workspace
 	if m.FocusedWindow < 0 && len(m.Windows) > 0 {
 		for i, w := range m.Windows {
@@ -804,6 +808,18 @@ func (m *OS) ApplyStateSyncFrom(state *session.SessionState, sourceID string) er
 		focusAfter = m.Windows[m.FocusedWindow].ID
 	}
 	focusChanged := focusAfter != focusBefore
+
+	// The previous-pane record is the daemon's when it has one: the
+	// transition behind it may have been routed from another client, which
+	// this client only watched. The client's own record still holds for the
+	// moves it made itself (see reconcilePrevFocus).
+	if state.PrevFocusedID != "" {
+		m.PrevFocusedID = state.PrevFocusedID
+		m.prevFocusedAt = state.PrevFocusedAt
+	}
+	if focusChanged {
+		m.prevFocusGiven = true
+	}
 
 	// The folded turns, now that the focus is the one this sync names.
 	for _, w := range m.turnsWithinSync {

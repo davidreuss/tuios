@@ -3383,6 +3383,14 @@ func (m *OS) handleMsg(msg tea.Msg) (model tea.Model, cmd tea.Cmd) {
 				// NewWindow and CloseWindow never arrive here: they are daemon
 				// owned, so the daemon runs them itself and the client hears the
 				// result as a state push like any other.
+				// A routed focus is the same: the daemon recorded the pane the
+				// focus left (FocusDaemonWindow), and the record arrived with
+				// its state, so the move is marked for reconcilePrevFocus and
+				// not recorded again from this client's view.
+				switch tape.CommandType(msg.TapeCommand) {
+				case tape.CommandTypeFocusWindow, tape.CommandTypeFocus:
+					m.prevFocusGiven = true
+				}
 				tapeCmd := &tape.Command{
 					Type: tape.CommandType(msg.TapeCommand),
 					Args: msg.TapeArgs,

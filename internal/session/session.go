@@ -693,6 +693,17 @@ type SessionState struct {
 	// names the pane currently selected there, it lets a close return to the
 	// pane the user visited immediately before it.
 	FocusHistory map[int][]string `json:"focus_history,omitempty"`
+	// PrevFocusedID is the window focus came from most recently, for the
+	// last_pane toggle: one pane on any workspace, wherever the focus moved
+	// from. The daemon records it on every focus move of its own, including
+	// run-command FocusWindow, and a client push carries the client's own
+	// record, so a jump routed from one client can be flipped back from
+	// another. Empty in state written before the field existed.
+	PrevFocusedID string `json:"prev_focused_window_id,omitempty"`
+	// PrevFocusedAt is when PrevFocusedID was recorded, in unix nanoseconds.
+	// The record follows the focus through the daemon and every client, and
+	// this is what picks the fresher of two records at a merge.
+	PrevFocusedAt int64 `json:"prev_focused_at,omitempty"`
 	// FocusUnmoved marks a push whose focus is the one its client was last
 	// given: nobody at that client moved the focus, the workspace or the
 	// strip since. Such a push says nothing about the focus, so the daemon

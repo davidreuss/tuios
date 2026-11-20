@@ -288,6 +288,7 @@ func (d *Daemon) loadLayoutTemplate(cs *connState, sess *Session, t layouttmpl.T
 			keep = keep || id == state.FocusedWindowID
 		}
 		if !keep {
+			state.recordPrevFocus(ids[slots[0]])
 			state.FocusedWindowID = ids[slots[0]]
 		}
 		focused = state.FocusedWindowID

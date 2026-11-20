@@ -146,6 +146,7 @@ func (s *Session) returnFromEmptyLocked(state *SessionState, emptied int) {
 	if focus == "" {
 		focus = firstVisibleOnWorkspace(state.Windows, target)
 	}
+	state.recordPrevFocus(focus)
 	state.FocusedWindowID = focus
 	if focus != "" {
 		if state.WorkspaceFocus == nil {
